@@ -94,7 +94,9 @@ curl -H "Authorization: Bearer YOUR_TOKEN" \
 #### `write:time_entries`
 **Grants**: Create, update, and delete time entries; control timer; timesheet periods and time-off requests  
 **Endpoints**:
-- `POST /api/v1/time-entries` - Create time entry
+- `POST /api/v1/time-entries` - Create time entry (optional `Idempotency-Key` header for safe retries)
+- `POST /api/v1/time-entries/import-csv` - Import time entries from CSV (multipart `file` or JSON/raw body)
+- `POST /api/v1/time-entries/bulk` - Bulk delete, billable/paid flags, or tag add/remove
 - `PUT /api/v1/time-entries/{id}` - Update time entry
 - `DELETE /api/v1/time-entries/{id}` - Delete time entry
 - `POST /api/v1/timer/start` - Start timer

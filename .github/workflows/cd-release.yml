@@ -27,10 +27,10 @@ on:
         required: true
         type: string
       skip_tests:
-        description: 'Skip tests (tests already ran on PR, only for workflow_dispatch)'
+        description: 'Skip tests (opt-in only; default is to run tests on manual release)'
         required: false
         type: boolean
-        default: true
+        default: false
 
 env:
   REGISTRY: ghcr.io

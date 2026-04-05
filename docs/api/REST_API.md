@@ -53,6 +53,19 @@ API tokens follow the format: `tt_<32_random_characters>`
 
 Example: `tt_abc123def456ghi789jkl012mno345pq`
 
+### Rate limiting
+
+Authenticated API requests are counted **per API token** using sliding minute and hour windows. Defaults are **100 requests/minute** and **1000/hour** unless overridden in configuration.
+
+- **`API_TOKEN_RATE_LIMIT_PER_MINUTE`** — max requests per token per minute (default `100`).
+- **`API_TOKEN_RATE_LIMIT_PER_HOUR`** — max requests per token per hour (default `1000`).
+
+When [Redis](https://redis.io/) is available (`REDIS_URL` and Redis enabled in app config), limits are shared across all app workers. Otherwise a process-local fallback is used (fine for single-worker development; use Redis in production with multiple workers).
+
+### Idempotent time entry creation
+
+For safe retries (mobile offline sync, webhooks, automation), send a unique **`Idempotency-Key`** header (max 128 characters) on **`POST /api/v1/time-entries`**. The server stores the response for that key for **24 hours** (per token). Repeating the same key returns the **same JSON body and HTTP status** without creating a duplicate entry.
+
 ## Scopes
 
 API tokens use scopes to control access to resources. When creating a token, select the appropriate scopes:
@@ -385,6 +398,48 @@ POST /api/v1/time-entries
 ```
 
 **Note:** `end_time` is optional. Omit it to create an active timer.
+
+Optional header: **`Idempotency-Key`** — see [Idempotent time entry creation](#idempotent-time-entry-creation) above.
+
+#### Import time entries (CSV)
+
+```
+POST /api/v1/time-entries/import-csv
+```
+
+**Required Scope:** `write:time_entries`
+
+Accepts a CSV file (same column expectations as the web Import/Export flow) either as:
+
+- **Multipart form**: field name `file`, or  
+- **JSON body**: `{ "csv": "..." }` or `{ "data": "..." }`, or  
+- **Raw body**: CSV text with `Content-Type: text/csv` (or similar).
+
+Returns a JSON summary (counts, errors) and an appropriate HTTP status.
+
+#### Bulk actions on time entries
+
+```
+POST /api/v1/time-entries/bulk
+```
+
+**Required Scope:** `write:time_entries`
+
+**Request body (JSON):**
+
+```json
+{
+  "entry_ids": [1, 2, 3],
+  "action": "delete",
+  "value": null
+}
+```
+
+**`action`** (required): one of `delete`, `set_billable`, `set_paid`, `add_tag`, `remove_tag`.  
+**`value`**: required for tag actions (string tag); for `set_billable` / `set_paid`, pass a boolean.  
+Active (running) entries are skipped for non-delete actions; delete skips active entries.
+
+Same access rules as the web UI: non-admins may only affect their own entries.
 
 #### Update Time Entry
 ```

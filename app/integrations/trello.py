@@ -121,8 +121,7 @@ class TrelloConnector(BaseConnector):
 
     def sync_data(self, sync_type: str = "full") -> Dict[str, Any]:
         """Sync boards and cards with Trello."""
-        from app import db
-        from app.models import Project, Task
+        from app.utils.integration_sync_context import require_sync_context
 
         try:
             from app.models import Settings
@@ -135,6 +134,11 @@ class TrelloConnector(BaseConnector):
             if not token or not api_key:
                 return {"success": False, "message": "Trello credentials not configured"}
 
+            try:
+                actor_id, client_id = require_sync_context(self.integration)
+            except ValueError as e:
+                return {"success": False, "message": str(e)}
+
             # Get sync direction from config
             sync_direction = (
                 self.integration.config.get("sync_direction", "trello_to_timetracker")
@@ -143,10 +147,10 @@ class TrelloConnector(BaseConnector):
             )
 
             if sync_direction in ("trello_to_timetracker", "bidirectional"):
-                trello_result = self._sync_trello_to_timetracker(api_key, token)
+                trello_result = self._sync_trello_to_timetracker(api_key, token, actor_id, client_id)
                 # If bidirectional, also sync TimeTracker to Trello
                 if sync_direction == "bidirectional":
-                    tracker_result = self._sync_timetracker_to_trello(api_key, token)
+                    tracker_result = self._sync_timetracker_to_trello(api_key, token, actor_id, client_id)
                     # Merge results
                     if trello_result.get("success") and tracker_result.get("success"):
                         return {
@@ -169,17 +173,25 @@ class TrelloConnector(BaseConnector):
 
             # Handle TimeTracker to Trello sync
             if sync_direction == "timetracker_to_trello":
-                return self._sync_timetracker_to_trello(api_key, token)
+                return self._sync_timetracker_to_trello(api_key, token, actor_id, client_id)
 
             return {"success": False, "message": f"Unknown sync direction: {sync_direction}"}
 
         except Exception as e:
             return {"success": False, "message": f"Sync failed: {str(e)}"}
 
-    def _sync_trello_to_timetracker(self, api_key: str, token: str) -> Dict[str, Any]:
+    def _sync_trello_to_timetracker(
+        self, api_key: str, token: str, actor_id: int, client_id: int
+    ) -> Dict[str, Any]:
         """Sync Trello boards and cards to TimeTracker projects and tasks."""
         from app import db
         from app.models import Project, Task
+        from app.utils.integration_sync_context import (
+            ensure_project_integration_fields,
+            find_project_by_integration_ref,
+            find_task_by_integration_ref,
+            set_task_integration_ref,
+        )
 
         synced_count = 0
         errors = []
@@ -199,25 +211,31 @@ class TrelloConnector(BaseConnector):
 
             for board in boards:
                 try:
-                    # Create or update project from board
-                    project = Project.query.filter_by(user_id=self.integration.user_id, name=board.get("name")).first()
+                    board_id = str(board.get("id") or "")
+                    board_name = (board.get("name") or "Trello board").strip()[:200]
+                    if not board_id:
+                        continue
 
+                    project = find_project_by_integration_ref(client_id, "trello", board_id)
+                    if not project:
+                        project = Project.query.filter_by(client_id=client_id, name=board_name).first()
                     if not project:
                         project = Project(
-                            name=board.get("name"),
-                            description=board.get("desc", ""),
-                            user_id=self.integration.user_id,
+                            name=board_name,
+                            client_id=client_id,
+                            description=(board.get("desc") or "") or None,
                             status="active",
                         )
                         db.session.add(project)
                         db.session.flush()
+                    ensure_project_integration_fields(
+                        project,
+                        source="trello",
+                        ref=board_id,
+                        display_name=board_name,
+                        description=(board.get("desc") or "") or None,
+                    )
 
-                    # Store Trello board ID in metadata
-                    if not hasattr(project, "metadata") or not project.metadata:
-                        project.metadata = {}
-                    project.metadata["trello_board_id"] = board.get("id")
-
-                    # Sync cards as tasks
                     cards_response = requests.get(
                         f"{self.BASE_URL}/boards/{board.get('id')}/cards",
                         params={"key": api_key, "token": token, "filter": "open"},
@@ -227,32 +245,34 @@ class TrelloConnector(BaseConnector):
                         cards = cards_response.json()
 
                         for card in cards:
-                            # Find or create task
-                            task = Task.query.filter_by(project_id=project.id, name=card.get("name")).first()
-
+                            card_id = str(card.get("id") or "")
+                            if not card_id:
+                                continue
+                            cname = (card.get("name") or "Card").strip()[:200]
+                            new_status = self._map_trello_list_to_status(card.get("idList"))
+                            task = find_task_by_integration_ref(project.id, card_id, source="trello")
                             if not task:
                                 task = Task(
                                     project_id=project.id,
-                                    name=card.get("name"),
-                                    description=card.get("desc", ""),
-                                    status=self._map_trello_list_to_status(card.get("idList")),
+                                    name=cname,
+                                    description=(card.get("desc") or "") or None,
+                                    status=new_status,
+                                    created_by=actor_id,
                                 )
                                 db.session.add(task)
                                 db.session.flush()
                             else:
-                                # Update existing task if needed
-                                if card.get("desc") and task.description != card.get("desc"):
-                                    task.description = card.get("desc")
-                                # Update status based on list
-                                new_status = self._map_trello_list_to_status(card.get("idList"))
-                                if task.status != new_status:
-                                    task.status = new_status
+                                if card.get("desc") is not None:
+                                    task.description = (card.get("desc") or "") or None
+                                task.name = cname
+                                task.status = new_status
 
-                            # Store Trello card ID in metadata
-                            if not hasattr(task, "metadata") or not task.metadata:
-                                task.metadata = {}
-                            task.metadata["trello_card_id"] = card.get("id")
-                            task.metadata["trello_list_id"] = card.get("idList")
+                            set_task_integration_ref(
+                                task,
+                                source="trello",
+                                ref=card_id,
+                                extra={"trello_list_id": card.get("idList")},
+                            )
 
                     synced_count += 1
                 except Exception as e:
@@ -262,22 +282,25 @@ class TrelloConnector(BaseConnector):
 
         return {"success": True, "synced_count": synced_count, "errors": errors}
 
-    def _sync_timetracker_to_trello(self, api_key: str, token: str) -> Dict[str, Any]:
+    def _sync_timetracker_to_trello(
+        self, api_key: str, token: str, actor_id: int, client_id: int
+    ) -> Dict[str, Any]:
         """Sync TimeTracker tasks to Trello cards."""
         from app import db
         from app.models import Project, Task
+        from app.utils.integration_sync_context import ensure_project_integration_fields, set_task_integration_ref
 
         synced_count = 0
         errors = []
 
-        # Get all projects that have Trello board IDs
-        projects = Project.query.filter_by(user_id=self.integration.user_id, status="active").all()
+        projects = Project.query.filter_by(client_id=client_id, status="active").all()
 
         for project in projects:
-            # Check if project has Trello board ID
+            cf = project.custom_fields if isinstance(project.custom_fields, dict) else {}
+            block = cf.get("integration") if isinstance(cf, dict) else {}
             trello_board_id = None
-            if hasattr(project, "metadata") and project.metadata:
-                trello_board_id = project.metadata.get("trello_board_id")
+            if isinstance(block, dict) and block.get("source") == "trello":
+                trello_board_id = block.get("ref")
 
             if not trello_board_id:
                 # Try to find or create board
@@ -305,9 +328,13 @@ class TrelloConnector(BaseConnector):
                             continue
 
                 if trello_board_id:
-                    if not hasattr(project, "metadata") or not project.metadata:
-                        project.metadata = {}
-                    project.metadata["trello_board_id"] = trello_board_id
+                    ensure_project_integration_fields(
+                        project,
+                        source="trello",
+                        ref=str(trello_board_id),
+                        display_name=project.name,
+                        description=project.description,
+                    )
 
             if not trello_board_id:
                 continue
@@ -344,10 +371,11 @@ class TrelloConnector(BaseConnector):
 
             for task in tasks:
                 try:
-                    # Check if task already has Trello card ID
+                    tcf = task.custom_fields if isinstance(task.custom_fields, dict) else {}
+                    tblock = tcf.get("integration") if isinstance(tcf, dict) else {}
                     trello_card_id = None
-                    if hasattr(task, "metadata") and task.metadata:
-                        trello_card_id = task.metadata.get("trello_card_id")
+                    if isinstance(tblock, dict) and tblock.get("source") == "trello":
+                        trello_card_id = tblock.get("ref")
 
                     # Determine target list
                     target_list_id = status_to_list.get(task.status, default_list_id)
@@ -386,11 +414,12 @@ class TrelloConnector(BaseConnector):
                             card_data = create_response.json()
                             trello_card_id = card_data.get("id")
 
-                            # Store Trello card ID in task metadata
-                            if not hasattr(task, "metadata") or not task.metadata:
-                                task.metadata = {}
-                            task.metadata["trello_card_id"] = trello_card_id
-                            task.metadata["trello_list_id"] = target_list_id
+                            set_task_integration_ref(
+                                task,
+                                source="trello",
+                                ref=str(trello_card_id),
+                                extra={"trello_list_id": target_list_id},
+                            )
 
                             synced_count += 1
                         else:
@@ -427,7 +456,7 @@ class TrelloConnector(BaseConnector):
 
                 # Map common list names to statuses
                 if "done" in list_name or "completed" in list_name or "closed" in list_name:
-                    return "completed"
+                    return "done"
                 elif "in progress" in list_name or "doing" in list_name or "active" in list_name:
                     return "in_progress"
                 elif "todo" in list_name or "to do" in list_name or "backlog" in list_name:

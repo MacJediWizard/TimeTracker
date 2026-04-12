@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../../core/config/app_config.dart';
+import '../../domain/usecases/sync_usecase.dart';
 import '../providers/api_provider.dart';
 import '../../utils/auth/auth_service.dart';
 import '../providers/theme_mode_provider.dart';
@@ -21,6 +22,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _autoSync = true;
   bool _hasToken = false;
   String _version = '—';
+  String? _lastSyncError;
+  bool _syncing = false;
 
   @override
   void initState() {
@@ -46,7 +49,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         _autoSync = autoSync;
         _hasToken = token != null && token.isNotEmpty;
         _version = version;
+        _lastSyncError = SyncUseCase.lastError;
         _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _runManualSync() async {
+    setState(() => _syncing = true);
+    final uc = SyncUseCase();
+    await uc.sync();
+    if (mounted) {
+      setState(() {
+        _syncing = false;
+        _lastSyncError = SyncUseCase.lastError;
       });
     }
   }
@@ -285,6 +301,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             subtitle: Text('$_syncInterval seconds'),
             trailing: const Icon(Icons.chevron_right),
             onTap: _showSyncIntervalDialog,
+          ),
+          ListTile(
+            leading: const Icon(Icons.sync_problem_outlined),
+            title: const Text('Last sync error'),
+            subtitle: Text(
+              _lastSyncError == null || _lastSyncError!.isEmpty ? 'None' : _lastSyncError!,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          ListTile(
+            leading: _syncing
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.cloud_upload_outlined),
+            title: const Text('Sync now'),
+            subtitle: const Text('Push queued changes and refresh from server'),
+            onTap: _syncing ? null : _runManualSync,
           ),
           _sectionHeader('Appearance'),
           ListTile(

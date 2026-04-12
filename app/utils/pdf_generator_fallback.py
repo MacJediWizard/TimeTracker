@@ -402,6 +402,24 @@ class InvoicePDFGeneratorFallback:
         return story
 
 
+def format_quote_item_description_for_pdf(item) -> str:
+    """Label for a quote line including expense/goods metadata (issue #585)."""
+    dn = getattr(item, "display_name", None)
+    desc = (getattr(item, "description", None) or "") or ""
+    lk = (getattr(item, "line_kind", None) or "item") or "item"
+    if dn:
+        text = str(dn)
+        if desc and str(desc) not in (str(dn), "-"):
+            text = f"{text} — {desc}"
+    else:
+        text = str(desc)
+    if lk == "expense" and getattr(item, "category", None):
+        text = f"{text} ({item.category})"
+    if lk == "good" and getattr(item, "sku", None):
+        text = f"{text} [SKU: {item.sku}]"
+    return text
+
+
 class QuotePDFGeneratorFallback:
     """Generate PDF quotes with company branding using ReportLab"""
 
@@ -559,7 +577,7 @@ class QuotePDFGeneratorFallback:
         for item in self.quote.items:
             data.append(
                 [
-                    item.description,
+                    format_quote_item_description_for_pdf(item),
                     str(item.quantity),
                     self._format_currency(item.unit_price),
                     self._format_currency(item.total_amount),

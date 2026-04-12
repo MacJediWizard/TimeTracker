@@ -181,18 +181,20 @@ def _minimal_cii_en16931() -> str:
     <ram:ApplicableHeaderTradeSettlement>
       <ram:InvoiceCurrencyCode>EUR</ram:InvoiceCurrencyCode>
       <ram:ApplicableTradeTax>
-        <ram:CalculatedAmount>0.00</ram:CalculatedAmount>
+        <ram:CalculatedAmount currencyID="EUR">0.00</ram:CalculatedAmount>
         <ram:TypeCode>VAT</ram:TypeCode>
-        <ram:BasisAmount>100.00</ram:BasisAmount>
+        <ram:BasisAmount currencyID="EUR">100.00</ram:BasisAmount>
         <ram:CategoryCode>Z</ram:CategoryCode>
         <ram:RateApplicablePercent>0.00</ram:RateApplicablePercent>
+        <ram:ExemptionReason>Not subject to VAT</ram:ExemptionReason>
+        <ram:ExemptionReasonCode>VATEX-EU-O</ram:ExemptionReasonCode>
       </ram:ApplicableTradeTax>
       <ram:SpecifiedTradeSettlementHeaderMonetarySummation>
-        <ram:LineTotalAmount>100.00</ram:LineTotalAmount>
-        <ram:TaxBasisTotalAmount>100.00</ram:TaxBasisTotalAmount>
+        <ram:LineTotalAmount currencyID="EUR">100.00</ram:LineTotalAmount>
+        <ram:TaxBasisTotalAmount currencyID="EUR">100.00</ram:TaxBasisTotalAmount>
         <ram:TaxTotalAmount currencyID="EUR">0.00</ram:TaxTotalAmount>
-        <ram:GrandTotalAmount>100.00</ram:GrandTotalAmount>
-        <ram:DuePayableAmount>100.00</ram:DuePayableAmount>
+        <ram:GrandTotalAmount currencyID="EUR">100.00</ram:GrandTotalAmount>
+        <ram:DuePayableAmount currencyID="EUR">100.00</ram:DuePayableAmount>
       </ram:SpecifiedTradeSettlementHeaderMonetarySummation>
     </ram:ApplicableHeaderTradeSettlement>
     <ram:IncludedSupplyChainTradeLineItem>
@@ -204,7 +206,7 @@ def _minimal_cii_en16931() -> str:
       </ram:SpecifiedTradeProduct>
       <ram:SpecifiedLineTradeAgreement>
         <ram:NetPriceProductTradePrice>
-          <ram:ChargeAmount>100.00</ram:ChargeAmount>
+          <ram:ChargeAmount currencyID="EUR">100.00</ram:ChargeAmount>
         </ram:NetPriceProductTradePrice>
       </ram:SpecifiedLineTradeAgreement>
       <ram:SpecifiedLineTradeDelivery>
@@ -215,9 +217,11 @@ def _minimal_cii_en16931() -> str:
           <ram:TypeCode>VAT</ram:TypeCode>
           <ram:CategoryCode>Z</ram:CategoryCode>
           <ram:RateApplicablePercent>0.00</ram:RateApplicablePercent>
+          <ram:ExemptionReason>Not subject to VAT</ram:ExemptionReason>
+          <ram:ExemptionReasonCode>VATEX-EU-O</ram:ExemptionReasonCode>
         </ram:ApplicableTradeTax>
         <ram:SpecifiedTradeSettlementLineMonetarySummation>
-          <ram:LineTotalAmount>100.00</ram:LineTotalAmount>
+          <ram:LineTotalAmount currencyID="EUR">100.00</ram:LineTotalAmount>
         </ram:SpecifiedTradeSettlementLineMonetarySummation>
       </ram:SpecifiedLineTradeSettlement>
     </ram:IncludedSupplyChainTradeLineItem>
@@ -266,7 +270,7 @@ def test_validate_cii_en16931_detects_missing_line_items():
 @pytest.mark.unit
 def test_validate_cii_en16931_detects_missing_grand_total():
     cii = _minimal_cii_en16931().replace(
-        "<ram:GrandTotalAmount>100.00</ram:GrandTotalAmount>", ""
+        '<ram:GrandTotalAmount currencyID="EUR">100.00</ram:GrandTotalAmount>', ""
     )
     passed, issues = validate_cii_en16931(cii)
     assert passed is False

@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from app.integrations.base import BaseConnector
+from app.utils.integration_http import integration_session, session_request
 from app.utils.timezone import get_timezone_obj, utc_to_local
 
 logger = logging.getLogger(__name__)
@@ -74,17 +75,18 @@ class ActivityWatchConnector(BaseConnector):
         base = self._get_server_url()
         url = f"{base}/api/0/{path.lstrip('/')}"
         try:
-            resp = requests.get(url, params=params, timeout=15)
+            session = integration_session()
+            resp = session_request(session, "GET", url, params=params, timeout=(5, 20))
             resp.raise_for_status()
             return resp.json()
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON from ActivityWatch: {e}") from e
         except requests.exceptions.ConnectionError as e:
             raise ValueError(f"Cannot reach ActivityWatch at {base}: {e}") from e
         except requests.exceptions.Timeout as e:
             raise ValueError(f"ActivityWatch request timed out: {e}") from e
         except requests.exceptions.HTTPError as e:
             raise ValueError(f"ActivityWatch API error: {e}") from e
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON from ActivityWatch: {e}") from e
 
     def test_connection(self) -> Dict[str, Any]:
         """Test connectivity to aw-server: GET /api/0/buckets/."""

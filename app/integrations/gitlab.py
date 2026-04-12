@@ -190,48 +190,157 @@ class GitLabConnector(BaseConnector):
             return {"success": False, "message": f"Connection error: {str(e)}"}
 
     def sync_data(self, sync_type: str = "full") -> Dict[str, Any]:
-        """Sync issues from GitLab repositories."""
+        """Sync issues from GitLab repositories into TimeTracker projects and tasks."""
+        from app import db
+        from app.models import Project, Task
+        from app.utils.integration_sync_context import (
+            ensure_project_integration_fields,
+            find_project_by_integration_ref,
+            find_task_by_integration_ref,
+            require_sync_context,
+            set_task_integration_ref,
+        )
+
         token = self.get_access_token()
         if not token:
             return {"success": False, "message": "No access token available"}
 
+        try:
+            actor_id, client_id = require_sync_context(self.integration)
+        except ValueError as e:
+            return {"success": False, "message": str(e)}
+
         base_url = self._get_base_url()
+        headers = {"Authorization": f"Bearer {token}"}
         synced_count = 0
         errors = []
 
-        try:
-            # Get repositories from config or all accessible repos
-            repo_ids = self.integration.config.get("repository_ids", [])
+        raw_ids = self.integration.config.get("repository_ids", []) if self.integration else []
+        repo_ids: List[int] = []
+        if isinstance(raw_ids, str):
+            for part in raw_ids.split(","):
+                part = part.strip()
+                if part.isdigit():
+                    repo_ids.append(int(part))
+        elif isinstance(raw_ids, list):
+            for x in raw_ids:
+                try:
+                    repo_ids.append(int(x))
+                except (TypeError, ValueError):
+                    continue
 
+        try:
             if not repo_ids:
-                # Get all accessible projects
                 projects_response = requests.get(
                     f"{base_url}/api/v4/projects",
-                    headers={"Authorization": f"Bearer {token}"},
+                    headers=headers,
                     params={"membership": True, "per_page": 100},
+                    timeout=30,
                 )
-                if projects_response.status_code == 200:
-                    projects = projects_response.json()
-                    repo_ids = [p["id"] for p in projects]
+                if projects_response.status_code != 200:
+                    return {
+                        "success": False,
+                        "message": f"Could not list GitLab projects: HTTP {projects_response.status_code}",
+                    }
+                repo_ids = [p["id"] for p in projects_response.json()[:20]]
 
-            # Sync issues from each repository
             for repo_id in repo_ids:
                 try:
-                    issues_response = requests.get(
-                        f"{base_url}/api/v4/projects/{repo_id}/issues",
-                        headers={"Authorization": f"Bearer {token}"},
-                        params={"state": "opened", "per_page": 100},
+                    pr = requests.get(f"{base_url}/api/v4/projects/{repo_id}", headers=headers, timeout=30)
+                    if pr.status_code != 200:
+                        errors.append(f"GitLab project {repo_id}: HTTP {pr.status_code}")
+                        continue
+                    gl_project = pr.json()
+                    path = gl_project.get("path_with_namespace") or gl_project.get("name") or str(repo_id)
+                    path = str(path)[:200]
+                    project_ref = str(repo_id)
+
+                    project = find_project_by_integration_ref(client_id, "gitlab", project_ref)
+                    if not project:
+                        project = Project.query.filter_by(client_id=client_id, name=path).first()
+                    if not project:
+                        project = Project(
+                            name=path,
+                            client_id=client_id,
+                            description=(gl_project.get("description") or "") or f"GitLab: {path}",
+                            status="active",
+                        )
+                        db.session.add(project)
+                        db.session.flush()
+                    ensure_project_integration_fields(
+                        project,
+                        source="gitlab",
+                        ref=project_ref,
+                        display_name=path,
+                        description=(gl_project.get("description") or "") or f"GitLab: {path}",
                     )
 
-                    if issues_response.status_code == 200:
-                        issues = issues_response.json()
-                        synced_count += len(issues)
+                    issues_response = requests.get(
+                        f"{base_url}/api/v4/projects/{repo_id}/issues",
+                        headers=headers,
+                        params={"state": "opened", "per_page": 100},
+                        timeout=30,
+                    )
+                    if issues_response.status_code != 200:
+                        errors.append(f"GitLab issues for project {repo_id}: HTTP {issues_response.status_code}")
+                        continue
+
+                    for issue in issues_response.json():
+                        iid = issue.get("iid")
+                        if not iid:
+                            continue
+                        title = (issue.get("title") or "Issue").strip()[:180]
+                        issue_ref = f"{repo_id}:{iid}"
+                        desc = (issue.get("description") or "").strip()
+                        web_url = issue.get("web_url") or ""
+                        if web_url:
+                            desc = f"{desc}\n\nGitLab: {web_url}" if desc else f"GitLab: {web_url}"
+                        state = (issue.get("state") or "").lower()
+                        task_status = "done" if state in ("closed", "merged") else "todo"
+                        task_name = f"#{iid}: {title}"[:200]
+
+                        task = find_task_by_integration_ref(project.id, issue_ref, source="gitlab")
+                        if not task:
+                            task = Task(
+                                project_id=project.id,
+                                name=task_name,
+                                description=desc or None,
+                                status=task_status,
+                                created_by=actor_id,
+                            )
+                            db.session.add(task)
+                            db.session.flush()
+                        else:
+                            task.name = task_name
+                            task.description = desc or None
+                            task.status = task_status
+
+                        set_task_integration_ref(
+                            task,
+                            source="gitlab",
+                            ref=issue_ref,
+                            extra={
+                                "gitlab_project_id": repo_id,
+                                "iid": iid,
+                                "id": issue.get("id"),
+                                "url": web_url,
+                            },
+                        )
+                        synced_count += 1
                 except Exception as e:
                     errors.append(f"Error syncing repository {repo_id}: {str(e)}")
 
-            return {"success": True, "message": "Sync completed", "synced_items": synced_count, "errors": errors}
+            db.session.commit()
+            msg = f"Sync completed. Upserted {synced_count} issue(s)."
+            if errors:
+                msg += f" {len(errors)} error(s)."
+            return {"success": True, "message": msg, "synced_items": synced_count, "errors": errors}
         except Exception as e:
-            return {"success": False, "message": f"Sync failed: {str(e)}"}
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+            return {"success": False, "message": f"Sync failed: {str(e)}", "errors": errors}
 
     def get_config_schema(self) -> Dict[str, Any]:
         """Get configuration schema."""

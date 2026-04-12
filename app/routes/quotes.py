@@ -14,6 +14,50 @@ from app.utils.permissions import admin_or_permission_required, permission_requi
 quotes_bp = Blueprint("quotes", __name__)
 
 
+def _parse_quote_form_date(value):
+    if not value or not str(value).strip():
+        return None
+    try:
+        return datetime.strptime(str(value).strip()[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _pad_form_list(values, length):
+    out = list(values)
+    while len(out) < length:
+        out.append("")
+    return out
+
+
+def _quote_form_inventory_context():
+    """Stock + warehouse lists and JSON for quote create/edit forms."""
+    import json
+
+    from app.models import StockItem, Warehouse
+
+    stock_items = StockItem.query.filter_by(is_active=True).order_by(StockItem.name).all()
+    warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.code).all()
+    return {
+        "stock_items": stock_items,
+        "warehouses": warehouses,
+        "stock_items_json": json.dumps(
+            [
+                {
+                    "id": item.id,
+                    "sku": item.sku,
+                    "name": item.name,
+                    "default_price": float(item.default_price) if item.default_price else None,
+                    "unit": item.unit or "pcs",
+                    "description": item.name,
+                }
+                for item in stock_items
+            ]
+        ),
+        "warehouses_json": json.dumps([{"id": wh.id, "code": wh.code, "name": wh.name} for wh in warehouses]),
+    }
+
+
 @quotes_bp.route("/quotes")
 @login_required
 def list_quotes():
@@ -94,6 +138,7 @@ def create_quote():
         discount_amount = request.form.get("discount_amount", "").strip()
         discount_reason = request.form.get("discount_reason", "").strip()
         coupon_code = request.form.get("coupon_code", "").strip()
+        requires_approval = request.form.get("requires_approval") == "true"
 
         try:
             current_app.logger.info(
@@ -109,7 +154,11 @@ def create_quote():
         if not title or not client_id:
             flash(_("Quote title and client are required"), "error")
             return render_template(
-                "quotes/create.html", clients=clients, only_one_client=only_one_client, single_client=single_client
+                "quotes/create.html",
+                clients=clients,
+                only_one_client=only_one_client,
+                single_client=single_client,
+                **_quote_form_inventory_context(),
             )
 
         # Get client and validate
@@ -117,7 +166,11 @@ def create_quote():
         if not client:
             flash(_("Selected client not found"), "error")
             return render_template(
-                "quotes/create.html", clients=clients, only_one_client=only_one_client, single_client=single_client
+                "quotes/create.html",
+                clients=clients,
+                only_one_client=only_one_client,
+                single_client=single_client,
+                **_quote_form_inventory_context(),
             )
 
         # Validate amounts
@@ -128,7 +181,11 @@ def create_quote():
         except (InvalidOperation, ValueError):
             flash(_("Invalid total amount format"), "error")
             return render_template(
-                "quotes/create.html", clients=clients, only_one_client=only_one_client, single_client=single_client
+                "quotes/create.html",
+                clients=clients,
+                only_one_client=only_one_client,
+                single_client=single_client,
+                **_quote_form_inventory_context(),
             )
 
         try:
@@ -138,7 +195,11 @@ def create_quote():
         except (InvalidOperation, ValueError):
             flash(_("Invalid hourly rate format"), "error")
             return render_template(
-                "quotes/create.html", clients=clients, only_one_client=only_one_client, single_client=single_client
+                "quotes/create.html",
+                clients=clients,
+                only_one_client=only_one_client,
+                single_client=single_client,
+                **_quote_form_inventory_context(),
             )
 
         try:
@@ -148,7 +209,11 @@ def create_quote():
         except ValueError:
             flash(_("Invalid estimated hours format"), "error")
             return render_template(
-                "quotes/create.html", clients=clients, only_one_client=only_one_client, single_client=single_client
+                "quotes/create.html",
+                clients=clients,
+                only_one_client=only_one_client,
+                single_client=single_client,
+                **_quote_form_inventory_context(),
             )
 
         try:
@@ -158,7 +223,11 @@ def create_quote():
         except (InvalidOperation, ValueError):
             flash(_("Invalid tax rate format"), "error")
             return render_template(
-                "quotes/create.html", clients=clients, only_one_client=only_one_client, single_client=single_client
+                "quotes/create.html",
+                clients=clients,
+                only_one_client=only_one_client,
+                single_client=single_client,
+                **_quote_form_inventory_context(),
             )
 
         # Validate discount fields
@@ -177,7 +246,11 @@ def create_quote():
             except (InvalidOperation, ValueError):
                 flash(_("Invalid discount amount format"), "error")
                 return render_template(
-                    "quotes/create.html", clients=clients, only_one_client=only_one_client, single_client=single_client
+                    "quotes/create.html",
+                clients=clients,
+                only_one_client=only_one_client,
+                single_client=single_client,
+                **_quote_form_inventory_context(),
                 )
 
         # Parse valid_until date
@@ -188,7 +261,11 @@ def create_quote():
             except ValueError:
                 flash(_("Invalid date format for valid until"), "error")
                 return render_template(
-                    "quotes/create.html", clients=clients, only_one_client=only_one_client, single_client=single_client
+                    "quotes/create.html",
+                clients=clients,
+                only_one_client=only_one_client,
+                single_client=single_client,
+                **_quote_form_inventory_context(),
                 )
 
         # Generate quote number
@@ -211,46 +288,171 @@ def create_quote():
             discount_amount=discount_amount_decimal if discount_amount_decimal else None,
             discount_reason=discount_reason if discount_reason else None,
             coupon_code=coupon_code.upper() if coupon_code else None,
+            requires_approval=requires_approval,
         )
 
         db.session.add(quote)
         db.session.flush()  # Get quote ID for items
 
-        # Process line items if provided
+        # Process line items (items + expenses + goods — issue #585)
         item_descriptions = request.form.getlist("item_description[]")
         item_quantities = request.form.getlist("item_quantity[]")
         item_prices = request.form.getlist("item_price[]")
         item_units = request.form.getlist("item_unit[]")
+        item_line_sources = request.form.getlist("item_line_source[]")
         item_stock_ids = request.form.getlist("item_stock_item_id[]")
         item_warehouse_ids = request.form.getlist("item_warehouse_id[]")
 
-        for desc, qty, price, unit, stock_id, wh_id in zip(
-            item_descriptions, item_quantities, item_prices, item_units, item_stock_ids, item_warehouse_ids
-        ):
-            if desc.strip():
-                try:
-                    stock_item_id = int(stock_id) if stock_id and stock_id.strip() else None
-                    warehouse_id = int(wh_id) if wh_id and wh_id.strip() else None
+        qe_titles = request.form.getlist("qe_title[]")
+        qe_descriptions = request.form.getlist("qe_description[]")
+        qe_categories = request.form.getlist("qe_category[]")
+        qe_amounts = request.form.getlist("qe_amount[]")
+        qe_dates = request.form.getlist("qe_date[]")
 
-                    item = QuoteItem(
-                        quote_id=quote.id,
-                        description=desc.strip(),
-                        quantity=Decimal(qty) if qty else Decimal("1"),
-                        unit_price=Decimal(price) if price else Decimal("0"),
-                        unit=unit.strip() if unit else None,
-                        stock_item_id=stock_item_id,
-                        warehouse_id=warehouse_id,
-                    )
-                    db.session.add(item)
-                except (ValueError, InvalidOperation):
-                    pass  # Skip invalid items
+        qg_names = request.form.getlist("qg_name[]")
+        qg_descriptions = request.form.getlist("qg_description[]")
+        qg_categories = request.form.getlist("qg_category[]")
+        qg_quantities = request.form.getlist("qg_quantity[]")
+        qg_prices = request.form.getlist("qg_unit_price[]")
+        qg_skus = request.form.getlist("qg_sku[]")
+
+        n_items = len(item_descriptions)
+        item_line_sources = _pad_form_list(item_line_sources, n_items)
+        item_quantities = _pad_form_list(item_quantities, n_items)
+        item_prices = _pad_form_list(item_prices, n_items)
+        item_units = _pad_form_list(item_units, n_items)
+        item_stock_ids = _pad_form_list(item_stock_ids, n_items)
+        item_warehouse_ids = _pad_form_list(item_warehouse_ids, n_items)
+
+        n_qe = len(qe_titles)
+        qe_descriptions = _pad_form_list(qe_descriptions, n_qe)
+        qe_categories = _pad_form_list(qe_categories, n_qe)
+        qe_amounts = _pad_form_list(qe_amounts, n_qe)
+        qe_dates = _pad_form_list(qe_dates, n_qe)
+
+        n_qg = len(qg_names)
+        qg_descriptions = _pad_form_list(qg_descriptions, n_qg)
+        qg_categories = _pad_form_list(qg_categories, n_qg)
+        qg_quantities = _pad_form_list(qg_quantities, n_qg)
+        qg_prices = _pad_form_list(qg_prices, n_qg)
+        qg_skus = _pad_form_list(qg_skus, n_qg)
+
+        line_position = 0
+
+        for desc, qty, price, unit, src, stock_id, wh_id in zip(
+            item_descriptions,
+            item_quantities,
+            item_prices,
+            item_units,
+            item_line_sources,
+            item_stock_ids,
+            item_warehouse_ids,
+        ):
+            use_stock = (src or "").strip().lower() == "stock"
+            try:
+                stock_item_id = int(stock_id) if stock_id and str(stock_id).strip() and use_stock else None
+                warehouse_id = int(wh_id) if wh_id and str(wh_id).strip() and use_stock else None
+            except (TypeError, ValueError):
+                stock_item_id, warehouse_id = None, None
+            if not use_stock:
+                stock_item_id, warehouse_id = None, None
+            desc_s = (desc or "").strip()
+            if not desc_s and not stock_item_id:
+                continue
+            try:
+                q_dec = Decimal(qty) if qty and str(qty).strip() else Decimal("1")
+                p_dec = Decimal(price) if price and str(price).strip() else Decimal("0")
+                item = QuoteItem(
+                    quote_id=quote.id,
+                    description=desc_s or "-",
+                    quantity=q_dec,
+                    unit_price=p_dec,
+                    unit=unit.strip() if unit and str(unit).strip() else None,
+                    stock_item_id=stock_item_id,
+                    warehouse_id=warehouse_id,
+                    position=line_position,
+                    line_kind="item",
+                )
+                db.session.add(item)
+                line_position += 1
+            except (ValueError, InvalidOperation):
+                pass
+
+        for title, qe_desc, cat, amount, qe_d in zip(
+            qe_titles, qe_descriptions, qe_categories, qe_amounts, qe_dates
+        ):
+            title_s = (title or "").strip()
+            qe_desc_s = (qe_desc or "").strip()
+            if not title_s and not qe_desc_s and not (amount and str(amount).strip()):
+                continue
+            try:
+                amt = Decimal(amount) if amount and str(amount).strip() else Decimal("0")
+            except (InvalidOperation, ValueError):
+                continue
+            if amt <= 0 and not title_s and not qe_desc_s:
+                continue
+            ld = _parse_quote_form_date(qe_d)
+            cat_s = (cat or "").strip() or None
+            try:
+                item = QuoteItem(
+                    quote_id=quote.id,
+                    description=qe_desc_s if qe_desc_s else (title_s or "-"),
+                    quantity=Decimal("1"),
+                    unit_price=amt,
+                    line_kind="expense",
+                    display_name=title_s or None,
+                    category=cat_s,
+                    line_date=ld,
+                    position=line_position,
+                )
+                db.session.add(item)
+                line_position += 1
+            except (InvalidOperation, ValueError):
+                pass
+
+        for name, g_desc, g_cat, g_qty, g_price, g_sku in zip(
+            qg_names, qg_descriptions, qg_categories, qg_quantities, qg_prices, qg_skus
+        ):
+            name_s = (name or "").strip()
+            g_desc_s = (g_desc or "").strip()
+            if not name_s and not g_desc_s:
+                continue
+            try:
+                gq = Decimal(g_qty) if g_qty and str(g_qty).strip() else Decimal("1")
+                gp = Decimal(g_price) if g_price and str(g_price).strip() else Decimal("0")
+            except (InvalidOperation, ValueError):
+                continue
+            if gq <= 0 or gp < 0:
+                continue
+            g_cat_s = (g_cat or "").strip() or None
+            g_sku_s = (g_sku or "").strip() or None
+            try:
+                item = QuoteItem(
+                    quote_id=quote.id,
+                    description=g_desc_s if g_desc_s else (name_s or "-"),
+                    quantity=gq,
+                    unit_price=gp,
+                    line_kind="good",
+                    display_name=name_s or None,
+                    category=g_cat_s,
+                    sku=g_sku_s,
+                    position=line_position,
+                )
+                db.session.add(item)
+                line_position += 1
+            except (InvalidOperation, ValueError):
+                pass
 
         quote.calculate_totals()
 
         if not safe_commit("create_quote", {"title": title, "client_id": client_id}):
             flash(_("Could not create quote due to a database error. Please check server logs."), "error")
             return render_template(
-                "quotes/create.html", clients=clients, only_one_client=only_one_client, single_client=single_client
+                "quotes/create.html",
+                clients=clients,
+                only_one_client=only_one_client,
+                single_client=single_client,
+                **_quote_form_inventory_context(),
             )
 
         # Log event
@@ -263,7 +465,11 @@ def create_quote():
         return redirect(url_for("quotes.view_quote", quote_id=quote.id))
 
     return render_template(
-        "quotes/create.html", clients=clients, only_one_client=only_one_client, single_client=single_client
+        "quotes/create.html",
+        clients=clients,
+        only_one_client=only_one_client,
+        single_client=single_client,
+        **_quote_form_inventory_context(),
     )
 
 
@@ -335,7 +541,8 @@ def edit_quote(quote_id):
                 raise InvalidOperation
         except (InvalidOperation, ValueError):
             flash(_("Invalid tax rate format"), "error")
-            return render_template("quotes/edit.html", quote=quote, clients=Client.get_active_clients())
+            inv = _quote_form_inventory_context()
+            return render_template("quotes/edit.html", quote=quote, clients=Client.get_active_clients(), **inv)
 
         # Validate discount fields
         discount_amount_decimal = None
@@ -352,7 +559,8 @@ def edit_quote(quote_id):
                     discount_type = None  # Invalid type, ignore discount
             except (InvalidOperation, ValueError):
                 flash(_("Invalid discount amount format"), "error")
-                return render_template("quotes/edit.html", quote=quote, clients=Client.get_active_clients())
+                inv = _quote_form_inventory_context()
+                return render_template("quotes/edit.html", quote=quote, clients=Client.get_active_clients(), **inv)
 
         # Parse valid_until date
         valid_until_date = None
@@ -361,7 +569,8 @@ def edit_quote(quote_id):
                 valid_until_date = datetime.strptime(valid_until, "%Y-%m-%d").date()
             except ValueError:
                 flash(_("Invalid date format for valid until"), "error")
-                return render_template("quotes/edit.html", quote=quote, clients=Client.get_active_clients())
+                inv = _quote_form_inventory_context()
+                return render_template("quotes/edit.html", quote=quote, clients=Client.get_active_clients(), **inv)
 
         # Update quote
         quote.title = title
@@ -390,96 +599,243 @@ def edit_quote(quote_id):
         quote.discount_reason = discount_reason.strip() if discount_reason else None
         quote.coupon_code = coupon_code.upper().strip() if coupon_code else None
 
-        # Update line items
+        # Update line items (items + expenses + goods — issue #585)
         item_ids = request.form.getlist("item_id[]")
         item_descriptions = request.form.getlist("item_description[]")
         item_quantities = request.form.getlist("item_quantity[]")
         item_prices = request.form.getlist("item_price[]")
         item_units = request.form.getlist("item_unit[]")
-
-        # Delete items not in the form
-        existing_item_ids = {int(id) for id in item_ids if id}
-        for item in quote.items:
-            if item.id not in existing_item_ids:
-                db.session.delete(item)
-
-        # Update or create items
+        item_line_sources = request.form.getlist("item_line_source[]")
         item_stock_ids = request.form.getlist("item_stock_item_id[]")
         item_warehouse_ids = request.form.getlist("item_warehouse_id[]")
 
-        # Pad lists to match length
-        while len(item_stock_ids) < len(item_ids):
-            item_stock_ids.append("")
-        while len(item_warehouse_ids) < len(item_ids):
-            item_warehouse_ids.append("")
+        qe_ids = request.form.getlist("qe_id[]")
+        qe_titles = request.form.getlist("qe_title[]")
+        qe_descriptions = request.form.getlist("qe_description[]")
+        qe_categories = request.form.getlist("qe_category[]")
+        qe_amounts = request.form.getlist("qe_amount[]")
+        qe_dates = request.form.getlist("qe_date[]")
 
-        for item_id, desc, qty, price, unit, stock_id, wh_id in zip(
-            item_ids, item_descriptions, item_quantities, item_prices, item_units, item_stock_ids, item_warehouse_ids
-        ):
-            if desc.strip():
+        qg_ids = request.form.getlist("qg_id[]")
+        qg_names = request.form.getlist("qg_name[]")
+        qg_descriptions = request.form.getlist("qg_description[]")
+        qg_categories = request.form.getlist("qg_category[]")
+        qg_quantities = request.form.getlist("qg_quantity[]")
+        qg_prices = request.form.getlist("qg_unit_price[]")
+        qg_skus = request.form.getlist("qg_sku[]")
+
+        n_items = len(item_descriptions)
+        item_ids = _pad_form_list(item_ids, n_items)
+        item_line_sources = _pad_form_list(item_line_sources, n_items)
+        item_quantities = _pad_form_list(item_quantities, n_items)
+        item_prices = _pad_form_list(item_prices, n_items)
+        item_units = _pad_form_list(item_units, n_items)
+        item_stock_ids = _pad_form_list(item_stock_ids, n_items)
+        item_warehouse_ids = _pad_form_list(item_warehouse_ids, n_items)
+
+        n_qe = len(qe_titles)
+        qe_ids = _pad_form_list(qe_ids, n_qe)
+        qe_descriptions = _pad_form_list(qe_descriptions, n_qe)
+        qe_categories = _pad_form_list(qe_categories, n_qe)
+        qe_amounts = _pad_form_list(qe_amounts, n_qe)
+        qe_dates = _pad_form_list(qe_dates, n_qe)
+
+        n_qg = len(qg_names)
+        qg_ids = _pad_form_list(qg_ids, n_qg)
+        qg_descriptions = _pad_form_list(qg_descriptions, n_qg)
+        qg_categories = _pad_form_list(qg_categories, n_qg)
+        qg_quantities = _pad_form_list(qg_quantities, n_qg)
+        qg_prices = _pad_form_list(qg_prices, n_qg)
+        qg_skus = _pad_form_list(qg_skus, n_qg)
+
+        existing_item_ids = set()
+        for raw in item_ids + qe_ids + qg_ids:
+            if raw and str(raw).strip():
                 try:
-                    stock_item_id = int(stock_id) if stock_id and stock_id.strip() else None
-                    warehouse_id = int(wh_id) if wh_id and wh_id.strip() else None
+                    existing_item_ids.add(int(raw))
+                except (TypeError, ValueError):
+                    pass
+        for row in list(quote.items):
+            if row.id not in existing_item_ids:
+                db.session.delete(row)
 
-                    if item_id:
-                        # Update existing item
-                        item = QuoteItem.query.get(item_id)
-                        if item and item.quote_id == quote.id:
-                            item.description = desc.strip()
-                            item.quantity = Decimal(qty) if qty else Decimal("1")
-                            item.unit_price = Decimal(price) if price else Decimal("0")
-                            item.total_amount = item.quantity * item.unit_price
-                            item.unit = unit.strip() if unit else None
-                            item.stock_item_id = stock_item_id
-                            item.warehouse_id = warehouse_id
-                            item.is_stock_item = stock_item_id is not None
-                    else:
-                        # Create new item
-                        item = QuoteItem(
-                            quote_id=quote.id,
-                            description=desc.strip(),
-                            quantity=Decimal(qty) if qty else Decimal("1"),
-                            unit_price=Decimal(price) if price else Decimal("0"),
-                            unit=unit.strip() if unit else None,
-                            stock_item_id=stock_item_id,
-                            warehouse_id=warehouse_id,
-                        )
-                        db.session.add(item)
-                except (ValueError, InvalidOperation):
-                    pass  # Skip invalid items
+        line_position = 0
+
+        for item_id, desc, qty, price, unit, src, stock_id, wh_id in zip(
+            item_ids,
+            item_descriptions,
+            item_quantities,
+            item_prices,
+            item_units,
+            item_line_sources,
+            item_stock_ids,
+            item_warehouse_ids,
+        ):
+            use_stock = (src or "").strip().lower() == "stock"
+            try:
+                stock_item_id = int(stock_id) if stock_id and str(stock_id).strip() and use_stock else None
+                warehouse_id = int(wh_id) if wh_id and str(wh_id).strip() and use_stock else None
+            except (TypeError, ValueError):
+                stock_item_id, warehouse_id = None, None
+            if not use_stock:
+                stock_item_id, warehouse_id = None, None
+            desc_s = (desc or "").strip()
+            if not desc_s and not stock_item_id:
+                continue
+            try:
+                q_dec = Decimal(qty) if qty and str(qty).strip() else Decimal("1")
+                p_dec = Decimal(price) if price and str(price).strip() else Decimal("0")
+            except (InvalidOperation, ValueError):
+                continue
+            try:
+                if item_id and str(item_id).strip():
+                    item = QuoteItem.query.get(int(item_id))
+                    if not item or item.quote_id != quote.id:
+                        continue
+                    item.line_kind = "item"
+                    item.display_name = None
+                    item.category = None
+                    item.line_date = None
+                    item.sku = None
+                    item.description = desc_s or "-"
+                    item.quantity = q_dec
+                    item.unit_price = p_dec
+                    item.total_amount = q_dec * p_dec
+                    item.unit = unit.strip() if unit and str(unit).strip() else None
+                    item.stock_item_id = stock_item_id
+                    item.warehouse_id = warehouse_id
+                    item.is_stock_item = stock_item_id is not None
+                    item.position = line_position
+                else:
+                    item = QuoteItem(
+                        quote_id=quote.id,
+                        description=desc_s or "-",
+                        quantity=q_dec,
+                        unit_price=p_dec,
+                        unit=unit.strip() if unit and str(unit).strip() else None,
+                        stock_item_id=stock_item_id,
+                        warehouse_id=warehouse_id,
+                        position=line_position,
+                        line_kind="item",
+                    )
+                    db.session.add(item)
+                line_position += 1
+            except (TypeError, ValueError, InvalidOperation):
+                pass
+
+        for qe_id, title, qe_desc, cat, amount, qe_d in zip(
+            qe_ids, qe_titles, qe_descriptions, qe_categories, qe_amounts, qe_dates
+        ):
+            title_s = (title or "").strip()
+            qe_desc_s = (qe_desc or "").strip()
+            if not title_s and not qe_desc_s and not (amount and str(amount).strip()):
+                continue
+            try:
+                amt = Decimal(amount) if amount and str(amount).strip() else Decimal("0")
+            except (InvalidOperation, ValueError):
+                continue
+            if amt <= 0 and not title_s and not qe_desc_s:
+                continue
+            ld = _parse_quote_form_date(qe_d)
+            cat_s = (cat or "").strip() or None
+            try:
+                if qe_id and str(qe_id).strip():
+                    item = QuoteItem.query.get(int(qe_id))
+                    if not item or item.quote_id != quote.id:
+                        continue
+                    item.line_kind = "expense"
+                    item.display_name = title_s or None
+                    item.description = qe_desc_s if qe_desc_s else (title_s or "-")
+                    item.category = cat_s
+                    item.line_date = ld
+                    item.sku = None
+                    item.quantity = Decimal("1")
+                    item.unit_price = amt
+                    item.total_amount = amt
+                    item.unit = None
+                    item.stock_item_id = None
+                    item.warehouse_id = None
+                    item.is_stock_item = False
+                    item.position = line_position
+                else:
+                    item = QuoteItem(
+                        quote_id=quote.id,
+                        description=qe_desc_s if qe_desc_s else (title_s or "-"),
+                        quantity=Decimal("1"),
+                        unit_price=amt,
+                        line_kind="expense",
+                        display_name=title_s or None,
+                        category=cat_s,
+                        line_date=ld,
+                        position=line_position,
+                    )
+                    db.session.add(item)
+                line_position += 1
+            except (TypeError, ValueError, InvalidOperation):
+                pass
+
+        for qg_id, name, g_desc, g_cat, g_qty, g_price, g_sku in zip(
+            qg_ids, qg_names, qg_descriptions, qg_categories, qg_quantities, qg_prices, qg_skus
+        ):
+            name_s = (name or "").strip()
+            g_desc_s = (g_desc or "").strip()
+            if not name_s and not g_desc_s:
+                continue
+            try:
+                gq = Decimal(g_qty) if g_qty and str(g_qty).strip() else Decimal("1")
+                gp = Decimal(g_price) if g_price and str(g_price).strip() else Decimal("0")
+            except (InvalidOperation, ValueError):
+                continue
+            if gq <= 0 or gp < 0:
+                continue
+            g_cat_s = (g_cat or "").strip() or None
+            g_sku_s = (g_sku or "").strip() or None
+            try:
+                if qg_id and str(qg_id).strip():
+                    item = QuoteItem.query.get(int(qg_id))
+                    if not item or item.quote_id != quote.id:
+                        continue
+                    item.line_kind = "good"
+                    item.display_name = name_s or None
+                    item.description = g_desc_s if g_desc_s else (name_s or "-")
+                    item.category = g_cat_s
+                    item.line_date = None
+                    item.sku = g_sku_s
+                    item.quantity = gq
+                    item.unit_price = gp
+                    item.total_amount = gq * gp
+                    item.unit = None
+                    item.stock_item_id = None
+                    item.warehouse_id = None
+                    item.is_stock_item = False
+                    item.position = line_position
+                else:
+                    item = QuoteItem(
+                        quote_id=quote.id,
+                        description=g_desc_s if g_desc_s else (name_s or "-"),
+                        quantity=gq,
+                        unit_price=gp,
+                        line_kind="good",
+                        display_name=name_s or None,
+                        category=g_cat_s,
+                        sku=g_sku_s,
+                        position=line_position,
+                    )
+                    db.session.add(item)
+                line_position += 1
+            except (TypeError, ValueError, InvalidOperation):
+                pass
 
         quote.calculate_totals()
 
         if not safe_commit("edit_quote", {"quote_id": quote_id}):
             flash(_("Could not update quote due to a database error. Please check server logs."), "error")
-            import json
-
-            from app.models import StockItem, Warehouse
-
-            stock_items = StockItem.query.filter_by(is_active=True).order_by(StockItem.name).all()
-            warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.code).all()
-            stock_items_json = json.dumps(
-                [
-                    {
-                        "id": item.id,
-                        "sku": item.sku,
-                        "name": item.name,
-                        "default_price": float(item.default_price) if item.default_price else None,
-                        "unit": item.unit or "pcs",
-                        "description": item.name,
-                    }
-                    for item in stock_items
-                ]
-            )
-            warehouses_json = json.dumps([{"id": wh.id, "code": wh.code, "name": wh.name} for wh in warehouses])
+            inv = _quote_form_inventory_context()
             return render_template(
                 "quotes/edit.html",
                 quote=quote,
                 clients=Client.get_active_clients(),
-                stock_items=stock_items,
-                warehouses=warehouses,
-                stock_items_json=stock_items_json,
-                warehouses_json=warehouses_json,
+                **inv,
             )
 
         log_event("quote.updated", user_id=current_user.id, quote_id=quote.id, quote_title=title)
@@ -488,34 +844,12 @@ def edit_quote(quote_id):
         flash(_("Quote updated successfully"), "success")
         return redirect(url_for("quotes.view_quote", quote_id=quote_id))
 
-    import json
-
-    from app.models import StockItem, Warehouse
-
-    stock_items = StockItem.query.filter_by(is_active=True).order_by(StockItem.name).all()
-    warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.code).all()
-    stock_items_json = json.dumps(
-        [
-            {
-                "id": item.id,
-                "sku": item.sku,
-                "name": item.name,
-                "default_price": float(item.default_price) if item.default_price else None,
-                "unit": item.unit or "pcs",
-                "description": item.name,
-            }
-            for item in stock_items
-        ]
-    )
-    warehouses_json = json.dumps([{"id": wh.id, "code": wh.code, "name": wh.name} for wh in warehouses])
+    inv = _quote_form_inventory_context()
     return render_template(
         "quotes/edit.html",
         quote=quote,
         clients=Client.get_active_clients(),
-        stock_items=stock_items,
-        warehouses=warehouses,
-        stock_items_json=stock_items_json,
-        warehouses_json=warehouses_json,
+        **inv,
     )
 
 
@@ -1444,6 +1778,14 @@ def duplicate_quote(quote_id):
             quantity=original_item.quantity,
             unit_price=original_item.unit_price,
             unit=original_item.unit,
+            position=original_item.position,
+            stock_item_id=original_item.stock_item_id,
+            warehouse_id=original_item.warehouse_id,
+            line_kind=getattr(original_item, "line_kind", None) or "item",
+            display_name=getattr(original_item, "display_name", None),
+            category=getattr(original_item, "category", None),
+            line_date=getattr(original_item, "line_date", None),
+            sku=getattr(original_item, "sku", None),
         )
         db.session.add(new_item)
 
@@ -1541,6 +1883,14 @@ def bulk_action():
                         quantity=item.quantity,
                         unit_price=item.unit_price,
                         unit=item.unit,
+                        position=item.position,
+                        stock_item_id=item.stock_item_id,
+                        warehouse_id=item.warehouse_id,
+                        line_kind=getattr(item, "line_kind", None) or "item",
+                        display_name=getattr(item, "display_name", None),
+                        category=getattr(item, "category", None),
+                        line_date=getattr(item, "line_date", None),
+                        sku=getattr(item, "sku", None),
                     )
                     db.session.add(new_item)
 

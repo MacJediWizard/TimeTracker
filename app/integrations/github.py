@@ -144,12 +144,24 @@ class GitHubConnector(BaseConnector):
 
         from app import db
         from app.models import Project, Task
+        from app.utils.integration_sync_context import (
+            ensure_project_integration_fields,
+            find_project_by_integration_ref,
+            find_task_by_integration_ref,
+            require_sync_context,
+            set_task_integration_ref,
+        )
 
         logger = logging.getLogger(__name__)
 
         token = self.get_access_token()
         if not token:
             return {"success": False, "message": "No access token available. Please reconnect the integration."}
+
+        try:
+            actor_id, client_id = require_sync_context(self.integration)
+        except ValueError as e:
+            return {"success": False, "message": str(e)}
 
         # Get repositories from config
         repos_str = self.integration.config.get("repositories", "")
@@ -200,15 +212,16 @@ class GitHubConnector(BaseConnector):
 
                     owner, repo_name = repo.split("/", 1)
 
-                    # Find or create project
-                    project = Project.query.filter_by(user_id=self.integration.user_id, name=repo).first()
-
+                    # Find or create project (client + custom_fields integration marker)
+                    project = find_project_by_integration_ref(client_id, "github", repo)
+                    if not project:
+                        project = Project.query.filter_by(client_id=client_id, name=repo).first()
                     if not project:
                         try:
                             project = Project(
                                 name=repo,
+                                client_id=client_id,
                                 description=f"GitHub repository: {repo}",
-                                user_id=self.integration.user_id,
                                 status="active",
                             )
                             db.session.add(project)
@@ -217,6 +230,13 @@ class GitHubConnector(BaseConnector):
                             errors.append(f"Error creating project for {repo}: {str(e)}")
                             logger.error(f"Error creating project for {repo}: {e}", exc_info=True)
                             continue
+                    ensure_project_integration_fields(
+                        project,
+                        source="github",
+                        ref=repo,
+                        display_name=repo,
+                        description=f"GitHub repository: {repo}",
+                    )
 
                     # Fetch issues
                     try:
@@ -254,25 +274,33 @@ class GitHubConnector(BaseConnector):
 
                     for issue in issues:
                         try:
+                            if issue.get("pull_request"):
+                                continue
                             issue_number = issue.get("number")
-                            issue_title = issue.get("title", "")
+                            issue_title = (issue.get("title") or "").strip() or "Issue"
+                            issue_title = issue_title[:180]
 
                             if not issue_number:
                                 continue
 
-                            # Find or create task
-                            task = Task.query.filter_by(
-                                project_id=project.id, name=f"#{issue_number}: {issue_title}"
-                            ).first()
+                            issue_ref = f"{repo}#{issue_number}"
+                            body = (issue.get("body") or "").strip()
+                            url = issue.get("html_url") or ""
+                            if url:
+                                body = f"{body}\n\nGitHub: {url}" if body else f"GitHub: {url}"
+                            gh_state = (issue.get("state") or "").lower()
+                            task_status = "done" if gh_state == "closed" else "todo"
 
+                            task = find_task_by_integration_ref(project.id, issue_ref, source="github")
                             if not task:
                                 try:
+                                    task_name = f"#{issue_number}: {issue_title}"[:200]
                                     task = Task(
                                         project_id=project.id,
-                                        name=f"#{issue_number}: {issue_title}",
-                                        description=issue.get("body", ""),
-                                        status="todo",
-                                        notes=f"GitHub Issue: {issue.get('html_url', '')}",
+                                        name=task_name,
+                                        description=body or None,
+                                        status=task_status,
+                                        created_by=actor_id,
                                     )
                                     db.session.add(task)
                                     db.session.flush()
@@ -282,17 +310,22 @@ class GitHubConnector(BaseConnector):
                                         f"Error creating task for issue #{issue_number} in {repo}: {e}", exc_info=True
                                     )
                                     continue
+                            else:
+                                task.name = f"#{issue_number}: {issue_title}"[:200]
+                                task.description = body or None
+                                task.status = task_status
 
-                            # Store GitHub issue info in task metadata
-                            try:
-                                if not hasattr(task, "metadata") or not task.metadata:
-                                    task.metadata = {}
-                                task.metadata["github_repo"] = repo
-                                task.metadata["github_issue_number"] = issue_number
-                                task.metadata["github_issue_id"] = issue.get("id")
-                                task.metadata["github_issue_url"] = issue.get("html_url")
-                            except Exception as e:
-                                logger.warning(f"Error updating task metadata for issue #{issue_number}: {e}")
+                            set_task_integration_ref(
+                                task,
+                                source="github",
+                                ref=issue_ref,
+                                extra={
+                                    "issue_number": issue_number,
+                                    "issue_id": issue.get("id"),
+                                    "url": url,
+                                    "repo": repo,
+                                },
+                            )
 
                             synced_count += 1
                         except Exception as e:
@@ -335,7 +368,12 @@ class GitHubConnector(BaseConnector):
                 db.session.rollback()
             except Exception as rollback_err:
                 logger.debug("Rollback after GitHub sync failure: %s", rollback_err)
-            return {"success": False, "message": f"Sync failed: {str(e)}", "errors": errors}
+            return {
+                "success": False,
+                "message": f"Sync failed: {str(e)}",
+                "errors": errors,
+                "synced_items": synced_count,
+            }
 
     def handle_webhook(
         self, payload: Dict[str, Any], headers: Dict[str, str], raw_body: Optional[bytes] = None
@@ -387,12 +425,19 @@ class GitHubConnector(BaseConnector):
                     logger.warning("GitHub webhook signature provided but no secret configured - rejecting webhook")
                     return {"success": False, "message": "Webhook secret not configured"}
             else:
-                # No signature provided - check if secret is configured
+                # No signature: always reject (configure secret on GitHub + matching webhook_secret here)
                 webhook_secret = self.integration.config.get("webhook_secret") if self.integration else None
                 if webhook_secret:
-                    # Secret configured but no signature - reject for security
                     logger.warning("GitHub webhook secret configured but no signature provided - rejecting webhook")
                     return {"success": False, "message": "Webhook signature required but not provided"}
+                logger.warning(
+                    "GitHub webhook rejected: missing X-Hub-Signature-256. "
+                    "Set a secret on the GitHub webhook and store it in integration config as webhook_secret."
+                )
+                return {
+                    "success": False,
+                    "message": "Webhook signature required; configure webhook_secret on GitHub and in TimeTracker.",
+                }
 
             # Process webhook event
             action = payload.get("action")

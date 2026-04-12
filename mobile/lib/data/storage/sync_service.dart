@@ -1,6 +1,20 @@
+import 'dart:developer' as developer;
+import 'dart:math';
+
+import 'package:dio/dio.dart';
 import 'package:timetracker_mobile/data/api/api_client.dart';
 import 'package:timetracker_mobile/data/models/time_entry.dart';
 import 'package:timetracker_mobile/data/storage/local_storage.dart';
+
+/// RFC 4122-style random key (server allows up to 128 chars).
+String newSyncIdempotencyKey() {
+  final r = Random.secure();
+  final raw = List<int>.generate(16, (_) => r.nextInt(256));
+  raw[6] = (raw[6] & 0x0f) | 0x40;
+  raw[8] = (raw[8] & 0x3f) | 0x80;
+  final hex = raw.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+  return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20, 32)}';
+}
 
 class SyncService {
   SyncService(this._api);
@@ -19,6 +33,7 @@ class SyncService {
     final q = await LocalStorage.getSyncQueue();
     q.add({
       'op': 'create_time_entry',
+      'idempotency_key': newSyncIdempotencyKey(),
       'project_id': projectId,
       if (taskId != null) 'task_id': taskId,
       'start_time': startTime,
@@ -39,6 +54,34 @@ class SyncService {
     await LocalStorage.setSyncQueue(q);
   }
 
+  /// Queue a PATCH for when offline; sends [if_updated_at] for optimistic locking (409 drops op).
+  static Future<void> queueUpdateTimeEntry({
+    required int entryId,
+    String? ifUpdatedAt,
+    int? projectId,
+    int? taskId,
+    String? startTime,
+    String? endTime,
+    String? notes,
+    String? tags,
+    bool? billable,
+  }) async {
+    final q = await LocalStorage.getSyncQueue();
+    q.add({
+      'op': 'update_time_entry',
+      'entry_id': entryId,
+      if (ifUpdatedAt != null) 'if_updated_at': ifUpdatedAt,
+      if (projectId != null) 'project_id': projectId,
+      if (taskId != null) 'task_id': taskId,
+      if (startTime != null) 'start_time': startTime,
+      if (endTime != null) 'end_time': endTime,
+      if (notes != null) 'notes': notes,
+      if (tags != null) 'tags': tags,
+      if (billable != null) 'billable': billable,
+    });
+    await LocalStorage.setSyncQueue(q);
+  }
+
   Future<void> syncAll() async {
     await processQueue();
     await syncFromServer();
@@ -55,6 +98,7 @@ class SyncService {
       final type = op['op']?.toString();
       try {
         if (type == 'create_time_entry') {
+          final idem = op['idempotency_key']?.toString();
           await api.createTimeEntry(
             projectId: (op['project_id'] as num).toInt(),
             taskId: (op['task_id'] as num?)?.toInt(),
@@ -63,13 +107,38 @@ class SyncService {
             notes: op['notes']?.toString(),
             tags: op['tags']?.toString(),
             billable: op['billable'] as bool?,
+            idempotencyKey: idem != null && idem.isNotEmpty ? idem : null,
           );
         } else if (type == 'delete_time_entry') {
           await api.deleteTimeEntry((op['entry_id'] as num).toInt());
+        } else if (type == 'update_time_entry') {
+          final eid = (op['entry_id'] as num).toInt();
+          await api.updateTimeEntry(
+            eid,
+            projectId: (op['project_id'] as num?)?.toInt(),
+            taskId: (op['task_id'] as num?)?.toInt(),
+            startTime: op['start_time']?.toString(),
+            endTime: op['end_time']?.toString(),
+            notes: op['notes']?.toString(),
+            tags: op['tags']?.toString(),
+            billable: op['billable'] as bool?,
+            ifUpdatedAt: op['if_updated_at']?.toString(),
+          );
         } else {
           remaining.add(op);
         }
-      } catch (_) {
+      } on DioException catch (e) {
+        if (type == 'update_time_entry' && e.response?.statusCode == 409) {
+          continue;
+        }
+        remaining.add(op);
+      } catch (e, st) {
+        developer.log(
+          'Sync queue op failed (non-Dio): $type',
+          name: 'SyncService',
+          error: e,
+          stackTrace: st,
+        );
         remaining.add(op);
       }
     }
@@ -80,8 +149,12 @@ class SyncService {
   Future<void> syncFromServer() async {
     final api = _api;
     if (api == null) return;
-    try {
-      final res = await api.getTimeEntries(perPage: 200);
+
+    var page = 1;
+    const perPage = 100;
+
+    while (true) {
+      final res = await api.getTimeEntries(page: page, perPage: perPage);
       final raw = res['time_entries'] as List<dynamic>? ?? [];
       for (final e in raw) {
         if (e is Map) {
@@ -89,6 +162,17 @@ class SyncService {
           await LocalStorage.saveTimeEntry(entry);
         }
       }
-    } catch (_) {}
+
+      final pag = res['pagination'];
+      var hasNext = false;
+      if (pag is Map) {
+        final hn = pag['has_next'];
+        if (hn is bool) {
+          hasNext = hn;
+        }
+      }
+      if (!hasNext) break;
+      page += 1;
+    }
   }
 }

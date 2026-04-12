@@ -78,6 +78,14 @@ def _text_el(parent: ET.Element, tag: str, text: Optional[str]) -> Optional[ET.E
     return el
 
 
+def _money_el(parent: ET.Element, tag: str, value: Any, currency: str) -> Optional[ET.Element]:
+    """Monetary element with currencyID (EN 16931 / Factur-X expectation)."""
+    el = _text_el(parent, tag, _money(value))
+    if el is not None:
+        el.set("currencyID", currency)
+    return el
+
+
 def _date_el(parent: ET.Element, d: Any) -> None:
     """Add a DateTimeString child with format 102."""
     udt = f"{{{NS_UDT}}}"
@@ -193,11 +201,14 @@ def build_cii_invoice_xml(
 
     # Tax summary
     tax_el = _sub(settlement, ram + "ApplicableTradeTax")
-    calc_amt = _text_el(tax_el, ram + "CalculatedAmount", _money(getattr(invoice, "tax_amount", 0)))
+    _money_el(tax_el, ram + "CalculatedAmount", getattr(invoice, "tax_amount", 0), currency)
     _text_el(tax_el, ram + "TypeCode", "VAT")
-    basis_amt = _text_el(tax_el, ram + "BasisAmount", _money(getattr(invoice, "subtotal", 0)))
+    _money_el(tax_el, ram + "BasisAmount", getattr(invoice, "subtotal", 0), currency)
     _text_el(tax_el, ram + "CategoryCode", tax_category)
     _text_el(tax_el, ram + "RateApplicablePercent", _money(tax_rate))
+    if tax_category == "Z":
+        _text_el(tax_el, ram + "ExemptionReason", "Not subject to VAT")
+        _text_el(tax_el, ram + "ExemptionReasonCode", "VATEX-EU-O")
 
     # Payment terms (due date)
     due_date = getattr(invoice, "due_date", None)
@@ -208,13 +219,11 @@ def build_cii_invoice_xml(
 
     # Monetary summation
     totals = _sub(settlement, ram + "SpecifiedTradeSettlementHeaderMonetarySummation")
-    _text_el(totals, ram + "LineTotalAmount", _money(getattr(invoice, "subtotal", 0)))
-    _text_el(totals, ram + "TaxBasisTotalAmount", _money(getattr(invoice, "subtotal", 0)))
-    tax_total_el = _text_el(totals, ram + "TaxTotalAmount", _money(getattr(invoice, "tax_amount", 0)))
-    if tax_total_el is not None:
-        tax_total_el.set("currencyID", currency)
-    _text_el(totals, ram + "GrandTotalAmount", _money(getattr(invoice, "total_amount", 0)))
-    _text_el(totals, ram + "DuePayableAmount", _money(getattr(invoice, "total_amount", 0)))
+    _money_el(totals, ram + "LineTotalAmount", getattr(invoice, "subtotal", 0), currency)
+    _money_el(totals, ram + "TaxBasisTotalAmount", getattr(invoice, "subtotal", 0), currency)
+    _money_el(totals, ram + "TaxTotalAmount", getattr(invoice, "tax_amount", 0), currency)
+    _money_el(totals, ram + "GrandTotalAmount", getattr(invoice, "total_amount", 0), currency)
+    _money_el(totals, ram + "DuePayableAmount", getattr(invoice, "total_amount", 0), currency)
 
     # --- Line Items ---
     line_id = 1
@@ -231,7 +240,7 @@ def build_cii_invoice_xml(
 
         line_agreement = _sub(li, ram + "SpecifiedLineTradeAgreement")
         net_price = _sub(line_agreement, ram + "NetPriceProductTradePrice")
-        _text_el(net_price, ram + "ChargeAmount", _money(unit_price))
+        _money_el(net_price, ram + "ChargeAmount", unit_price, currency)
 
         line_delivery = _sub(li, ram + "SpecifiedLineTradeDelivery")
         qty_el = _text_el(line_delivery, ram + "BilledQuantity", _qty(quantity))
@@ -243,9 +252,12 @@ def build_cii_invoice_xml(
         _text_el(line_tax, ram + "TypeCode", "VAT")
         _text_el(line_tax, ram + "CategoryCode", tax_category)
         _text_el(line_tax, ram + "RateApplicablePercent", _money(tax_rate))
+        if tax_category == "Z":
+            _text_el(line_tax, ram + "ExemptionReason", "Not subject to VAT")
+            _text_el(line_tax, ram + "ExemptionReasonCode", "VATEX-EU-O")
 
         line_totals = _sub(line_settle, ram + "SpecifiedTradeSettlementLineMonetarySummation")
-        _text_el(line_totals, ram + "LineTotalAmount", _money(line_total))
+        _money_el(line_totals, ram + "LineTotalAmount", line_total, currency)
 
         line_id += 1
 

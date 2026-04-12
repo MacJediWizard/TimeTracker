@@ -111,8 +111,8 @@ When the setting is on **and** the client has Peppol endpoint details, the invoi
 
 In **Admin → Settings → Peppol e-Invoicing** you can enable **Embed Factur-X / ZUGFeRD CII XML in invoice PDFs (EN 16931)**. When this is on:
 
-- **Exported invoice PDFs** (Export PDF) contain an embedded file `factur-x.xml` with a CII (Cross-Industry Invoice) XML conforming to the Factur-X EN 16931 profile.
-- The embedded XML is attached as an **Associated File** with relationship **Alternative**, and Factur-X XMP metadata is written so validators recognize the document.
+- **Exported invoice PDFs** (Export PDF) and **invoice emails** (PDF attachment) use the same pipeline: when these settings are on, the attachment contains an embedded file `factur-x.xml` with a CII (Cross-Industry Invoice) XML conforming to the Factur-X EN 16931 profile.
+- The embedded XML is attached as an **Associated File** with relationship **Data** (primary structured invoice), MIME type **text/xml**, and Factur-X XMP metadata is written so validators recognize the document.
 - The PDF remains human-readable; the embedded XML makes it machine-readable (e.g. for automated booking or archiving).
 - **Strict behaviour:** If embedding is enabled and the embed step fails (e.g. missing pikepdf, invalid PDF), the export is **aborted** and the user sees an error; the PDF is not returned without the XML.
 
@@ -122,13 +122,15 @@ Party data (seller/buyer) is taken from Settings and the invoice's client (inclu
 
 ### Factur-X and PDF/A-3
 
-You can enable **Normalize Factur-X PDFs to PDF/A-3b** in Admin → Peppol e-Invoicing. When this is on (and Factur-X embedding is enabled), exported PDFs are normalized to PDF/A-3b:
+You can enable **Normalize Factur-X PDFs to PDF/A-3b** in Admin → Peppol e-Invoicing. When this is on (and Factur-X embedding is enabled), exported and emailed PDFs are normalized to PDF/A-3b:
 
 - XMP identification (`pdfaid:part=3`, `pdfaid:conformance=B`)
-- Embedded sRGB ICC color profile (DestOutputProfile)
+- Embedded sRGB ICC color profile (`DestOutputProfile`) using a bundled compact sRGB profile under `app/resources/icc/`, or override with environment variable **`INVOICE_SRGB_ICC_PATH`** pointing to a full `.icc` file on the server
 - GTS_PDFA1 output intent
 
-If conversion fails, export is aborted and the user sees an error.
+If conversion fails, export (or sending the invoice email) is aborted and the user sees an error.
+
+**veraPDF and fonts:** ReportLab invoice templates often use standard fonts without full PDF/A font embedding; veraPDF may still report failures until templates embed fonts or you use an external PDF/A conversion pipeline. **Ghostscript** and similar tools can help but may strip embedded XML if run after Factur-X embedding; prefer tools that preserve associated files, or re-embed `factur-x.xml` after conversion.
 
 ### UBL validation
 
@@ -158,5 +160,5 @@ This applies (among others):
 With your virtual environment activated:
 
 ```bash
-pytest tests/test_peppol_service.py tests/test_peppol_identifiers.py tests/test_zugferd.py tests/test_pdfa3.py tests/test_invoice_validators.py -v
+pytest tests/test_peppol_service.py tests/test_peppol_identifiers.py tests/test_zugferd.py tests/test_pdfa3.py tests/test_invoice_pdf_postprocess.py tests/test_invoice_validators.py -v
 ```

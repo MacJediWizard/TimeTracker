@@ -73,12 +73,12 @@
         <div class="bg-card-light dark:bg-card-dark p-6 rounded-xl border border-border-light dark:border-border-dark shadow-sm mt-6">
             <h2 class="text-lg font-semibold mb-4">{{ _('Sync History') }}</h2>
             {% if recent_events %}
-            <div class="space-y-2 max-h-96 overflow-y-auto">
+            <div class="space-y-2 max-h-[32rem] overflow-y-auto">
                 {% for event in recent_events %}
                 <div class="border-b border-border-light dark:border-border-dark pb-2 last:border-0">
                     <div class="flex items-start justify-between">
-                        <div class="flex-1">
-                            <div class="flex items-center gap-2">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 flex-wrap">
                                 <span class="text-sm font-medium text-text-light dark:text-text-dark">{{ event.event_type|replace('_', ' ')|title }}</span>
                                 {% if event.status == 'success' %}
                                 <span class="px-2 py-0.5 text-xs rounded bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">{{ _('Success') }}</span>
@@ -89,7 +89,13 @@
                                 {% endif %}
                             </div>
                             {% if event.message %}
-                            <p class="text-sm text-text-muted-light dark:text-text-muted-dark mt-1">{{ event.message }}</p>
+                            <p class="text-sm text-text-muted-light dark:text-text-muted-dark mt-1 break-words">{{ event.message }}</p>
+                            {% endif %}
+                            {% if event.event_metadata %}
+                            <details class="mt-2">
+                                <summary class="text-xs text-primary cursor-pointer hover:underline">{{ _('Details') }}</summary>
+                                <pre class="mt-2 text-xs bg-gray-100 dark:bg-gray-900 p-2 rounded overflow-x-auto max-h-48 overflow-y-auto">{{ event.event_metadata | tojson }}</pre>
+                            </details>
                             {% endif %}
                             <p class="text-xs text-text-muted-light dark:text-text-muted-dark mt-1">{{ event.created_at|user_datetime }}</p>
                         </div>

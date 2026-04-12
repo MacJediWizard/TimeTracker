@@ -112,6 +112,12 @@ def test_embed_facturx_xml_in_pdf_adds_cii_attachment(app):
         # Must contain the Factur-X guideline ID
         assert "urn:cen.eu:en16931:2017" in xml_content
 
+        # ZUGFeRD / Factur-X: primary invoice XML uses AFRelationship Data and text/xml
+        fs = result.attachments[FACTURX_EMBEDDED_FILENAME]
+        assert fs.obj["/AFRelationship"] == pikepdf.Name("/Data")
+        emb = fs.obj["/EF"]["/F"]
+        assert emb.get("/Subtype") == pikepdf.Name("/text/xml")
+
 
 @pytest.mark.unit
 def test_embed_facturx_xml_has_correct_xmp_metadata(app):

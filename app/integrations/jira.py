@@ -172,13 +172,19 @@ class JiraConnector(BaseConnector):
             pass
         return None
 
-    def _upsert_task_from_issue(self, issue: Dict[str, Any]) -> int:
+    def _upsert_task_from_issue(self, issue: Dict[str, Any], actor_id: int, client_id: int) -> int:
         """
         Find or create Project and Task from a single Jira issue dict.
         Reuses same mapping logic as sync_data. Returns 1 if upserted, 0 on skip/error.
         """
         from app import db
         from app.models import Project, Task
+        from app.utils.integration_sync_context import (
+            ensure_project_integration_fields,
+            find_project_by_integration_ref,
+            find_task_by_integration_ref,
+            set_task_integration_ref,
+        )
 
         issue_key = issue.get("key")
         if not issue_key:
@@ -187,51 +193,56 @@ class JiraConnector(BaseConnector):
         project_key = (issue_fields.get("project") or {}).get("key") or ""
         project_key = project_key or "Jira"
 
-        project = Project.query.filter_by(
-            user_id=self.integration.user_id, name=project_key
-        ).first()
-
+        project = find_project_by_integration_ref(client_id, "jira", project_key)
+        if not project:
+            project = Project.query.filter_by(client_id=client_id, name=project_key).first()
         if not project:
             project = Project(
                 name=project_key,
+                client_id=client_id,
                 description=f"Synced from Jira project {project_key}",
-                user_id=self.integration.user_id,
                 status="active",
             )
             db.session.add(project)
             db.session.flush()
+        ensure_project_integration_fields(
+            project,
+            source="jira",
+            ref=project_key,
+            display_name=project_key,
+            description=f"Synced from Jira project {project_key}",
+        )
 
-        task = Task.query.filter_by(project_id=project.id, name=issue_key).first()
         summary = issue_fields.get("summary") or ""
         status_name = (issue_fields.get("status") or {}).get("name") or "To Do"
         mapped_status = self._map_jira_status(status_name)
         description_text = self._extract_description_text(issue_fields)
+        desc = summary
+        if description_text:
+            desc = f"{summary}\n\n{description_text}" if summary else description_text
 
+        task = find_task_by_integration_ref(project.id, issue_key, source="jira")
         if not task:
-            task_kw = {
-                "project_id": project.id,
-                "name": issue_key,
-                "description": summary,
-                "status": mapped_status,
-            }
-            if getattr(Task, "notes", None) is not None:
-                task_kw["notes"] = description_text
-            if self.integration.user_id is not None:
-                task_kw["created_by"] = self.integration.user_id
-            task = Task(**task_kw)
+            task = Task(
+                project_id=project.id,
+                name=issue_key[:200],
+                description=desc or None,
+                status=mapped_status,
+                created_by=actor_id,
+            )
             db.session.add(task)
             db.session.flush()
         else:
-            task.description = summary
+            task.description = desc or None
             task.status = mapped_status
-            if hasattr(task, "notes"):
-                task.notes = description_text
+            task.name = issue_key[:200]
 
-        if hasattr(task, "metadata"):
-            if not task.metadata:
-                task.metadata = {}
-            task.metadata["jira_issue_key"] = issue_key
-            task.metadata["jira_issue_id"] = issue.get("id")
+        set_task_integration_ref(
+            task,
+            source="jira",
+            ref=issue_key,
+            extra={"jira_issue_id": issue.get("id")},
+        )
 
         return 1
 
@@ -242,6 +253,13 @@ class JiraConnector(BaseConnector):
         token = self.get_access_token()
         if not token:
             return {"success": False, "message": "No access token available"}
+
+        from app.utils.integration_sync_context import require_sync_context
+
+        try:
+            actor_id, client_id = require_sync_context(self.integration)
+        except ValueError as e:
+            return {"success": False, "message": str(e)}
 
         base_url = self.integration.config.get("jira_url", "https://your-domain.atlassian.net")
         api_url = f"{base_url}/rest/api/3/search"
@@ -273,7 +291,7 @@ class JiraConnector(BaseConnector):
 
             for issue in issues:
                 try:
-                    synced_count += self._upsert_task_from_issue(issue)
+                    synced_count += self._upsert_task_from_issue(issue, actor_id, client_id)
                 except Exception as e:
                     errors.append(f"Error syncing issue {issue.get('key', 'unknown')}: {str(e)}")
 
@@ -309,6 +327,13 @@ class JiraConnector(BaseConnector):
         if not token:
             return {"success": False, "message": "No access token available", "issue_key": issue_key}
 
+        from app.utils.integration_sync_context import require_sync_context
+
+        try:
+            actor_id, client_id = require_sync_context(self.integration)
+        except ValueError as e:
+            return {"success": False, "message": str(e), "issue_key": issue_key}
+
         base_url = self.integration.config.get("jira_url", "https://your-domain.atlassian.net")
         api_url = f"{base_url}/rest/api/3/issue/{issue_key}"
         fields = "summary,description,status,assignee,project,created,updated"
@@ -337,7 +362,7 @@ class JiraConnector(BaseConnector):
                 }
 
             issue = response.json()
-            self._upsert_task_from_issue(issue)
+            self._upsert_task_from_issue(issue, actor_id, client_id)
             db.session.commit()
             return {
                 "success": True,

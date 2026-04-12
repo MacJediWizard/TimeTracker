@@ -56,7 +56,7 @@
   /* Invoice / quote edit (#574): stronger neutral borders on tinted row backgrounds; skip validation states */
   #editInvoiceForm .form-input:not(.is-invalid):not(.is-valid),
   #quote-form .form-input:not(.is-invalid):not(.is-valid) {
-    @apply border-gray-400 dark:border-gray-500;
+    @apply border-gray-400 dark:border-gray-500 shadow-none;
   }
 
   /* Row already has border + optional hover shadow; drop input shadow and top margin to avoid a double line (#574 follow-up) */

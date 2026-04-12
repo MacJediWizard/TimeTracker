@@ -124,13 +124,14 @@ class QuoteTemplate(db.Model):
 
             from app.models import QuoteItem
 
-            for item_data in items:
+            for position, item_data in enumerate(items):
                 item = QuoteItem(
                     quote_id=quote.id,
                     description=item_data.get("description", ""),
                     quantity=Decimal(str(item_data.get("quantity", 1))),
                     unit_price=Decimal(str(item_data.get("unit_price", 0))),
                     unit=item_data.get("unit"),
+                    position=position,
                 )
                 db.session.add(item)
 

@@ -1,0 +1,270 @@
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const itemsContainer = document.getElementById('quote-items');
+    const expensesContainer = document.getElementById('quote-expenses');
+    const goodsContainer = document.getElementById('quote-goods');
+    const addItemBtn = document.getElementById('add-item');
+    const addExpBtn = document.getElementById('add-quote-expense');
+    const addGoodBtn = document.getElementById('add-quote-good');
+
+    const stockItems = {{ stock_items_json | safe if stock_items_json else '[]' }};
+    const warehouses = {{ warehouses_json | safe if warehouses_json else '[]' }};
+
+    function stockOptionsHtml(selectedId) {
+        let h = '<option value="">{{ _("None") }}</option>';
+        if (stockItems && Array.isArray(stockItems)) {
+            stockItems.forEach(function(si) {
+                const sel = String(si.id) === String(selectedId || '') ? ' selected' : '';
+                const desc = String(si.description || si.name || '').replace(/"/g, '&quot;');
+                h += '<option value="' + si.id + '" data-price="' + (si.default_price || 0) + '" data-unit="' + (si.unit || '') + '" data-description="' + desc + '"' + sel + '>' + si.sku + ' - ' + si.name + '</option>';
+            });
+        }
+        return h;
+    }
+    function warehouseOptionsHtml(selectedId) {
+        let h = '<option value="">{{ _("None") }}</option>';
+        if (warehouses && Array.isArray(warehouses)) {
+            warehouses.forEach(function(wh) {
+                const sel = String(wh.id) === String(selectedId || '') ? ' selected' : '';
+                h += '<option value="' + wh.id + '"' + sel + '>' + wh.code + ' - ' + wh.name + '</option>';
+            });
+        }
+        return h;
+    }
+
+    function applyItemRowLayout(row) {
+        const src = row.querySelector('.item-line-source');
+        const stockMode = src && src.value === 'stock';
+        const stockCols = row.querySelector('.item-stock-cols');
+        const descWrap = row.querySelector('.item-desc-wrap');
+        if (!stockCols || !descWrap) return;
+        if (stockMode) {
+            stockCols.classList.remove('hidden');
+            descWrap.classList.remove('md:col-span-6');
+            descWrap.classList.add('md:col-span-2');
+        } else {
+            stockCols.classList.add('hidden');
+            const hidS = row.querySelector('input[name="item_stock_item_id[]"]');
+            const hidW = row.querySelector('input[name="item_warehouse_id[]"]');
+            if (hidS) hidS.value = '';
+            if (hidW) hidW.value = '';
+            const ss = row.querySelector('.item-stock-select');
+            const ws = row.querySelector('.item-warehouse-select');
+            if (ss) ss.value = '';
+            if (ws) ws.value = '';
+            descWrap.classList.remove('md:col-span-2');
+            descWrap.classList.add('md:col-span-6');
+        }
+    }
+
+    function wireItemRow(row) {
+        const src = row.querySelector('.item-line-source');
+        if (src) {
+            src.addEventListener('change', function() {
+                applyItemRowLayout(row);
+                calculateTotals();
+            });
+        }
+        const ss = row.querySelector('.item-stock-select');
+        if (ss) {
+            ss.addEventListener('change', function() {
+                const hid = row.querySelector('input[name="item_stock_item_id[]"]');
+                if (hid) hid.value = this.value || '';
+                const opt = this.options[this.selectedIndex];
+                if (this.value && opt) {
+                    const price = parseFloat(opt.dataset.price || 0);
+                    const description = opt.dataset.description || '';
+                    const unit = opt.dataset.unit || '';
+                    const dEl = row.querySelector('.item-description');
+                    if (dEl && description && !dEl.value) dEl.value = description;
+                    const pEl = row.querySelector('.item-price');
+                    if (pEl && price > 0 && !pEl.value) pEl.value = price.toFixed(2);
+                    const uEl = row.querySelector('.item-unit');
+                    if (uEl && unit && !uEl.value) uEl.value = unit;
+                }
+                calculateTotals();
+            });
+        }
+        const ws = row.querySelector('.item-warehouse-select');
+        if (ws) {
+            ws.addEventListener('change', function() {
+                const hid = row.querySelector('input[name="item_warehouse_id[]"]');
+                if (hid) hid.value = this.value || '';
+            });
+        }
+        row.querySelector('.remove-item')?.addEventListener('click', function() {
+            row.remove();
+            calculateTotals();
+        });
+        row.querySelectorAll('[data-calc-trigger]').forEach(function(el) {
+            el.addEventListener('input', calculateTotals);
+        });
+        applyItemRowLayout(row);
+    }
+
+    function addItemRow() {
+        const row = document.createElement('div');
+        row.className = 'grid grid-cols-1 md:grid-cols-12 gap-3 p-3 rounded-lg bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/50 dark:border-blue-800/50 quote-item-row min-w-0 hover:shadow-sm transition';
+        row.innerHTML =
+            '<input type="hidden" name="item_id[]" value="">' +
+            '<input type="hidden" name="item_stock_item_id[]" value="">' +
+            '<input type="hidden" name="item_warehouse_id[]" value="">' +
+            '<div class="md:col-span-2 min-w-0">' +
+            '<select name="item_line_source[]" class="form-input item-line-source text-sm">' +
+            '<option value="manual" selected>{{ _("Manual entry") }}</option>' +
+            '<option value="stock">{{ _("From stock") }}</option></select></div>' +
+            '<div class="item-stock-cols md:col-span-4 min-w-0 hidden grid grid-cols-1 md:grid-cols-2 gap-3">' +
+            '<select class="form-input item-stock-select text-sm">' + stockOptionsHtml() + '</select>' +
+            '<select class="form-input item-warehouse-select text-sm">' + warehouseOptionsHtml() + '</select></div>' +
+            '<div class="item-desc-wrap md:col-span-6 min-w-0">' +
+            '<input type="text" name="item_description[]" class="w-full form-input item-description" placeholder="{{ _("Item description") }}" data-calc-trigger></div>' +
+            '<input type="number" name="item_quantity[]" value="1" step="0.01" min="0" class="md:col-span-1 min-w-0 form-input item-quantity" data-calc-trigger>' +
+            '<input type="text" name="item_unit[]" class="md:col-span-1 min-w-0 form-input item-unit" placeholder="{{ _("Unit") }}">' +
+            '<input type="number" name="item_price[]" step="0.01" min="0" class="md:col-span-1 min-w-0 form-input item-price" data-calc-trigger>' +
+            '<div class="md:col-span-1 min-w-0 flex items-center justify-between gap-2">' +
+            '<span class="font-medium item-total">0.00</span>' +
+            '<button type="button" class="remove-item shrink-0 bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300 px-3 py-2 rounded hover:bg-rose-200" title="{{ _("Remove item") }}"><i class="fas fa-trash"></i></button></div>';
+        itemsContainer.appendChild(row);
+        wireItemRow(row);
+        calculateTotals();
+    }
+
+    const qeCategoryOptions =
+        '<option value="travel">{{ _("Travel") }}</option>' +
+        '<option value="meals">{{ _("Meals") }}</option>' +
+        '<option value="supplies">{{ _("Supplies") }}</option>' +
+        '<option value="services">{{ _("Services") }}</option>' +
+        '<option value="equipment">{{ _("Equipment") }}</option>' +
+        '<option value="other" selected>{{ _("Other") }}</option>';
+
+    function addExpenseRow() {
+        const row = document.createElement('div');
+        row.className = 'grid grid-cols-1 md:grid-cols-12 gap-3 p-3 rounded-lg bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-800/50 quote-expense-row min-w-0 hover:shadow-sm transition';
+        row.innerHTML =
+            '<input type="hidden" name="qe_id[]" value="">' +
+            '<div class="md:col-span-2 min-w-0"><input type="text" name="qe_title[]" class="form-input" placeholder="{{ _("Title") }}" data-calc-trigger></div>' +
+            '<div class="md:col-span-3 min-w-0"><input type="text" name="qe_description[]" class="form-input" placeholder="{{ _("Description") }}" data-calc-trigger></div>' +
+            '<div class="md:col-span-2 min-w-0"><select name="qe_category[]" class="form-input">' + qeCategoryOptions + '</select></div>' +
+            '<div class="md:col-span-2 min-w-0"><input type="number" name="qe_amount[]" class="form-input qe-amount" step="0.01" min="0" placeholder="0" data-calc-trigger></div>' +
+            '<div class="md:col-span-2 min-w-0"><input type="date" name="qe_date[]" class="form-input user-date-input text-sm"></div>' +
+            '<div class="md:col-span-1 min-w-0 flex items-center justify-center">' +
+            '<button type="button" class="remove-quote-expense bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300 px-3 py-2 rounded hover:bg-rose-200" title="{{ _("Remove") }}"><i class="fas fa-trash"></i></button></div>';
+        expensesContainer.appendChild(row);
+        row.querySelector('.remove-quote-expense')?.addEventListener('click', function() {
+            row.remove();
+            calculateTotals();
+        });
+        row.querySelectorAll('[data-calc-trigger]').forEach(function(el) {
+            el.addEventListener('input', calculateTotals);
+        });
+        calculateTotals();
+    }
+
+    const qgCategoryOptions =
+        '<option value="product">{{ _("Product") }}</option>' +
+        '<option value="service">{{ _("Service") }}</option>' +
+        '<option value="material">{{ _("Material") }}</option>' +
+        '<option value="license">{{ _("License") }}</option>' +
+        '<option value="other" selected>{{ _("Other") }}</option>';
+
+    function addGoodRow() {
+        const row = document.createElement('div');
+        row.className = 'grid grid-cols-1 md:grid-cols-12 gap-3 p-3 rounded-lg bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-800/50 quote-good-row min-w-0 hover:shadow-sm transition';
+        row.innerHTML =
+            '<input type="hidden" name="qg_id[]" value="">' +
+            '<div class="md:col-span-2 min-w-0"><input type="text" name="qg_name[]" class="form-input" placeholder="{{ _("Name") }}" data-calc-trigger></div>' +
+            '<div class="md:col-span-2 min-w-0"><input type="text" name="qg_description[]" class="form-input" placeholder="{{ _("Description") }}" data-calc-trigger></div>' +
+            '<div class="md:col-span-2 min-w-0"><select name="qg_category[]" class="form-input">' + qgCategoryOptions + '</select></div>' +
+            '<div class="md:col-span-2 min-w-0"><input type="number" name="qg_quantity[]" class="form-input qg-quantity" value="1" step="0.01" min="0" data-calc-trigger></div>' +
+            '<div class="md:col-span-2 min-w-0"><input type="number" name="qg_unit_price[]" class="form-input qg-price" step="0.01" min="0" data-calc-trigger></div>' +
+            '<div class="md:col-span-1 min-w-0"><input type="text" name="qg_sku[]" class="form-input text-xs" placeholder="{{ _("SKU") }}"></div>' +
+            '<div class="md:col-span-1 min-w-0 flex items-center justify-center">' +
+            '<button type="button" class="remove-quote-good bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300 px-3 py-2 rounded hover:bg-rose-200" title="{{ _("Remove") }}"><i class="fas fa-trash"></i></button></div>';
+        goodsContainer.appendChild(row);
+        row.querySelector('.remove-quote-good')?.addEventListener('click', function() {
+            row.remove();
+            calculateTotals();
+        });
+        row.querySelectorAll('[data-calc-trigger]').forEach(function(el) {
+            el.addEventListener('input', calculateTotals);
+        });
+        calculateTotals();
+    }
+
+    function calculateTotals() {
+        let itemsTotal = 0;
+        let itemsCount = 0;
+        document.querySelectorAll('.quote-item-row').forEach(function(row) {
+            const qty = parseFloat(row.querySelector('.item-quantity')?.value || 0);
+            const price = parseFloat(row.querySelector('.item-price')?.value || 0);
+            const total = qty * price;
+            const totalEl = row.querySelector('.item-total');
+            if (totalEl) totalEl.textContent = total.toFixed(2);
+            if (qty > 0) {
+                itemsTotal += total;
+                const desc = row.querySelector('.item-description')?.value?.trim();
+                const sid = row.querySelector('input[name="item_stock_item_id[]"]')?.value;
+                if (desc || sid) itemsCount++;
+            }
+        });
+
+        let expTotal = 0;
+        let expCount = 0;
+        document.querySelectorAll('.quote-expense-row').forEach(function(row) {
+            const amt = parseFloat(row.querySelector('.qe-amount')?.value || 0);
+            const t = row.querySelector('[name="qe_title[]"]')?.value?.trim();
+            const d = row.querySelector('[name="qe_description[]"]')?.value?.trim();
+            if (amt > 0) expTotal += amt;
+            if (amt > 0 || t || d) expCount++;
+        });
+
+        let goodsTotal = 0;
+        let goodsCount = 0;
+        document.querySelectorAll('.quote-good-row').forEach(function(row) {
+            const qty = parseFloat(row.querySelector('.qg-quantity')?.value || 0);
+            const price = parseFloat(row.querySelector('.qg-price')?.value || 0);
+            const nm = row.querySelector('[name="qg_name[]"]')?.value?.trim();
+            const ds = row.querySelector('[name="qg_description[]"]')?.value?.trim();
+            if (qty > 0 && price > 0) goodsTotal += qty * price;
+            if ((qty > 0 && price > 0) || nm || ds) goodsCount++;
+        });
+
+        const grand = itemsTotal + expTotal + goodsTotal;
+        const el = (id) => document.getElementById(id);
+        if (el('quote-items-section-total')) el('quote-items-section-total').textContent = itemsTotal.toFixed(2);
+        if (el('quote-expenses-section-total')) el('quote-expenses-section-total').textContent = expTotal.toFixed(2);
+        if (el('quote-goods-section-total')) el('quote-goods-section-total').textContent = goodsTotal.toFixed(2);
+        if (el('quote-all-lines-subtotal')) el('quote-all-lines-subtotal').textContent = grand.toFixed(2);
+        if (el('items-count')) el('items-count').textContent = itemsCount;
+        if (el('quote-expenses-count')) el('quote-expenses-count').textContent = expCount;
+        if (el('quote-goods-count')) el('quote-goods-count').textContent = goodsCount;
+    }
+
+    addItemBtn?.addEventListener('click', addItemRow);
+    addExpBtn?.addEventListener('click', addExpenseRow);
+    addGoodBtn?.addEventListener('click', addGoodRow);
+
+    document.querySelectorAll('.quote-item-row').forEach(wireItemRow);
+    document.querySelectorAll('.quote-expense-row').forEach(function(row) {
+        row.querySelector('.remove-quote-expense')?.addEventListener('click', function() {
+            row.remove();
+            calculateTotals();
+        });
+        row.querySelectorAll('[data-calc-trigger]').forEach(function(el) {
+            el.addEventListener('input', calculateTotals);
+        });
+    });
+    document.querySelectorAll('.quote-good-row').forEach(function(row) {
+        row.querySelector('.remove-quote-good')?.addEventListener('click', function() {
+            row.remove();
+            calculateTotals();
+        });
+        row.querySelectorAll('[data-calc-trigger]').forEach(function(el) {
+            el.addEventListener('input', calculateTotals);
+        });
+    });
+
+    document.getElementById('tax_rate')?.addEventListener('input', calculateTotals);
+    calculateTotals();
+});
+</script>

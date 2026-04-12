@@ -128,7 +128,7 @@ def import_new_source():
 
 ### API Usage Examples
 
-**Import CSV via API:**
+**Import CSV via session (web UI session cookie):**
 ```python
 import requests
 
@@ -140,6 +140,22 @@ response = requests.post(
 )
 print(response.json())
 ```
+
+**Import CSV via API v1 (API token):**
+
+```python
+import requests
+
+files = {'file': open('time_entries.csv', 'rb')}
+response = requests.post(
+    'https://your-domain.com/api/v1/time-entries/import-csv',
+    files=files,
+    headers={'Authorization': 'Bearer YOUR_API_TOKEN'},
+)
+print(response.json())
+```
+
+Requires a token with scope **`write:time_entries`**. See [REST API documentation](../api/REST_API.md#import-time-entries-csv) for alternate bodies (JSON `csv` / `data` or raw CSV).
 
 **Export GDPR Data:**
 ```python

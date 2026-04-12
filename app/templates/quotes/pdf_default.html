@@ -101,7 +101,11 @@
                 <tbody>
                     {% for item in quote.items %}
                     <tr>
-                        <td>{{ item.description|e }}</td>
+                        <td>
+                            {% if item.display_name %}{{ item.display_name|e }}{% if item.description and item.description != item.display_name and item.description != '-' %} — {{ item.description|e }}{% endif %}{% else %}{{ item.description|e }}{% endif %}
+                            {% if item.line_kind == 'expense' and item.category %} ({{ item.category|e }}){% endif %}
+                            {% if item.line_kind == 'good' and item.sku %} [{{ _('SKU') }}: {{ item.sku|e }}]{% endif %}
+                        </td>
                         <td class="num">{{ '%.2f' % item.quantity }} {% if item.unit %}{{ item.unit }}{% endif %}</td>
                         <td class="num">{{ format_money(item.unit_price) }}</td>
                         <td class="num">{{ format_money(item.total_amount) }}</td>

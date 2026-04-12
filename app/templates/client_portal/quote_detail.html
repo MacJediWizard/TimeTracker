@@ -75,7 +75,16 @@
                 <tbody>
                     {% for item in quote.items %}
                     <tr class="border-b border-border-light dark:border-border-dark">
-                        <td class="p-3" data-label="{{ _('Description') }}">{{ item.description }}</td>
+                        <td class="p-3" data-label="{{ _('Description') }}">
+                            {% if item.display_name %}
+                            <span class="font-medium">{{ item.display_name }}</span>
+                            {% if item.description and item.description != item.display_name and item.description != '-' %}<br><span class="text-sm opacity-80">{{ item.description }}</span>{% endif %}
+                            {% else %}
+                            {{ item.description }}
+                            {% endif %}
+                            {% if item.line_kind == 'expense' and item.category %}<br><span class="text-xs opacity-70">{{ item.category }}</span>{% endif %}
+                            {% if item.line_kind == 'good' and item.sku %}<br><span class="text-xs opacity-70">{{ _('SKU') }}: {{ item.sku }}</span>{% endif %}
+                        </td>
                         <td class="p-3" data-label="{{ _('Quantity') }}">{{ "%.2f"|format(item.quantity) }} {% if item.unit %}{{ item.unit }}{% endif %}</td>
                         <td class="p-3" data-label="{{ _('Unit Price') }}">{{ "%.2f"|format(item.unit_price) }} {{ quote.currency_code }}</td>
                         <td class="p-3 font-medium" data-label="{{ _('Total') }}">{{ "%.2f"|format(item.total_amount) }} {{ quote.currency_code }}</td>

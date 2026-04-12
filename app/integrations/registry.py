@@ -10,6 +10,7 @@ from app.integrations.github import GitHubConnector
 from app.integrations.gitlab import GitLabConnector
 from app.integrations.google_calendar import GoogleCalendarConnector
 from app.integrations.jira import JiraConnector
+from app.integrations.linear import LinearConnector
 from app.integrations.microsoft_teams import MicrosoftTeamsConnector
 from app.integrations.outlook_calendar import OutlookCalendarConnector
 from app.integrations.quickbooks import QuickBooksConnector
@@ -22,6 +23,7 @@ from app.services.integration_service import IntegrationService
 def register_connectors():
     """Register all available connectors."""
     IntegrationService.register_connector("jira", JiraConnector)
+    IntegrationService.register_connector("linear", LinearConnector)
     IntegrationService.register_connector("slack", SlackConnector)
     IntegrationService.register_connector("github", GitHubConnector)
     IntegrationService.register_connector("google_calendar", GoogleCalendarConnector)

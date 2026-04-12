@@ -1,0 +1,11 @@
+{
+  "product_scope": "TimeTracker (time tracking / billing). Energy stacks (e.g. Smappee, Modbus) are not in this repository.",
+  "description": "Example JSON body for a Zapier Catch Hook (or custom webhook) when TimeTracker emits time_entry.created.",
+  "event": "time_entry.created",
+  "payload_shape": {
+    "entry_id": 12345,
+    "user_id": 1,
+    "project_id": 42
+  },
+  "notes": "Configure an outbound webhook in TimeTracker for event type time_entry.created; Zapier's Webhooks by Zapier trigger can receive the same JSON your app sends."
+}

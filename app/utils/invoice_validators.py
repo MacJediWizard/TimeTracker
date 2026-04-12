@@ -226,6 +226,11 @@ def validate_cii_en16931(cii_xml: str) -> Tuple[bool, List[str]]:
             seller_name = seller.find("ram:Name", ns)
             if seller_name is None or not (seller_name.text or "").strip():
                 issues.append("SellerTradeParty missing Name")
+            seller_addr = seller.find("ram:PostalTradeAddress", ns)
+            if seller_addr is not None:
+                sc = seller_addr.find("ram:CountryID", ns)
+                if sc is None or not (sc.text or "").strip():
+                    issues.append("Seller postal address present but CountryID (BT-55) is missing")
 
         buyer = agreement.find("ram:BuyerTradeParty", ns)
         if buyer is None:
@@ -234,6 +239,11 @@ def validate_cii_en16931(cii_xml: str) -> Tuple[bool, List[str]]:
             buyer_name = buyer.find("ram:Name", ns)
             if buyer_name is None or not (buyer_name.text or "").strip():
                 issues.append("BuyerTradeParty missing Name")
+            buyer_addr = buyer.find("ram:PostalTradeAddress", ns)
+            if buyer_addr is not None:
+                bc = buyer_addr.find("ram:CountryID", ns)
+                if bc is None or not (bc.text or "").strip():
+                    issues.append("Buyer postal address present but CountryID is missing")
 
     # Settlement
     settlement = txn.find("ram:ApplicableHeaderTradeSettlement", ns)
@@ -246,10 +256,25 @@ def validate_cii_en16931(cii_xml: str) -> Tuple[bool, List[str]]:
         if summation is None:
             issues.append("Missing SpecifiedTradeSettlementHeaderMonetarySummation")
         else:
-            if summation.find("ram:GrandTotalAmount", ns) is None:
+            gta = summation.find("ram:GrandTotalAmount", ns)
+            if gta is None:
                 issues.append("Missing GrandTotalAmount")
+            elif not (gta.get("currencyID") or "").strip():
+                issues.append("GrandTotalAmount missing currencyID attribute")
             if summation.find("ram:DuePayableAmount", ns) is None:
                 issues.append("Missing DuePayableAmount")
+            else:
+                dpa = summation.find("ram:DuePayableAmount", ns)
+                if dpa is not None and not (dpa.get("currencyID") or "").strip():
+                    issues.append("DuePayableAmount missing currencyID attribute")
+
+        header_tax = settlement.find("ram:ApplicableTradeTax", ns)
+        if header_tax is not None:
+            cat = header_tax.find("ram:CategoryCode", ns)
+            cat_txt = (cat.text or "").strip() if cat is not None else ""
+            if cat_txt == "Z":
+                if header_tax.find("ram:ExemptionReason", ns) is None:
+                    issues.append("CategoryCode Z requires ExemptionReason (BT-120)")
 
     # Line items
     lines = txn.findall("ram:IncludedSupplyChainTradeLineItem", ns)

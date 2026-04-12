@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:timetracker_mobile/core/config/app_config.dart';
@@ -9,6 +10,9 @@ import 'package:timetracker_mobile/utils/auth/auth_service.dart';
 class SyncUseCase {
   final Connectivity _connectivity = Connectivity();
   Timer? _syncTimer;
+
+  /// Last sync error message for UI or support (cleared on successful sync start).
+  static String? lastError;
 
   SyncUseCase();
 
@@ -40,11 +44,17 @@ class SyncUseCase {
 
   // Full sync: process queue and sync from server
   Future<bool> sync() async {
+    lastError = null;
     try {
       final serverUrl = await AppConfig.getServerUrl();
       final token = await AuthService.getToken();
 
       if (serverUrl == null || serverUrl.isEmpty || token == null || token.isEmpty) {
+        lastError = 'Missing server URL or auth token';
+        developer.log(
+          'Sync skipped: $lastError',
+          name: 'SyncUseCase',
+        );
         return false;
       }
 
@@ -56,7 +66,14 @@ class SyncUseCase {
       await syncService.syncAll();
 
       return true;
-    } catch (_) {
+    } catch (e, st) {
+      lastError = e.toString();
+      developer.log(
+        'Sync failed: $e',
+        name: 'SyncUseCase',
+        error: e,
+        stackTrace: st,
+      );
       return false;
     }
   }

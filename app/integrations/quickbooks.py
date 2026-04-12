@@ -109,8 +109,8 @@ class QuickBooksConnector(BaseConnector):
                 )
                 if company_response:
                     company_info = company_response.get("CompanyInfo", {})
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("QuickBooks company info fetch after OAuth failed (optional): %s", e)
 
         return {
             "access_token": data.get("access_token"),

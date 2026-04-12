@@ -1,5 +1,6 @@
 """Tests for PDF/A-3 conversion with ICC profile embedding."""
 import io
+import os
 
 import pytest
 
@@ -141,3 +142,33 @@ def test_convert_to_pdfa3_returns_error_on_invalid_pdf(app):
     out_bytes, err = convert_to_pdfa3(b"not a pdf")
     assert err is not None
     assert out_bytes == b"not a pdf"
+
+
+@pytest.mark.unit
+def test_bundled_srgb_icc_file_present():
+    """Shipped nano sRGB profile is on disk for PDF/A DestOutputProfile."""
+    from app.utils.pdfa3 import _BUNDLED_SRGB_ICC
+
+    assert _BUNDLED_SRGB_ICC.is_file(), f"Missing bundled ICC: {_BUNDLED_SRGB_ICC}"
+
+
+@pytest.mark.unit
+@pytest.mark.skipif(not pikepdf, reason="pikepdf not installed")
+def test_verapdf_when_invoice_verapdf_path_configured(app):
+    """Optional: full minimal PDF → PDF/A-3 pipeline checked with veraPDF if path is set."""
+    from app.utils.invoice_validators import validate_pdfa_verapdf
+    from app.utils.pdfa3 import convert_to_pdfa3
+
+    verapdf_path = (os.environ.get("INVOICE_VERAPDF_PATH") or "").strip()
+    if not verapdf_path or not os.path.isfile(verapdf_path):
+        pytest.skip("INVOICE_VERAPDF_PATH not set (optional CI/local check)")
+
+    pdf = pikepdf.Pdf.new()
+    pdf.add_blank_page(page_size=(595, 842))
+    buf = io.BytesIO()
+    pdf.save(buf)
+    pdf.close()
+    out, err = convert_to_pdfa3(buf.getvalue())
+    assert err is None
+    passed, msgs = validate_pdfa_verapdf(out, verapdf_path=verapdf_path)
+    assert passed is True, f"veraPDF reported: {msgs}"

@@ -9,8 +9,9 @@ Standards compliance:
 - The embedded XML uses UN/CEFACT CII format (NOT UBL). This is the
   correct payload format for Factur-X 1.0 / ZUGFeRD 2.x.
 - Peppol transport uses UBL (see app/integrations/peppol.py).
-- The file is attached as an Associated File with relationship "Alternative"
-  and Factur-X XMP metadata is written so validators recognize the document.
+- The file is attached as an Associated File with relationship "Data"
+  (primary machine-readable invoice) and Factur-X XMP metadata is written so
+  validators recognize the document.
 """
 
 from __future__ import annotations
@@ -69,6 +70,8 @@ def _get_buyer_party(invoice: Any) -> CIIParty:
         endpoint_id = (client.get_custom_field("peppol_endpoint_id", "") or "").strip() or None
         scheme_id = (client.get_custom_field("peppol_scheme_id", "") or "").strip() or None
         country = (client.get_custom_field("peppol_country", "") or "").strip() or None
+        if not country:
+            country = (client.get_custom_field("country", "") or client.get_custom_field("country_code", "") or "").strip() or None
         name = (getattr(client, "name", None) or getattr(invoice, "client_name", "") or "Customer").strip()
         tax_id = (client.get_custom_field("vat_id", "") or client.get_custom_field("tax_id", "") or "").strip() or None
         address_line = (
@@ -159,7 +162,7 @@ def embed_zugferd_xml_in_pdf(pdf_bytes: bytes, invoice: Any, settings: Any) -> T
     Embed Factur-X CII XML into the given invoice PDF bytes.
 
     Builds seller/buyer from settings and invoice (best-effort), generates CII
-    XML, attaches it as factur-x.xml with AF relationship "Alternative", adds
+    XML, attaches it as factur-x.xml with AF relationship "Data", adds
     Factur-X XMP RDF, and returns the new PDF bytes.
 
     Returns:
@@ -184,15 +187,15 @@ def embed_zugferd_xml_in_pdf(pdf_bytes: bytes, invoice: Any, settings: Any) -> T
         try:
             from pikepdf import Name
 
-            relationship = Name("/Alternative")
+            relationship = Name("/Data")
         except ImportError:
-            relationship = "/Alternative"
+            relationship = "/Data"
         try:
             filespec = AttachedFileSpec(
                 pdf,
                 cii_bytes,
                 filename=FACTURX_EMBEDDED_FILENAME,
-                mime_type="application/xml",
+                mime_type="text/xml",
                 relationship=relationship,
             )
         except TypeError:
@@ -200,7 +203,7 @@ def embed_zugferd_xml_in_pdf(pdf_bytes: bytes, invoice: Any, settings: Any) -> T
                 tmp.write(cii_bytes)
                 tmp_path = tmp.name
             try:
-                filespec = AttachedFileSpec.from_filepath(pdf, tmp_path, relationship="/Alternative")
+                filespec = AttachedFileSpec.from_filepath(pdf, tmp_path, relationship="/Data")
             finally:
                 try:
                     os.unlink(tmp_path)

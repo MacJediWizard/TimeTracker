@@ -1,4 +1,5 @@
 from .activity import Activity
+from .api_idempotency_key import ApiIdempotencyKey
 from .api_token import ApiToken
 from .audit_log import AuditLog
 from .budget_alert import BudgetAlert
@@ -132,6 +133,7 @@ __all__ = [
     "Expense",
     "Permission",
     "Role",
+    "ApiIdempotencyKey",
     "ApiToken",
     "CalendarEvent",
     "BudgetAlert",

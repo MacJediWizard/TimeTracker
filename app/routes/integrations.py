@@ -466,6 +466,34 @@ def manage_integration(provider):
             else:
                 flash(_("Failed to update credentials."), "error")
 
+        elif request.form.get("action") == "update_linear_api_key":
+            if provider != "linear":
+                flash(_("Invalid action for this integration."), "error")
+                return redirect(url_for("integrations.manage_integration", provider=provider))
+            if not integration:
+                flash(_("Integration not found."), "error")
+                return redirect(url_for("integrations.manage_integration", provider=provider))
+            api_key = request.form.get("linear_api_key", "").strip()
+            if not api_key:
+                flash(_("Linear API key is required."), "error")
+                return redirect(url_for("integrations.manage_integration", provider=provider))
+            result = service.save_credentials(
+                integration_id=integration.id,
+                access_token=api_key,
+                refresh_token=None,
+                expires_at=None,
+                token_type="Bearer",
+                scope="read",
+                extra_data={"auth_type": "api_key"},
+            )
+            if result.get("success"):
+                integration.is_active = True
+                safe_commit("linear_api_key_saved", {"integration_id": integration.id})
+                flash(_("Linear API key saved. Use Sync to import issues as tasks."), "success")
+            else:
+                flash(result.get("message", _("Could not save API key.")), "error")
+            return redirect(url_for("integrations.manage_integration", provider=provider))
+
         # Check if this is a CalDAV credential update (non-OAuth)
         elif request.form.get("action") == "update_caldav_credentials":
             # CalDAV uses username/password, not OAuth
@@ -747,7 +775,7 @@ def view_integration(integration_id):
     recent_events = (
         IntegrationEvent.query.filter_by(integration_id=integration_id)
         .order_by(IntegrationEvent.created_at.desc())
-        .limit(20)
+        .limit(50)
         .all()
     )
 
@@ -879,18 +907,20 @@ def sync_integration(integration_id):
         return redirect(url_for("integrations.view_integration", integration_id=integration_id))
 
     try:
+        from app.utils.integration_sync_context import sync_result_item_count
+        from datetime import datetime
+
         sync_result = connector.sync_data()
 
         # Update integration status
-        from datetime import datetime
-
         integration.last_sync_at = datetime.utcnow()
         if sync_result.get("success"):
             integration.last_sync_status = "success"
             integration.last_error = None
             message = sync_result.get("message", "Sync completed successfully.")
-            if sync_result.get("synced_count"):
-                message += f" Synced {sync_result['synced_count']} items."
+            n = sync_result_item_count(sync_result)
+            if n:
+                message += f" Synced {n} items."
             flash(_("Sync completed successfully. %(details)s", details=message), "success")
         else:
             integration.last_sync_status = "error"
@@ -898,16 +928,13 @@ def sync_integration(integration_id):
             flash(_("Sync failed: %(message)s", message=sync_result.get("message", "Unknown error")), "error")
 
         # Log sync event
+        _n = sync_result_item_count(sync_result)
         service._log_event(
             integration_id,
             "sync",
             sync_result.get("success", False),
             sync_result.get("message"),
-            (
-                {"synced_count": sync_result.get("synced_count")}
-                if sync_result.get("success") and sync_result.get("synced_count")
-                else None
-            ),
+            ({"synced_count": _n, "synced_items": _n} if sync_result.get("success") and _n else None),
         )
 
         if not safe_commit("update_integration_sync_status", {"integration_id": integration_id}):

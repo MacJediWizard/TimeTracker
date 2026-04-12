@@ -101,6 +101,7 @@ class TestQuoteInventoryIntegration:
                 "item_quantity[]": ["5"],
                 "item_price[]": ["25.00"],
                 "item_unit[]": ["pcs"],
+                "item_line_source[]": ["stock"],
                 "item_stock_item_id[]": [str(test_stock_item.id)],
                 "item_warehouse_id[]": [str(test_warehouse.id)],
             },
@@ -114,11 +115,53 @@ class TestQuoteInventoryIntegration:
         assert quote is not None
 
         # Check quote item has stock_item_id
-        quote_item = quote.items.first()
+        assert len(quote.items) >= 1
+        quote_item = quote.items[0]
         assert quote_item is not None
         assert quote_item.stock_item_id == test_stock_item.id
         assert quote_item.warehouse_id == test_warehouse.id
         assert quote_item.is_stock_item is True
+
+    def test_quote_create_expense_and_good_lines(self, client, test_user, test_client):
+        """Quote form posts costs + extra goods as separate line_kind rows (#585)."""
+        with client.session_transaction() as sess:
+            sess["_user_id"] = str(test_user.id)
+
+        response = client.post(
+            url_for("quotes.create_quote"),
+            data={
+                "client_id": test_client.id,
+                "title": "Mixed quote lines",
+                "tax_rate": "0",
+                "currency_code": "EUR",
+                "qe_title[]": ["Trip"],
+                "qe_description[]": ["Client visit"],
+                "qe_category[]": ["travel"],
+                "qe_amount[]": ["99.50"],
+                "qe_date[]": ["2026-04-01"],
+                "qg_name[]": ["License pack"],
+                "qg_description[]": [""],
+                "qg_category[]": ["license"],
+                "qg_quantity[]": ["2"],
+                "qg_unit_price[]": ["25"],
+                "qg_sku[]": ["L-1"],
+            },
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        quote = Quote.query.filter_by(title="Mixed quote lines").first()
+        assert quote is not None
+        kinds = {i.line_kind for i in quote.items}
+        assert "expense" in kinds
+        assert "good" in kinds
+        exp = next(i for i in quote.items if i.line_kind == "expense")
+        assert exp.display_name == "Trip"
+        assert exp.unit_price == Decimal("99.50")
+        assert exp.quantity == Decimal("1")
+        good = next(i for i in quote.items if i.line_kind == "good")
+        assert good.display_name == "License pack"
+        assert good.sku == "L-1"
+        assert good.total_amount == Decimal("50.00")
 
     def test_quote_send_reserves_stock(
         self, client, test_user, test_client, test_stock_item, test_warehouse, test_stock_with_quantity

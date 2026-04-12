@@ -48,65 +48,185 @@
             </div>
         </div>
 
-        <!-- Quote Items Section -->
+        <!-- Line items (manual or from stock — issue #585) -->
         <div class="mb-8">
             <div class="flex items-center justify-between mb-4 pb-2 border-b border-border-light dark:border-border-dark">
-                <h2 class="text-xl font-semibold flex items-center">
-                    <i class="fas fa-list mr-2 text-primary"></i>{{ _('Quote Items') }}
-                    <span id="items-count" class="ml-2 px-2 py-0.5 text-xs bg-primary/10 text-primary rounded-full">{{ quote.items|length if quote.items else 0 }}</span>
-                </h2>
-                <button type="button" id="add-item" class="bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90 transition shadow-sm">
-                    <i class="fas fa-plus mr-2"></i>{{ _('Add Item') }}
+                <div>
+                    <h2 class="text-xl font-semibold flex items-center">
+                        <i class="fas fa-list mr-2 text-blue-600"></i>{{ _('Quote line items') }}
+                        <span id="items-count" class="ml-2 px-2 py-0.5 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full">0</span>
+                    </h2>
+                    <p class="text-sm text-text-muted-light dark:text-text-muted-dark mt-1">{{ _('Services, labor, and catalog lines') }}</p>
+                </div>
+                <button type="button" id="add-item" class="btn btn-primary shadow-sm">
+                    <i class="fas fa-plus mr-2"></i>{{ _('Add line') }}
                 </button>
             </div>
-            
-            <!-- Items header (desktop) -->
             <div class="hidden md:grid md:grid-cols-12 gap-3 mb-2 px-3 text-xs font-semibold text-text-muted-light dark:text-text-muted-dark uppercase">
-                <div class="md:col-span-2">{{ _('Stock Item') }}</div>
-                <div class="md:col-span-2">{{ _('Warehouse') }}</div>
+                <div class="md:col-span-2">{{ _('Line type') }}</div>
+                <div class="md:col-span-4 item-stock-header">{{ _('Stock') }} / {{ _('Warehouse') }}</div>
                 <div class="md:col-span-2">{{ _('Description') }}</div>
-                <div class="md:col-span-1">{{ _('Quantity') }}</div>
+                <div class="md:col-span-1">{{ _('Qty') }}</div>
                 <div class="md:col-span-1">{{ _('Unit') }}</div>
-                <div class="md:col-span-2">{{ _('Unit Price') }}</div>
+                <div class="md:col-span-1">{{ _('Price') }}</div>
                 <div class="md:col-span-1">{{ _('Total') }}</div>
-                <div class="md:col-span-1 text-center">{{ _('Action') }}</div>
             </div>
-            
             <div id="quote-items" class="space-y-2">
-                {% for item in quote.items %}
-                <div class="grid grid-cols-1 md:grid-cols-12 gap-3 p-3 rounded-lg bg-primary/5 border border-primary/20 quote-item-row min-w-0 hover:shadow-sm transition">
+                {% for item in quote.items if (item.line_kind or 'item') == 'item' %}
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-3 p-3 rounded-lg bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/50 dark:border-blue-800/50 quote-item-row min-w-0 hover:shadow-sm transition">
                     <input type="hidden" name="item_id[]" value="{{ item.id }}">
                     <input type="hidden" name="item_stock_item_id[]" value="{{ item.stock_item_id if item.stock_item_id else '' }}">
                     <input type="hidden" name="item_warehouse_id[]" value="{{ item.warehouse_id if item.warehouse_id else '' }}">
-                    <select class="md:col-span-2 min-w-0 form-input item-stock-select text-sm" title="{{ _('Select Stock Item') }}">
-                        <option value="">{{ _('None') }}</option>
-                        {% for stock_item in stock_items %}
-                        <option value="{{ stock_item.id }}" data-price="{{ stock_item.default_price or 0 }}" data-unit="{{ stock_item.unit }}" data-description="{{ stock_item.name }}" {% if item.stock_item_id == stock_item.id %}selected{% endif %}>{{ stock_item.sku }} - {{ stock_item.name }}</option>
-                        {% endfor %}
-                    </select>
-                    <select class="md:col-span-2 min-w-0 form-input item-warehouse-select text-sm" title="{{ _('Select Warehouse') }}">
-                        <option value="">{{ _('None') }}</option>
-                        {% for warehouse in warehouses %}
-                        <option value="{{ warehouse.id }}" {% if item.warehouse_id == warehouse.id %}selected{% endif %}>{{ warehouse.code }} - {{ warehouse.name }}</option>
-                        {% endfor %}
-                    </select>
-                    <input type="text" name="item_description[]" placeholder="{{ _('Item description') }}" value="{{ item.description }}" class="md:col-span-2 min-w-0 form-input item-description" data-calc-trigger>
+                    <div class="md:col-span-2 min-w-0">
+                        <select name="item_line_source[]" class="form-input item-line-source text-sm" title="{{ _('Line type') }}">
+                            <option value="manual" {% if not item.stock_item_id %}selected{% endif %}>{{ _('Manual entry') }}</option>
+                            <option value="stock" {% if item.stock_item_id %}selected{% endif %}>{{ _('From stock') }}</option>
+                        </select>
+                    </div>
+                    <div class="item-stock-cols md:col-span-4 min-w-0 grid grid-cols-1 md:grid-cols-2 gap-3 {% if not item.stock_item_id %}hidden{% endif %}">
+                        <select class="form-input item-stock-select text-sm" title="{{ _('Select Stock Item') }}">
+                            <option value="">{{ _('None') }}</option>
+                            {% for stock_item in stock_items %}
+                            <option value="{{ stock_item.id }}" data-price="{{ stock_item.default_price or 0 }}" data-unit="{{ stock_item.unit or '' }}" data-description="{{ stock_item.name }}" {% if item.stock_item_id == stock_item.id %}selected{% endif %}>{{ stock_item.sku }} - {{ stock_item.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <select class="form-input item-warehouse-select text-sm" title="{{ _('Select Warehouse') }}">
+                            <option value="">{{ _('None') }}</option>
+                            {% for warehouse in warehouses %}
+                            <option value="{{ warehouse.id }}" {% if item.warehouse_id == warehouse.id %}selected{% endif %}>{{ warehouse.code }} - {{ warehouse.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="item-desc-wrap md:col-span-2 min-w-0 {% if not item.stock_item_id %}md:col-span-6{% endif %}">
+                        <input type="text" name="item_description[]" placeholder="{{ _('Item description') }}" value="{{ item.description }}" class="w-full form-input item-description" data-calc-trigger>
+                    </div>
                     <input type="number" name="item_quantity[]" placeholder="{{ _('Qty') }}" value="{{ item.quantity }}" step="0.01" min="0" class="md:col-span-1 min-w-0 form-input item-quantity" data-calc-trigger>
-                    <input type="text" name="item_unit[]" placeholder="{{ _('Unit') }}" value="{{ item.unit or '' }}" class="md:col-span-1 min-w-0 form-input item-unit" placeholder="hrs, pcs, etc.">
-                    <input type="number" name="item_price[]" placeholder="{{ _('Price') }}" value="{{ item.unit_price }}" step="0.01" min="0" class="md:col-span-2 min-w-0 form-input item-price" data-calc-trigger>
-                    <div class="md:col-span-1 min-w-0 flex items-center font-medium item-total">{{ "%.2f"|format(item.total_amount) }}</div>
-                    <button type="button" class="remove-item md:col-span-1 min-w-0 bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300 px-3 py-2 rounded hover:bg-rose-200 dark:hover:bg-rose-900/50 transition" title="{{ _('Remove item') }}">
-                        <i class="fas fa-trash"></i>
-                    </button>
+                    <input type="text" name="item_unit[]" placeholder="{{ _('Unit') }}" value="{{ item.unit or '' }}" class="md:col-span-1 min-w-0 form-input item-unit">
+                    <input type="number" name="item_price[]" placeholder="{{ _('Price') }}" value="{{ item.unit_price }}" step="0.01" min="0" class="md:col-span-1 min-w-0 form-input item-price" data-calc-trigger>
+                    <div class="md:col-span-1 min-w-0 flex items-center justify-between gap-2">
+                        <span class="font-medium item-total">{{ "%.2f"|format(item.total_amount) }}</span>
+                        <button type="button" class="remove-item shrink-0 bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300 px-3 py-2 rounded hover:bg-rose-200 dark:hover:bg-rose-900/50 transition" title="{{ _('Remove item') }}"><i class="fas fa-trash"></i></button>
+                    </div>
                 </div>
                 {% endfor %}
             </div>
-            
-            <div id="items-subtotal" class="mt-3 p-3 bg-primary/5 rounded-lg border border-primary/20">
+            <div class="mt-3 p-3 bg-blue-50/30 dark:bg-blue-950/10 rounded-lg border border-blue-200/30 dark:border-blue-800/30">
                 <div class="flex justify-between items-center text-sm font-medium">
-                    <span class="text-text-muted-light dark:text-text-muted-dark">{{ _('Subtotal') }}:</span>
-                    <span class="text-lg font-bold text-primary"><span id="items-subtotal-amount">{{ "%.2f"|format(quote.subtotal) if quote.subtotal else '0.00' }}</span></span>
+                    <span class="text-text-muted-light dark:text-text-muted-dark">{{ _('Line items subtotal') }}:</span>
+                    <span class="text-lg font-bold text-blue-700 dark:text-blue-400"><span id="quote-items-section-total">0.00</span></span>
                 </div>
+            </div>
+        </div>
+
+        <!-- Costs / expenses (quote) -->
+        <div class="mb-8 mt-8 border-t border-border-light dark:border-border-dark pt-6">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h2 class="text-xl font-semibold flex items-center">
+                        <i class="fas fa-receipt mr-2 text-amber-600"></i>{{ _('Costs') }}
+                        <span id="quote-expenses-count" class="ml-2 px-2 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-full">0</span>
+                    </h2>
+                    <p class="text-sm text-text-muted-light dark:text-text-muted-dark mt-1">{{ _('One-off costs (e.g. travel, materials)') }}</p>
+                </div>
+                <button type="button" id="add-quote-expense" class="btn bg-amber-600 text-white hover:bg-amber-700 shadow-sm">
+                    <i class="fas fa-plus mr-2"></i>{{ _('Add cost') }}
+                </button>
+            </div>
+            <div class="hidden md:grid md:grid-cols-12 gap-3 mb-2 px-3 text-xs font-semibold text-text-muted-light dark:text-text-muted-dark uppercase">
+                <div class="md:col-span-2">{{ _('Title') }}</div>
+                <div class="md:col-span-3">{{ _('Description') }}</div>
+                <div class="md:col-span-2">{{ _('Category') }}</div>
+                <div class="md:col-span-2">{{ _('Amount') }}</div>
+                <div class="md:col-span-2">{{ _('Date') }}</div>
+                <div class="md:col-span-1 text-center">{{ _('Action') }}</div>
+            </div>
+            <div id="quote-expenses" class="space-y-2">
+                {% for item in quote.items if (item.line_kind or 'item') == 'expense' %}
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-3 p-3 rounded-lg bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-800/50 quote-expense-row min-w-0 hover:shadow-sm transition">
+                    <input type="hidden" name="qe_id[]" value="{{ item.id }}">
+                    <div class="md:col-span-2 min-w-0"><input type="text" name="qe_title[]" class="form-input" placeholder="{{ _('Title') }}" value="{{ item.display_name or '' }}" data-calc-trigger></div>
+                    <div class="md:col-span-3 min-w-0"><input type="text" name="qe_description[]" class="form-input" placeholder="{{ _('Description') }}" value="{{ item.description }}" data-calc-trigger></div>
+                    <div class="md:col-span-2 min-w-0">
+                        <select name="qe_category[]" class="form-input">
+                            <option value="travel" {% if item.category == 'travel' %}selected{% endif %}>{{ _('Travel') }}</option>
+                            <option value="meals" {% if item.category == 'meals' %}selected{% endif %}>{{ _('Meals') }}</option>
+                            <option value="supplies" {% if item.category == 'supplies' %}selected{% endif %}>{{ _('Supplies') }}</option>
+                            <option value="services" {% if item.category == 'services' %}selected{% endif %}>{{ _('Services') }}</option>
+                            <option value="equipment" {% if item.category == 'equipment' %}selected{% endif %}>{{ _('Equipment') }}</option>
+                            <option value="other" {% if (item.category or 'other') == 'other' %}selected{% endif %}>{{ _('Other') }}</option>
+                        </select>
+                    </div>
+                    <div class="md:col-span-2 min-w-0"><input type="number" name="qe_amount[]" class="form-input qe-amount" step="0.01" min="0" value="{{ item.unit_price }}" data-calc-trigger></div>
+                    <div class="md:col-span-2 min-w-0"><input type="date" name="qe_date[]" class="form-input user-date-input text-sm" value="{{ item.line_date.strftime('%Y-%m-%d') if item.line_date else '' }}"></div>
+                    <div class="md:col-span-1 min-w-0 flex items-center justify-center"><button type="button" class="remove-quote-expense bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300 px-3 py-2 rounded hover:bg-rose-200 dark:hover:bg-rose-900/50 transition" title="{{ _('Remove') }}"><i class="fas fa-trash"></i></button></div>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="mt-3 p-3 bg-amber-50/30 dark:bg-amber-950/10 rounded-lg border border-amber-200/30 dark:border-amber-800/30">
+                <div class="flex justify-between items-center text-sm font-medium">
+                    <span class="text-text-muted-light dark:text-text-muted-dark">{{ _('Costs subtotal') }}:</span>
+                    <span class="text-lg font-bold text-amber-700 dark:text-amber-400"><span id="quote-expenses-section-total">0.00</span></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Extra goods -->
+        <div class="mb-8 mt-8 border-t border-border-light dark:border-border-dark pt-6">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h2 class="text-xl font-semibold flex items-center">
+                        <i class="fas fa-box mr-2 text-emerald-600"></i>{{ _('Extra goods') }}
+                        <span id="quote-goods-count" class="ml-2 px-2 py-0.5 text-xs bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 rounded-full">0</span>
+                    </h2>
+                    <p class="text-sm text-text-muted-light dark:text-text-muted-dark mt-1">{{ _('Products, licenses, hardware') }}</p>
+                </div>
+                <button type="button" id="add-quote-good" class="btn bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm">
+                    <i class="fas fa-plus mr-2"></i>{{ _('Add good') }}
+                </button>
+            </div>
+            <div class="hidden md:grid md:grid-cols-12 gap-3 mb-2 px-3 text-xs font-semibold text-text-muted-light dark:text-text-muted-dark uppercase">
+                <div class="md:col-span-2">{{ _('Name') }}</div>
+                <div class="md:col-span-2">{{ _('Description') }}</div>
+                <div class="md:col-span-2">{{ _('Category') }}</div>
+                <div class="md:col-span-2">{{ _('Qty') }}</div>
+                <div class="md:col-span-2">{{ _('Price') }}</div>
+                <div class="md:col-span-1">{{ _('SKU') }}</div>
+                <div class="md:col-span-1 text-center">{{ _('Action') }}</div>
+            </div>
+            <div id="quote-goods" class="space-y-2">
+                {% for item in quote.items if (item.line_kind or 'item') == 'good' %}
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-3 p-3 rounded-lg bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-800/50 quote-good-row min-w-0 hover:shadow-sm transition">
+                    <input type="hidden" name="qg_id[]" value="{{ item.id }}">
+                    <div class="md:col-span-2 min-w-0"><input type="text" name="qg_name[]" class="form-input" placeholder="{{ _('Name') }}" value="{{ item.display_name or '' }}" data-calc-trigger></div>
+                    <div class="md:col-span-2 min-w-0"><input type="text" name="qg_description[]" class="form-input" placeholder="{{ _('Description') }}" value="{{ item.description }}" data-calc-trigger></div>
+                    <div class="md:col-span-2 min-w-0">
+                        <select name="qg_category[]" class="form-input">
+                            <option value="product" {% if item.category == 'product' %}selected{% endif %}>{{ _('Product') }}</option>
+                            <option value="service" {% if item.category == 'service' %}selected{% endif %}>{{ _('Service') }}</option>
+                            <option value="material" {% if item.category == 'material' %}selected{% endif %}>{{ _('Material') }}</option>
+                            <option value="license" {% if item.category == 'license' %}selected{% endif %}>{{ _('License') }}</option>
+                            <option value="other" {% if (item.category or 'other') == 'other' %}selected{% endif %}>{{ _('Other') }}</option>
+                        </select>
+                    </div>
+                    <div class="md:col-span-2 min-w-0"><input type="number" name="qg_quantity[]" class="form-input qg-quantity" step="0.01" min="0" value="{{ item.quantity }}" data-calc-trigger></div>
+                    <div class="md:col-span-2 min-w-0"><input type="number" name="qg_unit_price[]" class="form-input qg-price" step="0.01" min="0" value="{{ item.unit_price }}" data-calc-trigger></div>
+                    <div class="md:col-span-1 min-w-0"><input type="text" name="qg_sku[]" class="form-input text-xs" placeholder="{{ _('SKU') }}" value="{{ item.sku or '' }}"></div>
+                    <div class="md:col-span-1 min-w-0 flex items-center justify-center"><button type="button" class="remove-quote-good bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300 px-3 py-2 rounded hover:bg-rose-200 dark:hover:bg-rose-900/50 transition" title="{{ _('Remove') }}"><i class="fas fa-trash"></i></button></div>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="mt-3 p-3 bg-emerald-50/30 dark:bg-emerald-950/10 rounded-lg border border-emerald-200/30 dark:border-emerald-800/30">
+                <div class="flex justify-between items-center text-sm font-medium">
+                    <span class="text-text-muted-light dark:text-text-muted-dark">{{ _('Goods subtotal') }}:</span>
+                    <span class="text-lg font-bold text-emerald-700 dark:text-emerald-400"><span id="quote-goods-section-total">0.00</span></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="mb-8 p-4 rounded-xl border border-border-light dark:border-border-dark bg-gray-50 dark:bg-gray-900/40">
+            <div class="flex justify-between items-center text-sm font-medium">
+                <span>{{ _('Subtotal (all quote lines)') }}</span>
+                <span class="text-xl font-bold text-primary"><span id="quote-all-lines-subtotal">0.00</span></span>
             </div>
         </div>
 
@@ -221,196 +341,5 @@
 {% endblock %}
 
 {% block scripts_extra %}
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    const itemsContainer = document.getElementById('quote-items');
-    const addItemBtn = document.getElementById('add-item');
-    let itemIndex = 0;
-    
-    // Stock items and warehouses data
-    const stockItems = {{ stock_items_json | safe if stock_items_json else '[]' }};
-    const warehouses = {{ warehouses_json | safe if warehouses_json else '[]' }};
-    
-    // Handle stock item selection
-    function setupStockItemHandlers() {
-        document.querySelectorAll('.item-stock-select').forEach(select => {
-            select.addEventListener('change', function() {
-                const row = this.closest('.quote-item-row');
-                const stockItemId = this.value;
-                const selectedOption = this.options[this.selectedIndex];
-                const hiddenStockInput = row.querySelector('input[name="item_stock_item_id[]"]');
-                
-                hiddenStockInput.value = stockItemId || '';
-                
-                if (stockItemId && selectedOption) {
-                    const price = parseFloat(selectedOption.dataset.price || 0);
-                    const description = selectedOption.dataset.description || '';
-                    const unit = selectedOption.dataset.unit || '';
-                    
-                    // Auto-populate fields
-                    if (description && !row.querySelector('.item-description').value) {
-                        row.querySelector('.item-description').value = description;
-                    }
-                    if (price > 0 && !row.querySelector('.item-price').value) {
-                        row.querySelector('.item-price').value = price.toFixed(2);
-                    }
-                    if (unit && !row.querySelector('.item-unit').value) {
-                        row.querySelector('.item-unit').value = unit;
-                    }
-                    calculateTotals();
-                }
-            });
-        });
-    }
-    
-    // Add new item row
-    function addItemRow(item = null) {
-        const row = document.createElement('div');
-        row.className = 'grid grid-cols-1 md:grid-cols-12 gap-3 p-3 rounded-lg bg-primary/5 border border-primary/20 quote-item-row min-w-0 hover:shadow-sm transition';
-        
-        // Build stock items dropdown
-        let stockItemsHtml = '<option value="">{{ _("None") }}</option>';
-        if (stockItems && Array.isArray(stockItems)) {
-            stockItems.forEach(stockItem => {
-                const price = stockItem.default_price || 0;
-                const unit = stockItem.unit || '';
-                const desc = stockItem.description || stockItem.name || '';
-                stockItemsHtml += '<option value="' + stockItem.id + '" data-price="' + price + '" data-unit="' + unit + '" data-description="' + desc.replace(/"/g, '&quot;') + '">' + stockItem.sku + ' - ' + stockItem.name + '</option>';
-            });
-        }
-        
-        // Build warehouses dropdown
-        let warehousesHtml = '<option value="">{{ _("None") }}</option>';
-        if (warehouses && Array.isArray(warehouses)) {
-            warehouses.forEach(wh => {
-                warehousesHtml += '<option value="' + wh.id + '">' + wh.code + ' - ' + wh.name + '</option>';
-            });
-        }
-        
-        // Translated strings
-        const placeholderDesc = '{{ _("Item description") }}';
-        const placeholderQty = '{{ _("Qty") }}';
-        const placeholderUnit = '{{ _("Unit") }}';
-        const placeholderPrice = '{{ _("Price") }}';
-        const removeTitle = '{{ _("Remove item") }}';
-        
-        row.innerHTML = 
-            '<input type="hidden" name="item_id[]" value="' + (item ? item.id : '') + '">' +
-            '<input type="hidden" name="item_stock_item_id[]" value="' + (item && item.stock_item_id ? item.stock_item_id : '') + '">' +
-            '<input type="hidden" name="item_warehouse_id[]" value="' + (item && item.warehouse_id ? item.warehouse_id : '') + '">' +
-            '<select class="md:col-span-2 min-w-0 form-input item-stock-select text-sm">' + stockItemsHtml + '</select>' +
-            '<select class="md:col-span-2 min-w-0 form-input item-warehouse-select text-sm">' + warehousesHtml + '</select>' +
-            '<input type="text" name="item_description[]" placeholder="' + placeholderDesc + '" value="' + (item ? (item.description || '').replace(/"/g, '&quot;') : '') + '" class="md:col-span-2 min-w-0 form-input item-description" data-calc-trigger>' +
-            '<input type="number" name="item_quantity[]" placeholder="' + placeholderQty + '" value="' + (item ? item.quantity : '1') + '" step="0.01" min="0" class="md:col-span-1 min-w-0 form-input item-quantity" data-calc-trigger>' +
-            '<input type="text" name="item_unit[]" placeholder="' + placeholderUnit + '" value="' + (item ? (item.unit || '') : '') + '" class="md:col-span-1 min-w-0 form-input item-unit" placeholder="hrs, pcs, etc.">' +
-            '<input type="number" name="item_price[]" placeholder="' + placeholderPrice + '" value="' + (item ? item.unit_price : '') + '" step="0.01" min="0" class="md:col-span-2 min-w-0 form-input item-price" data-calc-trigger>' +
-            '<div class="md:col-span-1 min-w-0 flex items-center font-medium item-total">0.00</div>' +
-            '<button type="button" class="remove-item md:col-span-1 min-w-0 bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300 px-3 py-2 rounded hover:bg-rose-200 dark:hover:bg-rose-900/50 transition" title="' + removeTitle + '">' +
-                '<i class="fas fa-trash"></i>' +
-            '</button>';
-        itemsContainer.appendChild(row);
-        
-        // Setup handlers for new row
-        const stockSelect = row.querySelector('.item-stock-select');
-        stockSelect.addEventListener('change', function() {
-            const selectedOption = this.options[this.selectedIndex];
-            const hiddenStockInput = row.querySelector('input[name="item_stock_item_id[]"]');
-            hiddenStockInput.value = this.value || '';
-            
-            if (this.value && selectedOption) {
-                const price = parseFloat(selectedOption.dataset.price || 0);
-                const description = selectedOption.dataset.description || '';
-                const unit = selectedOption.dataset.unit || '';
-                if (description) row.querySelector('.item-description').value = description;
-                if (price > 0) row.querySelector('.item-price').value = price.toFixed(2);
-                if (unit) row.querySelector('.item-unit').value = unit;
-                calculateTotals();
-            }
-        });
-        
-        const warehouseSelect = row.querySelector('.item-warehouse-select');
-        warehouseSelect.addEventListener('change', function() {
-            const hiddenWarehouseInput = row.querySelector('input[name="item_warehouse_id[]"]');
-            hiddenWarehouseInput.value = this.value || '';
-        });
-        
-        // Add event listeners
-        row.querySelector('.remove-item').addEventListener('click', function() {
-            row.remove();
-            calculateTotals();
-        });
-        
-        // Add calculation triggers
-        row.querySelectorAll('[data-calc-trigger]').forEach(input => {
-            input.addEventListener('input', calculateTotals);
-        });
-        
-        setupStockItemHandlers();
-        itemIndex++;
-        calculateTotals();
-    }
-    
-    // Initialize stock item handlers for existing rows
-    setupStockItemHandlers();
-    
-    // Setup warehouse handlers
-    document.querySelectorAll('.item-warehouse-select').forEach(select => {
-        select.addEventListener('change', function() {
-            const row = this.closest('.quote-item-row');
-            const hiddenWarehouseInput = row.querySelector('input[name="item_warehouse_id[]"]');
-            hiddenWarehouseInput.value = this.value || '';
-        });
-    });
-    
-    // Calculate totals
-    function calculateTotals() {
-        let itemsTotal = 0;
-        let itemsCount = 0;
-        
-        document.querySelectorAll('.quote-item-row').forEach(row => {
-            const qty = parseFloat(row.querySelector('.item-quantity')?.value || 0);
-            const price = parseFloat(row.querySelector('.item-price')?.value || 0);
-            const total = qty * price;
-            
-            if (qty > 0 && price > 0) {
-                itemsTotal += total;
-                itemsCount++;
-            }
-            
-            // Update row total
-            const totalEl = row.querySelector('.item-total');
-            if (totalEl) {
-                totalEl.textContent = total.toFixed(2);
-            }
-        });
-        
-        // Update subtotal
-        document.getElementById('items-subtotal-amount').textContent = itemsTotal.toFixed(2);
-        document.getElementById('items-count').textContent = itemsCount;
-    }
-    
-    // Add item button
-    addItemBtn.addEventListener('click', function() {
-        addItemRow();
-    });
-    
-    // Add event listeners to existing items
-    document.querySelectorAll('.quote-item-row').forEach(row => {
-        row.querySelector('.remove-item').addEventListener('click', function() {
-            row.remove();
-            calculateTotals();
-        });
-        
-        row.querySelectorAll('[data-calc-trigger]').forEach(input => {
-            input.addEventListener('input', calculateTotals);
-        });
-    });
-    
-    // Calculate on tax rate change
-    document.getElementById('tax_rate')?.addEventListener('input', calculateTotals);
-    
-    // Initial calculation
-    calculateTotals();
-});
-</script>
+{% include 'quotes/_edit_quote_form_scripts.html' %}
 {% endblock %}

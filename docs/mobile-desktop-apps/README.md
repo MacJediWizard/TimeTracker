@@ -90,6 +90,8 @@ Both apps support offline operation:
 3. **Automatic Sync**: When connection is restored, queued operations are processed
 4. **Conflict Resolution**: Server data takes precedence on conflict
 
+The mobile app sends an **`Idempotency-Key`** on queued **`POST /api/v1/time-entries`** creates so retries after connectivity drops do not duplicate entries. See [REST API: Idempotent time entry creation](../api/REST_API.md#idempotent-time-entry-creation).
+
 ## Development
 
 ### Mobile App Development

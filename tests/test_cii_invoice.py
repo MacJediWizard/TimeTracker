@@ -230,6 +230,17 @@ def test_cii_handles_zero_tax():
     xml, _ = build_cii_invoice_xml(invoice, _make_seller(), _make_buyer())
     # Zero-rated tax should use category Z
     assert "CategoryCode" in xml
+    assert "ExemptionReason" in xml
+    assert "VATEX-EU-O" in xml
+    assert 'currencyID="EUR"' in xml
     # Should still produce valid CII
     passed, issues = validate_cii_en16931(xml)
     assert passed is True, f"Failed: {issues}"
+
+
+@pytest.mark.unit
+def test_cii_monetary_elements_have_currency_id():
+    invoice = _make_invoice(currency_code="USD")
+    xml, _ = build_cii_invoice_xml(invoice, _make_seller(), _make_buyer())
+    assert 'currencyID="USD"' in xml
+    assert xml.count('currencyID="USD"') >= 5

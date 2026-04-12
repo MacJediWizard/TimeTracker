@@ -15,9 +15,13 @@ Limitations:
 from __future__ import annotations
 
 import io
+import os
 import struct
-import zlib
+from pathlib import Path
 from typing import Optional, Tuple
+
+# Bundled sRGB profile (Compact ICC, MIT license — see app/resources/icc/LICENSE if present)
+_BUNDLED_SRGB_ICC = Path(__file__).resolve().parent.parent / "resources" / "icc" / "sRGB-v2-nano.icc"
 
 PDFA_PART = "3"
 PDFA_CONFORMANCE = "B"
@@ -27,6 +31,26 @@ RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 OUTPUT_INTENT_SUBTYPE = "GTS_PDFA1"
 OUTPUT_INTENT_REGISTRY = "http://www.color.org"
 OUTPUT_INTENT_INFO = "sRGB IEC61966-2.1"
+
+
+def _srgb_icc_profile_bytes() -> bytes:
+    """
+    Prefer INVOICE_SRGB_ICC_PATH if set, then bundled nano sRGB ICC, else synthetic minimal profile.
+    """
+    env_path = (os.environ.get("INVOICE_SRGB_ICC_PATH") or "").strip()
+    if env_path:
+        try:
+            p = Path(env_path)
+            if p.is_file():
+                return p.read_bytes()
+        except OSError:
+            pass
+    try:
+        if _BUNDLED_SRGB_ICC.is_file():
+            return _BUNDLED_SRGB_ICC.read_bytes()
+    except OSError:
+        pass
+    return _minimal_srgb_icc_profile()
 
 
 def _minimal_srgb_icc_profile() -> bytes:
@@ -205,7 +229,7 @@ def convert_to_pdfa3(pdf_bytes: bytes) -> Tuple[bytes, Optional[str]]:
             try:
                 from pikepdf import Array, Dictionary, Name, Stream
 
-                icc_data = _minimal_srgb_icc_profile()
+                icc_data = _srgb_icc_profile_bytes()
                 icc_stream = Stream(pdf, icc_data)
                 icc_stream[Name.N] = 3  # RGB = 3 components
 

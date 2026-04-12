@@ -163,6 +163,18 @@ class AsanaConnector(BaseConnector):
         """Sync tasks and projects with Asana."""
         from app import db
         from app.models import Project, Task
+        from app.utils.integration_sync_context import (
+            ensure_project_integration_fields,
+            find_project_by_integration_ref,
+            find_task_by_integration_ref,
+            require_sync_context,
+            set_task_integration_ref,
+        )
+
+        try:
+            actor_id, client_id = require_sync_context(self.integration)
+        except ValueError as e:
+            return {"success": False, "message": str(e)}
 
         try:
             headers = {"Authorization": f"Bearer {self.get_access_token()}"}
@@ -187,25 +199,30 @@ class AsanaConnector(BaseConnector):
 
                 for asana_project in asana_projects:
                     try:
-                        # Find or create project
-                        project = Project.query.filter_by(
-                            user_id=self.integration.user_id, name=asana_project.get("name")
-                        ).first()
+                        ap_gid = str(asana_project.get("gid") or "")
+                        ap_name = (asana_project.get("name") or "Asana project").strip()[:200]
+                        if not ap_gid:
+                            continue
 
+                        project = find_project_by_integration_ref(client_id, "asana", ap_gid)
+                        if not project:
+                            project = Project.query.filter_by(client_id=client_id, name=ap_name).first()
                         if not project:
                             project = Project(
-                                name=asana_project.get("name"),
-                                description=asana_project.get("notes", ""),
-                                user_id=self.integration.user_id,
+                                name=ap_name,
+                                client_id=client_id,
+                                description=(asana_project.get("notes") or "") or None,
                                 status="active" if not asana_project.get("archived") else "archived",
                             )
                             db.session.add(project)
                             db.session.flush()
-
-                        # Store Asana project GID in project metadata
-                        if not hasattr(project, "metadata") or not project.metadata:
-                            project.metadata = {}
-                        project.metadata["asana_project_gid"] = asana_project.get("gid")
+                        ensure_project_integration_fields(
+                            project,
+                            source="asana",
+                            ref=ap_gid,
+                            display_name=ap_name,
+                            description=(asana_project.get("notes") or "") or None,
+                        )
 
                         # Sync tasks from Asana project
                         tasks_response = requests.get(
@@ -219,41 +236,48 @@ class AsanaConnector(BaseConnector):
 
                             for asana_task in asana_tasks:
                                 try:
-                                    # Get task details
+                                    at_gid = str(asana_task.get("gid") or "")
+                                    if not at_gid:
+                                        continue
                                     task_response = requests.get(
-                                        f"{self.BASE_URL}/tasks/{asana_task.get('gid')}",
+                                        f"{self.BASE_URL}/tasks/{at_gid}",
                                         headers=headers,
                                         params={"opt_fields": "name,notes,completed,due_on,assignee"},
                                     )
 
                                     if task_response.status_code == 200:
                                         task_data = task_response.json().get("data", {})
+                                        tname = (task_data.get("name") or "Task").strip()[:200]
+                                        tstatus = "done" if task_data.get("completed") else "todo"
 
-                                        # Find or create task
-                                        task = Task.query.filter_by(
-                                            project_id=project.id, name=task_data.get("name", "")
-                                        ).first()
-
+                                        task = find_task_by_integration_ref(project.id, at_gid, source="asana")
                                         if not task:
                                             task = Task(
                                                 project_id=project.id,
-                                                name=task_data.get("name", ""),
-                                                description=task_data.get("notes", ""),
-                                                status="completed" if task_data.get("completed") else "todo",
+                                                name=tname,
+                                                description=(task_data.get("notes") or "") or None,
+                                                status=tstatus,
+                                                created_by=actor_id,
                                             )
                                             db.session.add(task)
                                             db.session.flush()
+                                        else:
+                                            task.name = tname
+                                            task.description = (task_data.get("notes") or "") or None
+                                            task.status = tstatus
 
-                                        # Store Asana task GID in metadata
-                                        if not hasattr(task, "metadata") or not task.metadata:
-                                            task.metadata = {}
-                                        task.metadata["asana_task_gid"] = asana_task.get("gid")
+                                        set_task_integration_ref(
+                                            task,
+                                            source="asana",
+                                            ref=at_gid,
+                                            extra={"asana_task_gid": at_gid},
+                                        )
+                                        synced_count += 1
                                 except Exception as e:
                                     errors.append(
                                         f"Error syncing task in project {asana_project.get('name')}: {str(e)}"
                                     )
 
-                        synced_count += 1
                     except Exception as e:
                         errors.append(f"Error syncing project {asana_project.get('name')}: {str(e)}")
 

@@ -108,7 +108,16 @@
                         <tbody>
                             {% for item in quote.items %}
                             <tr class="border-b border-border-light dark:border-border-dark">
-                                <td class="p-3">{{ item.description }}</td>
+                                <td class="p-3">
+                                    {% if item.display_name %}
+                                    <div class="font-medium">{{ item.display_name }}</div>
+                                    {% if item.description and item.description != item.display_name and item.description != '-' %}<div class="text-sm text-text-muted-light dark:text-text-muted-dark">{{ item.description }}</div>{% endif %}
+                                    {% else %}
+                                    {{ item.description }}
+                                    {% endif %}
+                                    {% if item.line_kind == 'expense' and item.category %}<div class="text-xs text-text-muted-light dark:text-text-muted-dark mt-1">{{ item.category }}</div>{% endif %}
+                                    {% if item.line_kind == 'good' and item.sku %}<div class="text-xs text-text-muted-light dark:text-text-muted-dark mt-1">{{ _('SKU') }}: {{ item.sku }}</div>{% endif %}
+                                </td>
                                 <td class="p-3">{{ "%.2f"|format(item.quantity) }} {% if item.unit %}{{ item.unit }}{% endif %}</td>
                                 <td class="p-3">{{ "%.2f"|format(item.unit_price) }} {{ quote.currency_code }}</td>
                                 <td class="p-3 font-medium">{{ "%.2f"|format(item.total_amount) }} {{ quote.currency_code }}</td>
@@ -185,7 +194,7 @@
                 {% if quote.requires_approval %}
                 <div class="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
                     <h4 class="font-medium text-yellow-800 dark:text-yellow-200 mb-2">{{ _('Approval Status') }}</h4>
-                    {% if quote.approval_status == 'none' %}
+                    {% if quote.approval_status == 'not_required' %}
                     <p class="text-sm text-yellow-700 dark:text-yellow-300 mb-2">{{ _('Approval not yet requested') }}</p>
                     {% if quote.status == 'draft' and (current_user.is_admin or has_permission('edit_quotes')) %}
                     <form method="POST" action="{{ url_for('quotes.request_approval', quote_id=quote.id) }}" class="inline">

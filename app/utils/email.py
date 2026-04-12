@@ -639,6 +639,17 @@ def _build_invoice_email_payload(invoice, email_template_id=None, custom_message
         raise ValueError("PDF generation returned empty result")
 
     settings = Settings.get_settings()
+    from app.utils.invoice_pdf_postprocess import postprocess_invoice_pdf_bytes
+
+    pdf_bytes, embed_err, pdfa_err = postprocess_invoice_pdf_bytes(pdf_bytes, invoice, settings)
+    if embed_err:
+        current_app.logger.error(f"[INVOICE EMAIL] Factur-X embed failed: {embed_err}")
+        raise ValueError(
+            f"Factur-X embedding is enabled but failed: {embed_err}. Email not sent so the PDF does not ship without embedded XML."
+        ) from None
+    if pdfa_err:
+        current_app.logger.error(f"[INVOICE EMAIL] PDF/A-3 normalization failed: {pdfa_err}")
+        raise ValueError(f"PDF/A-3 normalization failed: {pdfa_err}. Email not sent.") from None
     company_name = settings.company_name if settings else "Your Company"
     subject = f"Invoice {invoice.invoice_number} from {company_name}"
 

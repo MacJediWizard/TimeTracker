@@ -1162,36 +1162,30 @@ def export_invoice_pdf(invoice_id):
             pdf_bytes = pdf_generator.generate_pdf()
             trace.get_current_span().set_attribute("pdf_size_bytes", len(pdf_bytes))
         record_invoice_duration_seconds(time.monotonic() - _pdf_t0, "pdf")
-        # Optionally embed Factur-X CII XML in PDF (strict: fail export if embed fails)
-        if getattr(settings, "invoices_zugferd_pdf", False):
-            from app.utils.zugferd import embed_zugferd_xml_in_pdf
+        from app.utils.invoice_pdf_postprocess import postprocess_invoice_pdf_bytes
 
-            pdf_bytes, embed_err = embed_zugferd_xml_in_pdf(pdf_bytes, invoice, settings)
-            if embed_err:
-                current_app.logger.warning(
-                    f"[PDF_EXPORT] Factur-X embed failed - InvoiceID: {invoice_id}, Error: {embed_err}"
-                )
-                flash(
-                    _(
-                        "Factur-X embedding is enabled but failed: %(err)s. Export aborted so the PDF does not ship without embedded XML.",
-                        err=embed_err,
-                    ),
-                    "error",
-                )
-                return redirect(request.referrer or url_for("invoices.view_invoice", invoice_id=invoice.id))
-            if getattr(settings, "invoices_pdfa3_compliant", False):
-                from app.utils.pdfa3 import convert_to_pdfa3
-
-                pdf_bytes, pdfa_err = convert_to_pdfa3(pdf_bytes)
-                if pdfa_err:
-                    current_app.logger.warning(
-                        f"[PDF_EXPORT] PDF/A-3 conversion failed - InvoiceID: {invoice_id}, Error: {pdfa_err}"
-                    )
-                    flash(
-                        _("PDF/A-3 normalization failed: %(err)s. Export aborted.", err=pdfa_err),
-                        "error",
-                    )
-                    return redirect(request.referrer or url_for("invoices.view_invoice", invoice_id=invoice.id))
+        pdf_bytes, embed_err, pdfa_err = postprocess_invoice_pdf_bytes(pdf_bytes, invoice, settings)
+        if embed_err:
+            current_app.logger.warning(
+                f"[PDF_EXPORT] Factur-X embed failed - InvoiceID: {invoice_id}, Error: {embed_err}"
+            )
+            flash(
+                _(
+                    "Factur-X embedding is enabled but failed: %(err)s. Export aborted so the PDF does not ship without embedded XML.",
+                    err=embed_err,
+                ),
+                "error",
+            )
+            return redirect(request.referrer or url_for("invoices.view_invoice", invoice_id=invoice.id))
+        if pdfa_err:
+            current_app.logger.warning(
+                f"[PDF_EXPORT] PDF/A-3 conversion failed - InvoiceID: {invoice_id}, Error: {pdfa_err}"
+            )
+            flash(
+                _("PDF/A-3 normalization failed: %(err)s. Export aborted.", err=pdfa_err),
+                "error",
+            )
+            return redirect(request.referrer or url_for("invoices.view_invoice", invoice_id=invoice.id))
         pdf_size_bytes = len(pdf_bytes)
         # Optional: run veraPDF and surface summary (does not block)
         if getattr(settings, "invoices_validate_export", False):
@@ -1237,26 +1231,21 @@ def export_invoice_pdf(invoice_id):
                 pdf_bytes = pdf_generator.generate_pdf()
                 trace.get_current_span().set_attribute("pdf_size_bytes", len(pdf_bytes))
             record_invoice_duration_seconds(time.monotonic() - _pdf_t0, "pdf")
-            if getattr(settings, "invoices_zugferd_pdf", False):
-                from app.utils.zugferd import embed_zugferd_xml_in_pdf
+            from app.utils.invoice_pdf_postprocess import postprocess_invoice_pdf_bytes
 
-                pdf_bytes, embed_err = embed_zugferd_xml_in_pdf(pdf_bytes, invoice, settings)
-                if embed_err:
-                    current_app.logger.warning(
-                        f"[PDF_EXPORT] Factur-X embed failed (fallback path) - InvoiceID: {invoice_id}, Error: {embed_err}"
-                    )
-                    flash(
-                        _("Factur-X embedding is enabled but failed: %(err)s. Export aborted.", err=embed_err),
-                        "error",
-                    )
-                    return redirect(request.referrer or url_for("invoices.view_invoice", invoice_id=invoice.id))
-                if getattr(settings, "invoices_pdfa3_compliant", False):
-                    from app.utils.pdfa3 import convert_to_pdfa3
-
-                    pdf_bytes, pdfa_err = convert_to_pdfa3(pdf_bytes)
-                    if pdfa_err:
-                        flash(_("PDF/A-3 normalization failed: %(err)s. Export aborted.", err=pdfa_err), "error")
-                        return redirect(request.referrer or url_for("invoices.view_invoice", invoice_id=invoice.id))
+            pdf_bytes, embed_err, pdfa_err = postprocess_invoice_pdf_bytes(pdf_bytes, invoice, settings)
+            if embed_err:
+                current_app.logger.warning(
+                    f"[PDF_EXPORT] Factur-X embed failed (fallback path) - InvoiceID: {invoice_id}, Error: {embed_err}"
+                )
+                flash(
+                    _("Factur-X embedding is enabled but failed: %(err)s. Export aborted.", err=embed_err),
+                    "error",
+                )
+                return redirect(request.referrer or url_for("invoices.view_invoice", invoice_id=invoice.id))
+            if pdfa_err:
+                flash(_("PDF/A-3 normalization failed: %(err)s. Export aborted.", err=pdfa_err), "error")
+                return redirect(request.referrer or url_for("invoices.view_invoice", invoice_id=invoice.id))
             pdf_size_bytes = len(pdf_bytes)
             current_app.logger.info(
                 f"[PDF_EXPORT] Fallback PDF generated successfully - PageSize: '{page_size}', InvoiceID: {invoice_id}, PDFSize: {pdf_size_bytes} bytes"

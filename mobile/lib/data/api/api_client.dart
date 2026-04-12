@@ -124,6 +124,7 @@ class ApiClient {
     String? notes,
     String? tags,
     bool? billable,
+    String? idempotencyKey,
   }) async {
     final body = <String, dynamic>{
       'project_id': projectId,
@@ -134,7 +135,13 @@ class ApiClient {
       if (tags != null) 'tags': tags,
       if (billable != null) 'billable': billable,
     };
-    final res = await _dio.post<Map<String, dynamic>>('/api/v1/time-entries', data: body);
+    final res = await _dio.post<Map<String, dynamic>>(
+      '/api/v1/time-entries',
+      data: body,
+      options: idempotencyKey != null && idempotencyKey.isNotEmpty
+          ? Options(headers: {'Idempotency-Key': idempotencyKey})
+          : null,
+    );
     _throwIfError(res);
     return Map<String, dynamic>.from(res.data ?? {});
   }
@@ -148,6 +155,7 @@ class ApiClient {
     String? notes,
     String? tags,
     bool? billable,
+    String? ifUpdatedAt,
   }) async {
     final body = <String, dynamic>{
       if (projectId != null) 'project_id': projectId,
@@ -157,6 +165,7 @@ class ApiClient {
       if (notes != null) 'notes': notes,
       if (tags != null) 'tags': tags,
       if (billable != null) 'billable': billable,
+      if (ifUpdatedAt != null) 'if_updated_at': ifUpdatedAt,
     };
     final res = await _dio.patch<Map<String, dynamic>>('/api/v1/time-entries/$entryId', data: body);
     _throwIfError(res);

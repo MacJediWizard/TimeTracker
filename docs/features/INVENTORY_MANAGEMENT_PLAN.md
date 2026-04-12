@@ -159,8 +159,12 @@ This document outlines the complete implementation plan for adding a comprehensi
 - Add `stock_item_id` (Integer, ForeignKey -> stock_items.id, Optional, Indexed)
 - Add `warehouse_id` (Integer, ForeignKey -> warehouses.id, Optional) - Preferred warehouse
 - Add `is_stock_item` (Boolean, Default: False) - Flag to indicate if linked to inventory
+- Add `line_kind` (String(20), not null, default `item`) — discriminates **item**, **expense** (costs), and **good** (extra goods) on a single `quote_items` table (see migration `147_add_quote_item_line_kind.py`)
+- Optional metadata for non-item lines (nullable): `display_name` (expense title / good name), `category`, `line_date` (expense date), `sku` (good SKU)
 
 **Behavior**:
+- Quote create/edit mirrors invoice billing: **line items** (manual or from stock), **costs** (expenses), and **extra goods**. Stock item and warehouse selectors appear only for **item** lines that are explicitly linked to inventory—not on every row.
+- Inventory fields apply only when `line_kind == "item"` and a stock line is chosen; `expense` and `good` rows clear `stock_item_id` / `warehouse_id`.
 - When quote item is linked to stock item, show current available quantity
 - Allow reserving stock when quote is sent (optional)
 - Auto-reserve on quote acceptance (if enabled)
@@ -518,6 +522,9 @@ inventory_permissions = [
 2. `invoice_items` - Add `stock_item_id`, `warehouse_id`, `is_stock_item`
 3. `extra_goods` - Add `stock_item_id`
 
+**Follow-up (quote line kinds, issue #585)** — migration `147_add_quote_item_line_kind.py`:
+- `quote_items`: `line_kind`, `display_name`, `category`, `line_date`, `sku`
+
 **Indexes**:
 - Index on `stock_items.sku`
 - Index on `stock_items.barcode`
@@ -555,6 +562,8 @@ inventory_permissions = [
 - Color coding for low stock
 
 ### 8.4 Add Stock Item to Quote/Invoice
+- **Quotes:** Use the line-items section; choose **from stock** on a row to show the product selector and warehouse. Costs and extra goods sections do not offer stock linkage.
+- **Invoices:** Existing time/stock/expense/goods split remains the reference UX.
 - Product selector with search/filter
 - Show available quantity per warehouse
 - Select warehouse for reservation

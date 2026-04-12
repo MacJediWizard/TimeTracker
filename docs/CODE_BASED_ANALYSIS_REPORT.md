@@ -1,8 +1,8 @@
 # TimeTracker - Code-Based Analysis Report
 
-**Date:** 2025-01-27  
+**Date:** 2026-04-05  
 **Analysis Method:** Direct code examination (routes, models, services, integrations)  
-**Version:** 4.8.8
+**Version:** 5.3.0
 
 ---
 
@@ -12,9 +12,9 @@ This report provides a **code-based analysis** of the TimeTracker project by exa
 
 - **63 route files** with **1,826+ route definitions**
 - **83+ model files** defining data structures
-- **39 service files** implementing business logic
-- **12 integration connectors** for external services
-- **Complete API v1** with comprehensive endpoints
+- **40+ service files** implementing business logic
+- **14 integration connectors** for external services
+- **Complete API v1** with comprehensive endpoints (including CSV import, bulk time-entry actions, optional per-token rate limits, and idempotent `POST /api/v1/time-entries` via `Idempotency-Key`)
 
 **Key Findings:**
 - ✅ **Most features ARE fully implemented** - Previous analysis underestimated completeness
@@ -327,7 +327,7 @@ This report provides a **code-based analysis** of the TimeTracker project by exa
 38. `base_crud_service.py` - Base CRUD operations
 39. `project_template_service.py` - Project template operations
 
-**Conclusion:** Comprehensive service layer with 39 services covering all major features.
+**Conclusion:** Comprehensive service layer with 40+ services covering all major features (including dedicated modules for API time-entry bulk actions and CSV import).
 
 ---
 
@@ -335,20 +335,22 @@ This report provides a **code-based analysis** of the TimeTracker project by exa
 
 ### Integration Connectors
 
-**Total Integrations:** 12
+**Total Integrations:** 14
 
 1. **Jira** (`jira.py`) - Project/task sync
-2. **Slack** (`slack.py`) - Notifications
-3. **GitHub** (`github.py`) - Issue sync
-4. **GitLab** (`gitlab.py`) - Issue sync
+2. **Linear** (`linear.py`) - Issue import as tasks (API key)
+3. **Slack** (`slack.py`) - Notifications
+4. **GitHub** (`github.py`) - Issue sync
 5. **Google Calendar** (`google_calendar.py`) - Two-way calendar sync
 6. **Outlook Calendar** (`outlook_calendar.py`) - Two-way calendar sync
 7. **CalDAV Calendar** (`caldav_calendar.py`) - Calendar sync (one-way currently)
-8. **Microsoft Teams** (`microsoft_teams.py`) - Notifications
-9. **Asana** (`asana.py`) - Project/task sync
-10. **Trello** (`trello.py`) - Board/card sync
-11. **QuickBooks** (`quickbooks.py`) - Invoice/expense sync
-12. **Xero** (`xero.py`) - Invoice/expense sync
+8. **ActivityWatch** (`activitywatch.py`) - Automatic time entries from local aw-server
+9. **Microsoft Teams** (`microsoft_teams.py`) - Notifications
+10. **Asana** (`asana.py`) - Project/task sync
+11. **Trello** (`trello.py`) - Board/card sync
+12. **GitLab** (`gitlab.py`) - Issue sync
+13. **QuickBooks** (`quickbooks.py`) - Invoice/expense sync
+14. **Xero** (`xero.py`) - Invoice/expense sync
 
 ### Integration Features
 
@@ -359,8 +361,8 @@ All integrations implement:
 - Webhook handling (where applicable)
 
 **Issues Found:**
-- ⚠️ GitHub webhook signature verification has placeholder (`pass` statement)
-- ⚠️ CalDAV bidirectional sync not fully implemented (one-way only)
+- GitHub webhooks: `handle_webhook` verifies `X-Hub-Signature-256` with HMAC-SHA256 when `webhook_secret` is set; requests without a valid signature are rejected (configure the same secret in GitHub and in integration config).
+- CalDAV: connector supports bidirectional mode in code (`sync_direction` / `bidirectional`); operational complexity and server differences may still require validation per environment.
 - ⚠️ QuickBooks customer/account mapping uses hardcoded values
 
 ---
@@ -373,7 +375,7 @@ All integrations implement:
 
 #### Core Endpoints
 - `/api/v1/projects` - Full CRUD
-- `/api/v1/time-entries` - Full CRUD
+- `/api/v1/time-entries` - Full CRUD, CSV import (`POST .../import-csv`), bulk actions (`POST .../bulk`), idempotent create (`Idempotency-Key` on `POST .../time-entries`)
 - `/api/v1/tasks` - Full CRUD
 - `/api/v1/clients` - Full CRUD
 - `/api/v1/invoices` - Full CRUD
@@ -460,7 +462,7 @@ Based on code examination, no major features are missing. All documented feature
 
 ### Strengths
 
-1. **Service Layer Architecture** - Well-structured service layer with 39 services
+1. **Service Layer Architecture** - Well-structured service layer with 40+ services
 2. **Repository Pattern** - Data access abstraction
 3. **Comprehensive Models** - 83+ models covering all features
 4. **API Design** - RESTful API with 308+ endpoints
@@ -475,8 +477,8 @@ Based on code examination, no major features are missing. All documented feature
    - **Note:** Many may be intentional placeholders
    - **Impact:** Low to medium (error handling may not be comprehensive)
 
-2. **Webhook Security** - GitHub webhook signature verification incomplete
-   - **Impact:** Medium (security concern)
+2. **Webhook Security** - Ensure GitHub (and other) webhook endpoints use shared secrets and signature verification; reject unsigned payloads in production.
+   - **Impact:** Medium if misconfigured
 
 3. **Integration Completeness** - Some integrations need bidirectional sync
    - **Impact:** Low to medium (feature completeness)
@@ -552,9 +554,9 @@ The TimeTracker codebase is **highly complete** with **140+ features** fully imp
 - ✅ **Inventory management is fully functional** (contrary to previous analysis)
 - ✅ **Search API exists and works**
 - ✅ **Issues permission filtering is implemented**
-- ✅ **Comprehensive service layer** (39 services)
+- ✅ **Comprehensive service layer** (40+ services)
 - ✅ **Complete API** (308+ endpoints)
-- ✅ **12 integrations** with consistent architecture
+- ✅ **14 integrations** with consistent architecture
 
 **Remaining Work:**
 - ⚠️ Minor security enhancements (webhook signature verification)
@@ -566,6 +568,6 @@ The TimeTracker codebase is **highly complete** with **140+ features** fully imp
 
 ---
 
-**Report Generated:** 2025-01-27  
+**Report Generated:** 2026-04-05  
 **Analysis Method:** Direct code examination  
-**Files Analyzed:** 63 route files, 83+ model files, 39 service files, 12 integration files
+**Files Analyzed:** 63 route files, 83+ model files, 40+ service files, 14 integration connector modules

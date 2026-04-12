@@ -630,25 +630,12 @@ class Settings(db.Model):
                 pass
 
         # Fallback: return a non-persisted Settings instance
-        # #region agent log
-        try:
-            import json
+        import logging
 
-            log_data = {
-                "location": "settings.py:493",
-                "message": "Returning fallback Settings instance",
-                "data": {"fallback": True},
-                "timestamp": int(datetime.utcnow().timestamp() * 1000),
-                "sessionId": "debug-session",
-                "runId": "run1",
-                "hypothesisId": "E",
-            }
-            log_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".cursor", "debug.log")
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except (OSError, IOError, TypeError, ValueError):
-            pass
-        # #endregion
+        logging.getLogger(__name__).warning(
+            "Returning transient in-memory Settings instance (database row missing or creation failed). "
+            "Check database connectivity and migrations."
+        )
         return cls()
 
     @classmethod

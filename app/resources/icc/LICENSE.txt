@@ -1,0 +1,3 @@
+sRGB-v2-nano.icc is from Compact-ICC-Profiles by Liam R. E. Quin / saucecontrol,
+distributed under the MIT License.
+Source: https://github.com/saucecontrol/Compact-ICC-Profiles

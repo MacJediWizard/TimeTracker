@@ -29,6 +29,8 @@ class Task(db.Model):
     color = db.Column(db.String(7), nullable=True)
     # Comma-separated tags for categorization
     tags = db.Column(db.String(500), nullable=True)
+    # Integration metadata (e.g. GitHub issue id); see app.utils.integration_sync_context
+    custom_fields = db.Column(db.JSON, nullable=True)
 
     # Relationships
     # project relationship is defined via backref in Project model

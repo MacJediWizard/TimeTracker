@@ -899,7 +899,16 @@ def sync_integrations():
                         f"Failed to sync integration {integration.id} ({integration.provider}): {result.get('message')}"
                     )
 
-                db.session.commit()
+                from app.utils.integration_sync_context import sync_result_item_count
+
+                _n = sync_result_item_count(result)
+                service._log_event(
+                    integration.id,
+                    "sync",
+                    bool(result.get("success")),
+                    result.get("message"),
+                    ({"synced_count": _n, "synced_items": _n, "trigger": "scheduler"} if _n or result.get("success") else {"trigger": "scheduler"}),
+                )
 
             except Exception as e:
                 error_msg = f"Error syncing integration {integration.id} ({integration.provider}): {str(e)}"
@@ -907,7 +916,11 @@ def sync_integrations():
                 logger.error(error_msg, exc_info=True)
                 integration.last_sync_status = "error"
                 integration.last_error = str(e)
-                db.session.commit()
+                try:
+                    service._log_event(integration.id, "sync", False, str(e), {"trigger": "scheduler"})
+                except Exception as log_err:
+                    logger.warning("Could not log integration sync failure: %s", log_err)
+                    db.session.commit()
 
         logger.info(f"Integration sync completed. Synced {synced_count}/{len(active_integrations)} integrations")
         if errors:

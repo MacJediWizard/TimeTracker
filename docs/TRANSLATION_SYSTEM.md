@@ -2,7 +2,7 @@
 
 ## Overview
 
-TimeTracker includes a comprehensive internationalization (i18n) system powered by Flask-Babel. The application supports 6 languages out of the box:
+TimeTracker includes a comprehensive internationalization (i18n) system powered by Flask-Babel. Enabled locales are defined in `app/config.py` (`LANGUAGES`), for example:
 
 - **English** (en) - Default
 - **Dutch** (nl - Nederlands)
@@ -10,6 +10,7 @@ TimeTracker includes a comprehensive internationalization (i18n) system powered 
 - **French** (fr - Français)
 - **Italian** (it - Italiano)
 - **Finnish** (fi - Suomi)
+- **Spanish** (es), **Norwegian** (no), **Arabic** (ar), **Hebrew** (he), and others as configured
 
 ## User Experience
 
@@ -38,7 +39,7 @@ Language preference is persisted:
 
 ### Translation Files
 
-Translation files are located in `translations/` directory:
+Translation files are located in `translations/` directory (see `app/config.py` for the full list of enabled locales; additional `.po` files may exist for locales not yet wired in config).
 
 ```
 translations/
@@ -47,7 +48,9 @@ translations/
 ├── de/LC_MESSAGES/messages.po   # German
 ├── fr/LC_MESSAGES/messages.po   # French
 ├── it/LC_MESSAGES/messages.po   # Italian
-└── fi/LC_MESSAGES/messages.po   # Finnish
+├── fi/LC_MESSAGES/messages.po   # Finnish
+├── es/LC_MESSAGES/messages.po   # Spanish
+└── ...                          # Other locales as configured
 ```
 
 ### Configuration
@@ -252,7 +255,7 @@ Potential improvements:
 
 1. Add more languages (Spanish, Portuguese, Japanese, etc.)
 2. Right-to-left (RTL) language support (Arabic, Hebrew)
-3. User-contributed translations via Crowdin or similar
+3. User-contributed translations via [CONTRIBUTING_TRANSLATIONS.md](CONTRIBUTING_TRANSLATIONS.md) (issues, spreadsheet, or a hosted platform such as Weblate/Crowdin)
 4. Automatic language detection improvement
 5. Translation coverage reporting
 
@@ -261,13 +264,14 @@ Potential improvements:
 For questions or issues with translations:
 
 1. Check this documentation
-2. Review `app/__init__.py` locale selector
-3. Inspect browser network requests to `/i18n/set-language`
-4. Check application logs for translation compilation errors
+2. **Contributors without Git:** see [CONTRIBUTING_TRANSLATIONS.md](CONTRIBUTING_TRANSLATIONS.md) (issue template, spreadsheet option, maintainer workflow, and optional [Crowdin](https://crowdin.com/) using root [`crowdin.yml`](../crowdin.yml) and the **Crowdin sync** GitHub Action)
+3. Review `app/__init__.py` locale selector
+4. Inspect browser network requests to `/i18n/set-language`
+5. Check application logs for translation compilation errors
 
 ---
 
-**Last Updated**: 2025-10-07
+**Last Updated**: 2026-04-15
 **Flask-Babel Version**: 4.0.0
 **Babel Version**: 2.14.0
 

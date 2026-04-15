@@ -3,11 +3,55 @@ Tests for search API endpoints.
 Tests both /api/search (legacy) and /api/v1/search (versioned API).
 """
 
+from decimal import Decimal
+
 import pytest
 
 pytestmark = [pytest.mark.api, pytest.mark.integration]
 
+from app import db
 from app.models import Project, Task, Client, TimeEntry, ApiToken
+
+
+@pytest.fixture
+def out_of_scope_entities(app, user):
+    """Client, project, and task that no scope-restricted user should see (different client)."""
+    with app.app_context():
+        marker = "ZetaScopeMarkerXq7"
+        other_client = Client(
+            name=f"Other {marker} Corp",
+            email="other-zeta@example.com",
+            default_hourly_rate=Decimal("80.00"),
+            status="active",
+        )
+        db.session.add(other_client)
+        db.session.flush()
+        other_project = Project(
+            name=f"{marker} Hidden Project",
+            client_id=other_client.id,
+            description="out of scope",
+            billable=True,
+            hourly_rate=Decimal("75.00"),
+            status="active",
+        )
+        db.session.add(other_project)
+        db.session.flush()
+        other_task = Task(
+            name=f"{marker} Hidden Task",
+            description="out of scope task",
+            project_id=other_project.id,
+            priority="medium",
+            created_by=user.id,
+            status="todo",
+        )
+        db.session.add(other_task)
+        db.session.commit()
+        return {
+            "marker": marker,
+            "client_id": other_client.id,
+            "project_id": other_project.id,
+            "task_id": other_task.id,
+        }
 
 
 class TestLegacySearchAPI:
@@ -74,6 +118,51 @@ class TestLegacySearchAPI:
         response = client.get("/api/search", query_string={"q": "test"})
         # Should redirect to login
         assert response.status_code in [302, 401]
+
+    def test_search_scope_restricted_excludes_other_client_entities(
+        self, scope_restricted_authenticated_client, project, task, out_of_scope_entities
+    ):
+        """Subcontractor search must not return projects/tasks/clients outside assigned clients."""
+        marker = out_of_scope_entities["marker"]
+        resp = scope_restricted_authenticated_client.get(
+            "/api/search", query_string={"q": marker, "types": "project,task,client"}
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        proj_ids = {r["id"] for r in data["results"] if r["type"] == "project"}
+        task_ids = {r["id"] for r in data["results"] if r["type"] == "task"}
+        client_ids = {r["id"] for r in data["results"] if r["type"] == "client"}
+        assert out_of_scope_entities["project_id"] not in proj_ids
+        assert out_of_scope_entities["task_id"] not in task_ids
+        assert out_of_scope_entities["client_id"] not in client_ids
+
+    def test_search_scope_restricted_still_finds_assigned_project_and_task(
+        self, scope_restricted_authenticated_client, project, task
+    ):
+        """Subcontractor still sees entities under assigned client."""
+        resp = scope_restricted_authenticated_client.get(
+            "/api/search", query_string={"q": project.name[:4], "types": "project"}
+        )
+        assert resp.status_code == 200
+        proj_ids = [r["id"] for r in resp.get_json()["results"] if r["type"] == "project"]
+        assert project.id in proj_ids
+
+        resp_t = scope_restricted_authenticated_client.get(
+            "/api/search", query_string={"q": task.name[:4], "types": "task"}
+        )
+        assert resp_t.status_code == 200
+        task_ids = [r["id"] for r in resp_t.get_json()["results"] if r["type"] == "task"]
+        assert task.id in task_ids
+
+    def test_search_admin_sees_out_of_scope_project(
+        self, admin_authenticated_client, out_of_scope_entities
+    ):
+        """Admin global search includes projects outside any subcontractor scope."""
+        marker = out_of_scope_entities["marker"]
+        resp = admin_authenticated_client.get("/api/search", query_string={"q": marker, "types": "project"})
+        assert resp.status_code == 200
+        proj_ids = [r["id"] for r in resp.get_json()["results"] if r["type"] == "project"]
+        assert out_of_scope_entities["project_id"] in proj_ids
 
 
 class TestV1SearchAPI:
@@ -236,4 +325,34 @@ class TestV1SearchAPI:
         task_results = [r for r in data["results"] if r["type"] == "task"]
         assert len(task_results) > 0
         assert any(r["id"] == task.id for r in task_results)
+
+    def test_v1_search_scope_restricted_excludes_other_client_entities(
+        self, app, scope_restricted_user, project, task, out_of_scope_entities
+    ):
+        """v1 search applies the same project/task/client scope as legacy session search."""
+        token, plain = ApiToken.create_token(
+            user_id=scope_restricted_user.id, name="Sub search token", scopes="read:projects"
+        )
+        db.session.add(token)
+        db.session.commit()
+
+        marker = out_of_scope_entities["marker"]
+        test_client = app.test_client()
+        test_client.environ_base["HTTP_AUTHORIZATION"] = f"Bearer {plain}"
+        resp = test_client.get("/api/v1/search", query_string={"q": marker, "types": "project,task,client"})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        proj_ids = {r["id"] for r in data["results"] if r["type"] == "project"}
+        task_ids = {r["id"] for r in data["results"] if r["type"] == "task"}
+        client_ids = {r["id"] for r in data["results"] if r["type"] == "client"}
+        assert out_of_scope_entities["project_id"] not in proj_ids
+        assert out_of_scope_entities["task_id"] not in task_ids
+        assert out_of_scope_entities["client_id"] not in client_ids
+
+        resp_ok = test_client.get(
+            "/api/v1/search", query_string={"q": project.name[:4], "types": "project"}
+        )
+        assert resp_ok.status_code == 200
+        proj_ok = [r["id"] for r in resp_ok.get_json()["results"] if r["type"] == "project"]
+        assert project.id in proj_ok
 

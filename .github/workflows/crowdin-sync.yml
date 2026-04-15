@@ -1,0 +1,34 @@
+# Manual Crowdin sync: uploads English source .po, downloads translations, opens a PR.
+# Prerequisites: repo secrets CROWDIN_PROJECT_ID and CROWDIN_PERSONAL_TOKEN (see docs/CONTRIBUTING_TRANSLATIONS.md).
+name: Crowdin sync
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  crowdin:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Crowdin push and pull
+        uses: crowdin/github-action@v2
+        with:
+          upload_sources: true
+          # Set to true once to seed Crowdin with existing translations/…/messages.po, then set back to false.
+          upload_translations: false
+          download_translations: true
+          localization_branch_name: i18n/crowdin
+          create_pull_request: true
+          pull_request_title: "chore(i18n): Crowdin translations"
+          pull_request_body: "Automated sync from Crowdin. Review placeholders and `no` vs `nb` paths before merge."
+          commit_message: "chore(i18n): sync Crowdin translations"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CROWDIN_PROJECT_ID: ${{ secrets.CROWDIN_PROJECT_ID }}
+          CROWDIN_PERSONAL_TOKEN: ${{ secrets.CROWDIN_PERSONAL_TOKEN }}

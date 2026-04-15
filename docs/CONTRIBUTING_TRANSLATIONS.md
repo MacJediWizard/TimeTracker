@@ -32,6 +32,22 @@ Use when contributors cannot or will not use GitHub:
 
 Examples: [Weblate](https://weblate.org/) (open source, can be self-hosted), [Crowdin](https://crowdin.com/), [POEditor](https://poeditor.com/), [Transifex](https://www.transifex.com/). Translators work in the browser; integration or export/import keeps `.po` in sync with the codebase. Setup is maintainer-owned.
 
+#### Crowdin setup (maintainers)
+
+This repo includes a root [`crowdin.yml`](../crowdin.yml) that maps **source** `translations/en/LC_MESSAGES/messages.po` to **translations** under `translations/<locale>/LC_MESSAGES/messages.po`, with **`nb` → `no`** so Norwegian matches `app/config.py` (`no`, not `nb`). You may still have a legacy `translations/nb/` tree locally; prefer **`no`** in Crowdin and in config so you do not maintain two Norwegian copies.
+
+1. **Create a Crowdin account and project** at [crowdin.com](https://crowdin.com/) → **Create project**.
+2. **Source language:** English. Treat the resource as **Gettext PO** (`.po`).
+3. **Target languages:** Add every locale you ship: `nl`, `de`, `fr`, `it`, `fi`, `es`, `no`, `ar`, `he` (match `LANGUAGES` in `app/config.py`). For Norwegian, add Norwegian (Bokmål) in Crowdin; the `crowdin.yml` mapping writes files into `translations/no/`.
+4. **Sync with this repository (pick one):**
+   - **GitHub Action:** In the GitHub repo, add Actions secrets `CROWDIN_PROJECT_ID` and `CROWDIN_PERSONAL_TOKEN` (Crowdin project **Details** shows the numeric project ID; **Account Settings → API** creates the token with project access, typically Manager). Run **Crowdin sync** from the **Actions** tab → **Run workflow**. For a **one-time** import of existing `.po` files into Crowdin’s translation memory, temporarily set `upload_translations: true` in [.github/workflows/crowdin-sync.yml](../.github/workflows/crowdin-sync.yml), run it once, then set it back to `false`.
+   - **Crowdin’s GitHub integration:** Crowdin → **Integrations → GitHub** → connect the repo and branch; point it at the same `crowdin.yml` so Crowdin can open PRs when translations are updated.
+   - **Crowdin CLI:** Install the [Crowdin CLI](https://crowdin.github.io/crowdin-cli/), export the same env vars, run `crowdin upload sources` (and optionally `crowdin upload translations` once) from the repository root.
+5. **When developers add or change `_()` strings:** Run `pybabel extract` / `pybabel update` locally (see [TRANSLATION_SYSTEM.md](TRANSLATION_SYSTEM.md)), commit if you version those files, then upload sources to Crowdin again.
+6. **Landing translations:** Approve in Crowdin if you use review, then download (workflow or integration PR), merge, and run the app so `.mo` files rebuild.
+
+Translators only need a Crowdin account; they do not use git.
+
 ### Other options (reference)
 
 - **Poedit:** Maintainer can zip `translations/<lang>/LC_MESSAGES/messages.po` for a trusted translator; they edit in [Poedit](https://poedit.net/) and send the file back. Avoid two people editing the same locale in parallel without coordination.

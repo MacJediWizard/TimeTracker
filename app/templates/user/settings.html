@@ -145,6 +145,56 @@
                         <input type="time" id="reminder_to_log_time" name="reminder_to_log_time" value="{{ user.reminder_to_log_time or '17:00' }}"
                                class="w-32 px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white text-sm">
                     </div>
+
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-4 mb-2">{{ _('In-app reminders (toasts)') }}</p>
+                    <label for="smart_notifications_enabled" class="flex items-center min-h-[44px] cursor-pointer rounded-lg px-2 -mx-2 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                        <input type="checkbox" id="smart_notifications_enabled" name="smart_notifications_enabled"
+                               {% if user.smart_notifications_enabled %}checked{% endif %}
+                               class="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded flex-shrink-0">
+                        <span class="ml-3 block text-sm text-gray-700 dark:text-gray-300">
+                            {{ _('Enable smart notifications on this device') }}
+                        </span>
+                    </label>
+                    <div class="ml-2 mt-2 space-y-2 {% if not user.smart_notifications_enabled %}opacity-60{% endif %}" id="smart_notify_sub_wrap">
+                        <label for="smart_notify_no_tracking" class="flex items-center min-h-[40px] cursor-pointer rounded-lg px-2 -mx-2 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                            <input type="checkbox" id="smart_notify_no_tracking" name="smart_notify_no_tracking"
+                                   {% if user.smart_notify_no_tracking %}checked{% endif %}
+                                   class="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded flex-shrink-0">
+                            <span class="ml-3 block text-sm text-gray-700 dark:text-gray-300">{{ _('Nudge when no time logged today (uses hour from app settings or override below)') }}</span>
+                        </label>
+                        <label for="smart_notify_long_timer" class="flex items-center min-h-[40px] cursor-pointer rounded-lg px-2 -mx-2 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                            <input type="checkbox" id="smart_notify_long_timer" name="smart_notify_long_timer"
+                                   {% if user.smart_notify_long_timer %}checked{% endif %}
+                                   class="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded flex-shrink-0">
+                            <span class="ml-3 block text-sm text-gray-700 dark:text-gray-300">{{ _('Alert when a timer runs longer than the configured threshold') }}</span>
+                        </label>
+                        <label for="smart_notify_daily_summary" class="flex items-center min-h-[40px] cursor-pointer rounded-lg px-2 -mx-2 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                            <input type="checkbox" id="smart_notify_daily_summary" name="smart_notify_daily_summary"
+                                   {% if user.smart_notify_daily_summary %}checked{% endif %}
+                                   class="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded flex-shrink-0">
+                            <span class="ml-3 block text-sm text-gray-700 dark:text-gray-300">{{ _('End-of-day summary (logged hours today)') }}</span>
+                        </label>
+                        <label for="smart_notify_browser" class="flex items-center min-h-[40px] cursor-pointer rounded-lg px-2 -mx-2 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                            <input type="checkbox" id="smart_notify_browser" name="smart_notify_browser"
+                                   {% if user.smart_notify_browser %}checked{% endif %}
+                                   class="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded flex-shrink-0">
+                            <span class="ml-3 block text-sm text-gray-700 dark:text-gray-300">{{ _('Also use browser notifications when permission is granted') }}</span>
+                        </label>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                            <div>
+                                <label for="smart_notify_no_tracking_after" class="block text-xs text-gray-500 dark:text-gray-400 mb-1">{{ _('No-tracking nudge hour (optional override, HH:MM)') }}</label>
+                                <input type="time" id="smart_notify_no_tracking_after" name="smart_notify_no_tracking_after"
+                                       value="{{ user.smart_notify_no_tracking_after or '' }}"
+                                       class="w-full max-w-[12rem] px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white text-sm">
+                            </div>
+                            <div>
+                                <label for="smart_notify_summary_at" class="block text-xs text-gray-500 dark:text-gray-400 mb-1">{{ _('Summary hour (optional override, HH:MM)') }}</label>
+                                <input type="time" id="smart_notify_summary_at" name="smart_notify_summary_at"
+                                       value="{{ user.smart_notify_summary_at or '' }}"
+                                       class="w-full max-w-[12rem] px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white text-sm">
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
             </div>

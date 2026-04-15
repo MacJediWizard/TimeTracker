@@ -13,6 +13,7 @@ from app.utils.scope_filter import (
     get_allowed_client_ids,
     get_allowed_project_ids,
     apply_client_scope_to_model,
+    apply_project_scope,
     apply_project_scope_to_model,
     user_can_access_client,
     user_can_access_project,
@@ -194,6 +195,27 @@ def test_apply_project_scope_to_model_scope_restricted(app, scope_restricted_use
         assert q.count() >= 1
         ids = [p.id for p in q.all()]
         assert project.id in ids
+
+
+def test_apply_project_scope_query_unrestricted(app, user):
+    """apply_project_scope leaves query unchanged for unrestricted users."""
+    with app.app_context():
+        from app.models import Project as ProjectModel
+
+        base = ProjectModel.query
+        scoped = apply_project_scope(ProjectModel, base, user=user)
+        assert scoped is base
+
+
+def test_apply_project_scope_query_restricted(app, scope_restricted_user, project):
+    """apply_project_scope filters Project query for scope-restricted users."""
+    with app.app_context():
+        from app.models import Project as ProjectModel
+
+        base = ProjectModel.query
+        scoped = apply_project_scope(ProjectModel, base, user=scope_restricted_user)
+        assert scoped is not base
+        assert project.id in {p.id for p in scoped.all()}
 
 
 # ---------------------------------------------------------------------------

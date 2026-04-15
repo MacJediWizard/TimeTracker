@@ -45,6 +45,14 @@ class User(UserMixin, db.Model):
     reminder_to_log_time = db.Column(
         db.String(5), nullable=True
     )  # Time of day "HH:MM" (24h) for reminder, e.g. "17:00"
+    # In-app smart notifications (separate from email remind-to-log)
+    smart_notifications_enabled = db.Column(db.Boolean, default=False, nullable=False)
+    smart_notify_no_tracking = db.Column(db.Boolean, default=True, nullable=False)
+    smart_notify_long_timer = db.Column(db.Boolean, default=True, nullable=False)
+    smart_notify_daily_summary = db.Column(db.Boolean, default=True, nullable=False)
+    smart_notify_browser = db.Column(db.Boolean, default=False, nullable=False)
+    smart_notify_no_tracking_after = db.Column(db.String(5), nullable=True)  # HH:MM override; null = use app config
+    smart_notify_summary_at = db.Column(db.String(5), nullable=True)  # HH:MM override; null = use app config
     timezone = db.Column(db.String(50), nullable=True)  # User-specific timezone override
     date_format = db.Column(db.String(20), default=None, nullable=True)  # None = use system default
     time_format = db.Column(db.String(10), default=None, nullable=True)  # None = use system default

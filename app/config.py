@@ -238,6 +238,14 @@ class Config:
     GITHUB_RELEASES_TOKEN = os.getenv("GITHUB_RELEASES_TOKEN", "").strip() or None
     ENABLE_PRE_RELEASE_NOTIFICATIONS = os.getenv("ENABLE_PRE_RELEASE_NOTIFICATIONS", "false").lower() == "true"
 
+    # Smart in-app notifications (GET /api/notifications); times are HH:MM 24h in user's timezone.
+    SMART_NOTIFY_MAX_PER_DAY = max(1, min(10, int(os.getenv("SMART_NOTIFY_MAX_PER_DAY", "2"))))
+    SMART_NOTIFY_NO_TRACKING_AFTER = os.getenv("SMART_NOTIFY_NO_TRACKING_AFTER", "16:00").strip()
+    SMART_NOTIFY_SUMMARY_AT = os.getenv("SMART_NOTIFY_SUMMARY_AT", "18:00").strip()
+    SMART_NOTIFY_LONG_TIMER_HOURS = float(os.getenv("SMART_NOTIFY_LONG_TIMER_HOURS", "4"))
+    # Fire time-based kinds only during the first N minutes of the configured hour (same idea as email remind-to-log).
+    SMART_NOTIFY_SCHEDULER_SLOT_MINUTES = max(1, min(59, int(os.getenv("SMART_NOTIFY_SCHEDULER_SLOT_MINUTES", "30"))))
+
 
 class DevelopmentConfig(Config):
     """Development configuration"""

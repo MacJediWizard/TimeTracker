@@ -29,6 +29,14 @@ def apply_client_scope(Client, query, user=None):
     return query.filter(scope)
 
 
+def apply_project_scope(Project, query, user=None):
+    """Apply project scope to a Project query. Returns query with scope filter applied if restricted."""
+    scope = apply_project_scope_to_model(Project, user)
+    if scope is None:
+        return query
+    return query.filter(scope)
+
+
 def apply_client_scope_to_model(Client, user=None):
     """Return filter expression for Client query (Client.id.in_(...) or None for no filter)."""
     u = user or (current_user if current_user.is_authenticated else None)

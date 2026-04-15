@@ -4508,19 +4508,16 @@ def search():
 
     # Get authenticated user from API token
     user = g.api_user
+    from app.utils.scope_filter import apply_client_scope, apply_project_scope
 
     # Search projects (scoped for subcontractors)
     if "project" in search_types:
         try:
-            from app.utils.scope_filter import apply_project_scope_to_model
-
             projects_query = Project.query.filter(
                 Project.status == "active",
                 or_(Project.name.ilike(search_pattern), Project.description.ilike(search_pattern)),
             )
-            scope_p = apply_project_scope_to_model(Project, user)
-            if scope_p is not None:
-                projects_query = projects_query.filter(scope_p)
+            projects_query = apply_project_scope(Project, projects_query, user)
             projects = projects_query.limit(limit).all()
 
             for project in projects:
@@ -4541,15 +4538,12 @@ def search():
     # Search tasks
     if "task" in search_types:
         try:
-            tasks = (
-                Task.query.join(Project)
-                .filter(
-                    Project.status == "active",
-                    or_(Task.name.ilike(search_pattern), Task.description.ilike(search_pattern)),
-                )
-                .limit(limit)
-                .all()
+            tasks_query = Task.query.join(Project).filter(
+                Project.status == "active",
+                or_(Task.name.ilike(search_pattern), Task.description.ilike(search_pattern)),
             )
+            tasks_query = apply_project_scope(Project, tasks_query, user)
+            tasks = tasks_query.limit(limit).all()
 
             for task in tasks:
                 results.append(
@@ -4569,8 +4563,6 @@ def search():
     # Search clients (scoped for subcontractors)
     if "client" in search_types:
         try:
-            from app.utils.scope_filter import apply_client_scope_to_model
-
             clients_query = Client.query.filter(
                 or_(
                     Client.name.ilike(search_pattern),
@@ -4578,9 +4570,7 @@ def search():
                     Client.company.ilike(search_pattern),
                 )
             )
-            scope_c = apply_client_scope_to_model(Client, user)
-            if scope_c is not None:
-                clients_query = clients_query.filter(scope_c)
+            clients_query = apply_client_scope(Client, clients_query, user)
             clients = clients_query.limit(limit).all()
 
             for client in clients:

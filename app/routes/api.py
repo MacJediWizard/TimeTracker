@@ -24,6 +24,7 @@ from app.models import (
 )
 from app.models.time_entry import local_now
 from app.utils.db import safe_commit
+from app.utils.scope_filter import apply_client_scope, apply_project_scope
 from app.utils.timezone import convert_app_datetime_to_user, parse_local_datetime, utc_to_local
 
 api_bp = Blueprint("api", __name__)
@@ -179,14 +180,12 @@ def search():
     # Search projects
     if "project" in search_types:
         try:
-            projects = (
-                Project.query.filter(
-                    Project.status == "active",
-                    or_(Project.name.ilike(search_pattern), Project.description.ilike(search_pattern)),
-                )
-                .limit(limit)
-                .all()
+            projects_query = Project.query.filter(
+                Project.status == "active",
+                or_(Project.name.ilike(search_pattern), Project.description.ilike(search_pattern)),
             )
+            projects_query = apply_project_scope(Project, projects_query, current_user)
+            projects = projects_query.limit(limit).all()
 
             for project in projects:
                 results.append(
@@ -206,15 +205,12 @@ def search():
     # Search tasks
     if "task" in search_types:
         try:
-            tasks = (
-                Task.query.join(Project)
-                .filter(
-                    Project.status == "active",
-                    or_(Task.name.ilike(search_pattern), Task.description.ilike(search_pattern)),
-                )
-                .limit(limit)
-                .all()
+            tasks_query = Task.query.join(Project).filter(
+                Project.status == "active",
+                or_(Task.name.ilike(search_pattern), Task.description.ilike(search_pattern)),
             )
+            tasks_query = apply_project_scope(Project, tasks_query, current_user)
+            tasks = tasks_query.limit(limit).all()
 
             for task in tasks:
                 results.append(
@@ -234,17 +230,15 @@ def search():
     # Search clients
     if "client" in search_types:
         try:
-            clients = (
-                Client.query.filter(
-                    or_(
-                        Client.name.ilike(search_pattern),
-                        Client.email.ilike(search_pattern),
-                        Client.company.ilike(search_pattern),
-                    )
+            clients_query = Client.query.filter(
+                or_(
+                    Client.name.ilike(search_pattern),
+                    Client.email.ilike(search_pattern),
+                    Client.company.ilike(search_pattern),
                 )
-                .limit(limit)
-                .all()
             )
+            clients_query = apply_client_scope(Client, clients_query, current_user)
+            clients = clients_query.limit(limit).all()
 
             for client in clients:
                 results.append(
@@ -1546,6 +1540,15 @@ def get_stats():
     )
 
 
+@api_bp.route("/api/stats/value-dashboard")
+@login_required
+def value_dashboard_stats():
+    """Productivity/value aggregates for the dashboard widget (short-TTL Redis cache)."""
+    from app.services.stats_service import StatsService
+
+    return jsonify(StatsService.get_value_dashboard(current_user))
+
+
 @api_bp.route("/api/entry/<int:entry_id>", methods=["PUT"])
 @login_required
 def update_entry(entry_id):
@@ -1936,28 +1939,39 @@ def dashboard_sparklines():
 @api_bp.route("/api/summary/today")
 @login_required
 def summary_today():
-    """Get today's time tracking summary for daily summary notification"""
-    from datetime import datetime, timedelta
+    """Get today's time tracking summary (user's local calendar day, not UTC midnight)."""
+    from app.services.notification_service import get_today_summary_for_user
 
-    from sqlalchemy import distinct, func
+    payload = get_today_summary_for_user(current_user)
+    return jsonify(payload)
 
-    from app.models import Project, TimeEntry
 
-    today = datetime.utcnow().date()
+@api_bp.route("/api/notifications")
+@login_required
+def api_smart_notifications():
+    """Smart in-app notification candidates (respects preferences, dismissals, caps)."""
+    from app.services.notification_service import NotificationService
 
-    # Get today's time entries for current user
-    entries = TimeEntry.query.filter(
-        TimeEntry.user_id == current_user.id, func.date(TimeEntry.start_time) == today, TimeEntry.end_time.isnot(None)
-    ).all()
+    return jsonify(NotificationService.build_for_user(current_user))
 
-    # Calculate total hours
-    total_hours = sum((entry.duration_hours or 0) for entry in entries)
 
-    # Count unique projects
-    project_ids = set(entry.project_id for entry in entries if entry.project_id)
-    project_count = len(project_ids)
+@api_bp.route("/api/notifications/dismiss", methods=["POST"])
+@login_required
+def api_smart_notifications_dismiss():
+    """Record dismissal for a notification kind on a local calendar date."""
+    from app.services.notification_service import NotificationService, user_local_today_bounds_utc
 
-    return jsonify({"hours": round(total_hours, 2), "projects": project_count})
+    data = request.get_json(silent=True) or {}
+    kind = data.get("kind")
+    local_date = data.get("local_date")
+    if not kind or not isinstance(kind, str):
+        return jsonify({"error": "kind is required"}), 400
+    if not local_date or not isinstance(local_date, str):
+        _, _, local_date = user_local_today_bounds_utc(current_user)
+    ok = NotificationService.dismiss(current_user, kind.strip(), local_date.strip()[:10])
+    if not ok:
+        return jsonify({"error": "invalid kind or local_date"}), 400
+    return jsonify({"success": True})
 
 
 @api_bp.route("/api/activity/timeline")

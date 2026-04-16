@@ -63,7 +63,7 @@ TimeTracker/
 ## 🏗️ Core Components
 
 ### Application (`app/`)
-- **blueprint_registry.py**: Centralized registration of all route blueprints (reduces `__init__.py` size)
+- **blueprint_registry.py**: Centralized registration of all route blueprints (reduces `__init__.py` size). Optional blueprints log `logger.exception` on failure; in local development (`FLASK_ENV=development` or `DEBUG`) failures re-raise; production and tests continue without that blueprint.
 - **Models**: Database models for users, projects, time entries, tasks, and settings
 - **Routes**: API endpoints and web routes (auth, api, api_v1, tasks, admin, etc.)
 - **Templates**: Jinja2 HTML templates under `app/templates/` (task management, reports, timer, etc.)

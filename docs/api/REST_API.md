@@ -321,7 +321,7 @@ curl -H "Authorization: Bearer YOUR_TOKEN" \
      "https://your-domain.com/api/v1/search?q=website&types=project,task"
 ```
 
-**Response:**
+**Response (200):**
 ```json
 {
   "results": [
@@ -345,9 +345,18 @@ curl -H "Authorization: Bearer YOUR_TOKEN" \
     }
   ],
   "query": "website",
-  "count": 2
+  "count": 2,
+  "partial": false,
+  "errors": {}
 }
 ```
+
+**Partial results and per-domain errors**
+
+Search runs independently for **projects**, **tasks**, **clients**, and **time entries** (see `app/services/global_search_service.py`). If one domain hits a database error (`SQLAlchemyError`), that domain is skipped, the others still return hits, and the response includes:
+
+- **`partial`:** `true` when any domain failed; otherwise `false`.
+- **`errors`:** Object whose keys are `projects`, `tasks`, `clients`, or `entries` (only keys for failed domains are present), each mapping to a short error string. Intended for observability and UI messaging, not as a stable API error code.
 
 **Search Behavior:**
 - **Projects**: Searches in name and description (active projects only)
@@ -356,11 +365,11 @@ curl -H "Authorization: Bearer YOUR_TOKEN" \
 - **Time Entries**: Searches in notes and tags (non-admin users see only their own entries)
 
 **Error Responses:**
-- `400 Bad Request` - Query is too short (less than 2 characters)
+- `400 Bad Request` - Query is too short (less than 2 characters). Body includes `error`, `results` (empty array), `partial: false`, and `errors: {}`.
 - `401 Unauthorized` - Missing or invalid API token
 - `403 Forbidden` - Token lacks `read:projects` scope
 
-**Note:** The legacy endpoint `/api/search` is also available for session-based authentication (requires login).
+**Note:** The legacy endpoint **`GET /api/search`** (session cookie, Flask-Login) uses the same search logic and the same **`results` / `query` / `count` / `partial` / `errors`** shape. For queries shorter than two characters it returns **200** with empty `results` and `partial: false`. Overlapping session routes may return **`X-API-Deprecated: true`** and a **`Link`** header pointing at this v1 path; integrations should call **`GET /api/v1/search`** only.
 
 ### Projects
 

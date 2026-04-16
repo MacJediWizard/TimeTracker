@@ -158,6 +158,7 @@ Examples:
 
 - **New features for integrations** (mobile, desktop, scripts, webhooks): implement under **`/api/v1`** first, with scopes and updates to OpenAPI in `app/routes/api_docs.py`.
 - **`/api/*` session JSON** (`app/routes/api.py`): reserve for same-origin **web UI** needs (browser cookie auth). Reuse code from `app/services/` instead of duplicating v1 logic. If you add a session route that mirrors v1, document it and consider **`X-API-Deprecated`** plus a **`Link`** successor header (see `app/utils/api_deprecation.py` and `docs/api/API_VERSIONING.md`).
+- **Global search** (`GET /api/v1/search` and `GET /api/search`): shared implementation in **`app/services/global_search_service.py`** (`run_global_search`). Change behavior there and keep [REST_API.md](../api/REST_API.md) in sync.
 
 ### Database
 

@@ -25,7 +25,7 @@ TimeTracker uses URL-based API versioning to ensure backward compatibility while
 These **`/api/*`** routes have v1 successors. They remain for the web UI but may send **`X-API-Deprecated: true`** and **`Link: </api/v1/...>; rel="successor-version"`**:
 
 - `GET /api/health` → `GET /api/v1/health`
-- `GET /api/search` → `GET /api/v1/search`
+- `GET /api/search` → `GET /api/v1/search` (same JSON shape, including `partial` and `errors` on degraded per-domain search; see [REST_API.md](REST_API.md#search))
 - Timer: `GET /api/timer/status`, `POST /api/timer/start`, `POST /api/timer/stop`, `POST /api/timer/stop_at`, `POST /api/timer/resume` → `/api/v1/timer/*`
 - Time entries: `GET|POST /api/entries`, `POST /api/entries/bulk`, `GET|PUT|DELETE /api/entry/<id>` → `/api/v1/time-entries` (and related)
 - `GET /api/projects`, `GET /api/projects/<id>/tasks`, `GET /api/tasks` → `/api/v1/projects`, `/api/v1/tasks`

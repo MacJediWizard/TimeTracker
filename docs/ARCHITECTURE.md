@@ -30,7 +30,7 @@ flowchart LR
 | Layer | Location | Role |
 |-------|----------|------|
 | Entry point | `app.py` | Creates Flask app, loads config, registers blueprints via `blueprint_registry`, starts server (and optional SocketIO/scheduler). |
-| Blueprint registry | `app/blueprint_registry.py` | Single place that imports and registers all route blueprints so `app/__init__.py` stays manageable. |
+| Blueprint registry | `app/blueprint_registry.py` | Single place that imports and registers all route blueprints so `app/__init__.py` stays manageable. Optional blueprints and the optional `audit_logs` module log failures at **ERROR** with a full traceback (`logger.exception`); in **`FLASK_ENV=development`** or **`DEBUG`**, registration failures **re-raise** so misconfiguration fails fast. In **production** and **testing**, optional blueprint import failures are logged and skipped so the app still starts. |
 | Routes | `app/routes/` | HTTP handlers: auth, main (dashboard), projects, timer, reports, admin, api, api_v1 (plus api_v1_* sub-blueprints), tasks, issues, invoices, clients, etc. |
 | Services | `app/services/` | Business logic; routes call services instead of putting logic in view code. |
 | Repositories | `app/repositories/` | Data access layer; services and routes use repositories for queries and eager loading. |
@@ -88,7 +88,7 @@ API endpoints are versioned under `/api/v1/`. Authentication is session-based fo
 - **Service layer:** Business logic lives in `app/services/` so routes stay thin and logic is reusable and testable. See [Service Layer and Base CRUD](development/SERVICE_LAYER_AND_BASE_CRUD.md) and the [Architecture Migration Guide](implementation-notes/ARCHITECTURE_MIGRATION_GUIDE.md).
 - **API v1 split:** Core resources (projects, tasks, clients, invoices, expenses, payments, mileage, deals, leads, contacts) are in separate sub-blueprints (`api_v1_*.py`) under `/api/v1/` for maintainability; the main `api_v1` module keeps info, health, auth, and remaining endpoints.
 - **Bootstrap:** Logging is configured in `app/utils/setup_logging.py`; legacy migration helpers (task management, issues tables) are in `app/utils/legacy_migrations.py`. `app/__init__.py` creates the app and wires extensions.
-- **Blueprint registry:** All blueprints are registered from `app/blueprint_registry.py` to keep registration in one place and simplify adding new modules.
+- **Blueprint registry:** All blueprints are registered from `app/blueprint_registry.py` to keep registration in one place and simplify adding new modules. Optional modules log registration errors with tracebacks; development mode re-raises to surface broken optional routes early.
 - **Database:** **PostgreSQL** is recommended for production; **SQLite** is supported for development and testing (e.g. `docker/docker-compose.local-test.yml`).
 - **API auth:** The REST API uses API tokens (created in Admin → Api-tokens) with scopes; no session cookies for API access.
 - **Single codebase for web UI:** No separate frontend repo; templates and static assets live in the main repo under `app/templates/` and `app/static/`.

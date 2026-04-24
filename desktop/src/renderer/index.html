@@ -31,8 +31,14 @@
           <h1>TimeTracker</h1>
           <p id="login-subtitle">Connect to your server</p>
         </div>
-        <div id="wizard-step-server" class="login-wizard-step">
-          <p class="wizard-step-label" id="wizard-step-server-label">Step 1 of 2 — Server</p>
+        <div id="wizard-step-welcome" class="login-wizard-step">
+          <p class="wizard-intro">Welcome. This app talks to <strong>your</strong> TimeTracker server—nothing is hardcoded. You will enter the server address, verify the connection, then sign in with an API token.</p>
+          <div class="form-group wizard-actions">
+            <button type="button" id="login-wizard-continue" class="btn btn-primary">Get started</button>
+          </div>
+        </div>
+        <div id="wizard-step-server" class="login-wizard-step" style="display: none;">
+          <p class="wizard-step-label" id="wizard-step-server-label">Step 2 of 3 — Server URL</p>
           <div class="form-group">
             <label for="server-url">Server URL</label>
             <input type="text" id="server-url" required placeholder="https://192.168.1.50:5000" autocomplete="url" spellcheck="false">
@@ -40,11 +46,11 @@
           </div>
           <div class="form-group wizard-actions">
             <button type="button" id="login-test-server-btn" class="btn btn-secondary">Test server</button>
-            <button type="button" id="login-wizard-continue" class="btn btn-primary" disabled>Continue to token</button>
+            <button type="button" id="login-wizard-continue-server" class="btn btn-primary" disabled>Continue to sign in</button>
           </div>
         </div>
         <div id="wizard-step-token" class="login-wizard-step" style="display: none;">
-          <p class="wizard-step-label">Step 2 of 2 — API token</p>
+          <p class="wizard-step-label">Step 3 of 3 — Sign in</p>
           <form id="login-form">
             <div class="form-group">
               <label for="api-token">API Token</label>
@@ -67,7 +73,13 @@
       <header class="app-header">
         <div class="header-left">
           <h1>TimeTracker</h1>
-          <span id="connection-status" class="connection-status" role="status" aria-live="polite" aria-label="Connection status" title="Connection status"></span>
+          <div class="header-connection" role="group" aria-label="Server connection">
+            <span id="connection-status" class="connection-status" role="status" aria-live="polite" aria-label="Connection status" title=""></span>
+            <div class="header-connection-details">
+              <span id="connection-url-label" class="header-connection-url" title=""></span>
+              <span class="header-connection-meta">Last OK: <span id="connection-last-ok">—</span></span>
+            </div>
+          </div>
         </div>
         <div class="header-right">
           <button id="minimize-btn" class="header-btn" title="Minimize">−</button>
@@ -251,6 +263,7 @@
             <div class="form-group">
               <button id="save-settings-btn" class="btn btn-primary">Save Settings</button>
               <button id="test-connection-btn" class="btn btn-secondary">Test Connection</button>
+              <button type="button" id="reset-configuration-btn" class="btn btn-secondary">Reset configuration</button>
             </div>
             <div id="settings-message" class="message"></div>
           </div>

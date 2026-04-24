@@ -52,3 +52,10 @@ test('classifyAxiosError maps ENOTFOUND', () => {
   const r = ApiClient.classifyAxiosError(err);
   assert.strictEqual(r.code, 'DNS');
 });
+
+test('classifyAxiosError maps unknown transport without response', () => {
+  const err = { message: 'Network Error' };
+  const r = ApiClient.classifyAxiosError(err);
+  assert.strictEqual(r.code, 'UNKNOWN');
+  assert.ok(r.message.toLowerCase().includes('reachable'));
+});

@@ -92,6 +92,13 @@ function classifyAxiosError(error) {
     };
   }
   const msg = error.message || 'Unknown error';
+  if (!error.response) {
+    return {
+      code: 'UNKNOWN',
+      message:
+        'Server not reachable. Check the URL, VPN, firewall, and that the TimeTracker server is running.',
+    };
+  }
   return { code: 'UNKNOWN', message: msg };
 }
 
@@ -109,8 +116,14 @@ function isTimeTrackerInfoPayload(data) {
   );
 }
 
+const { attachIdempotentRetryInterceptors } = require('../connection/request_policy');
+
 class ApiClient {
-  constructor(baseUrl) {
+  /**
+   * @param {string} baseUrl
+   * @param {{ enableIdempotentRetry?: boolean }} [options]
+   */
+  constructor(baseUrl, options = {}) {
     const normalized = ApiClient.normalizeBaseUrl(baseUrl);
     this.baseUrl = normalized;
     this.client = axios.create({
@@ -123,6 +136,9 @@ class ApiClient {
     });
 
     this.setupInterceptors();
+    if (options.enableIdempotentRetry !== false) {
+      attachIdempotentRetryInterceptors(this.client);
+    }
   }
 
   setupInterceptors() {
@@ -226,7 +242,8 @@ class ApiClient {
             'TimeTracker is not fully set up yet. Open this server URL in a browser, complete initial setup, then try again.',
         };
       }
-      return { ok: true };
+      const appVersion = typeof data.app_version === 'string' ? data.app_version : null;
+      return { ok: true, app_version: appVersion };
     } catch (error) {
       const { code, message } = classifyAxiosError(error);
       return { ok: false, code, message };

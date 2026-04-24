@@ -1,42 +1,85 @@
 // Main application logic
+// First-run depends on ../shared/config.js exposing window.config before this bundle (see index.html).
 require('./utils/helpers');
 const { storeGet, storeSet, storeDelete, storeClear } = window.config || {};
 const ApiClient = require('./api/client');
+const { createConnectionManager } = require('./connection/connection_manager');
+const { CONNECTION_STATE } = require('./connection/connection_state');
+const { startTimerWithReconcile, stopTimerWithReconcile } = require('./connection/timer_operations');
+const { classifyAxiosError } = require('./api/client');
 const StorageService = require('./storage/storage');
 const { showError, showSuccess } = require('./ui/notifications');
 const state = require('./state');
 
+/** @type {ReturnType<typeof createConnectionManager> | null} */
+let connectionManager = null;
+
+/** @type {'welcome'|'server'|'token'} */
+let loginWizardStep = 'welcome';
+
+function truncateUrl(url, maxLen) {
+  const s = String(url || '');
+  const m = maxLen || 42;
+  if (s.length <= m) return s;
+  return s.slice(0, m - 1) + '…';
+}
+
 // Initialize app
 async function initApp() {
-  const serverUrlRaw = await storeGet('server_url');
-  const apiToken = await storeGet('api_token');
-  const serverUrl = serverUrlRaw ? ApiClient.normalizeBaseUrl(String(serverUrlRaw)) : null;
-  if (serverUrl && serverUrl !== serverUrlRaw) {
-    await storeSet('server_url', serverUrl);
-  }
+  connectionManager = createConnectionManager({
+    storeGet,
+    storeSet,
+    storeDelete,
+    storeClear,
+    onCacheClear: () => {
+      if (typeof state.clearViewCaches === 'function') state.clearViewCaches();
+    },
+  });
 
-  if (serverUrl && apiToken) {
-    state.apiClient = new ApiClient(serverUrl);
-    await state.apiClient.setAuthToken(apiToken);
+  connectionManager.subscribe(() => {
+    state.apiClient = connectionManager.getClient();
+    updateConnectionFromManager();
+  });
 
-    const session = await state.apiClient.validateSession();
-    if (session.ok) {
-      state.authFailureStreak = 0;
-      await loadCurrentUserProfile();
-      updateConnectionStatus('connected');
-      showMainScreen();
-      loadDashboard();
-    } else {
-      state.apiClient = null;
-      showLoginScreen({ prefillServerUrl: serverUrl, sessionError: session });
-    }
+  const boot = await connectionManager.bootstrapFromStore();
+
+  if (boot.ok) {
+    state.authFailureStreak = 0;
+    await loadCurrentUserProfile();
+    showMainScreen();
+    loadDashboard();
+  } else if (boot.reason === 'offline' && boot.hadCredentials) {
+    showLoginScreen({
+      prefillServerUrl: connectionManager.getSnapshot().serverUrl || '',
+      openTokenStep: true,
+      bannerMessage: 'You appear to be offline. Reconnect to the network, then use Log in.',
+    });
+  } else if (boot.reason === 'session' && boot.session) {
+    showLoginScreen({ prefillServerUrl: connectionManager.getSnapshot().serverUrl || '', sessionError: boot.session });
+  } else if (boot.reason === 'token_server_mismatch') {
+    showLoginScreen({
+      prefillServerUrl: connectionManager.getSnapshot().serverUrl || '',
+      bannerMessage: connectionManager.getSnapshot().lastError || 'Please sign in again.',
+    });
   } else {
-    showLoginScreen({ prefillServerUrl: serverUrl || '' });
+    showLoginScreen({ prefillServerUrl: connectionManager.getSnapshot().serverUrl || '' });
   }
 
   setupEventListeners();
   startConnectionCheck();
   setupTrayListeners();
+
+  window.addEventListener('online', async () => {
+    if (!connectionManager.getClient()) {
+      const retry = await connectionManager.bootstrapFromStore();
+      if (retry.ok && document.getElementById('main-screen')?.classList.contains('active')) {
+        state.authFailureStreak = 0;
+        await loadCurrentUserProfile();
+        loadDashboard();
+      }
+    }
+    await checkConnection();
+  });
 }
 
 function setupTrayListeners() {
@@ -65,19 +108,30 @@ function startConnectionCheck() {
 }
 
 async function checkConnection() {
+  if (typeof navigator !== 'undefined' && navigator.onLine && !connectionManager.getClient()) {
+    const snap = connectionManager.getSnapshot();
+    if (snap.serverUrl && (await storeGet('api_token'))) {
+      const boot = await connectionManager.bootstrapFromStore();
+      if (boot.ok && document.getElementById('main-screen')?.classList.contains('active')) {
+        state.authFailureStreak = 0;
+        await loadCurrentUserProfile();
+      }
+    }
+  }
+
   if (!state.apiClient) {
-    updateConnectionStatus('disconnected');
+    updateConnectionFromManager();
     return;
   }
 
-  const session = await state.apiClient.validateSession();
+  const session = await connectionManager.validateSessionRefresh();
   if (session.ok) {
     state.authFailureStreak = 0;
-    updateConnectionStatus('connected');
+    updateConnectionFromManager();
     return;
   }
 
-  updateConnectionStatus('error');
+  updateConnectionFromManager();
   if (session.code === 'UNAUTHORIZED') {
     state.authFailureStreak = (state.authFailureStreak || 0) + 1;
     if (state.authFailureStreak >= 2 && document.getElementById('main-screen')?.classList.contains('active')) {
@@ -101,74 +155,121 @@ async function loadCurrentUserProfile() {
       can_approve: Boolean(user.is_admin) || roleCanApprove,
     };
   } catch (err) {
-    console.warn('loadCurrentUserProfile failed:', err && err.message ? err.message : err);
+    console.error('loadCurrentUserProfile failed:', err);
+    if (err && err.stack) console.error(err.stack);
     state.currentUserProfile = { id: null, is_admin: false, can_approve: false };
-    showError('Could not load your user profile. Some actions may be unavailable until the connection improves.');
+    const { message } = classifyAxiosError(err);
+    showError(message || 'Could not load your user profile. Some actions may be unavailable until the connection improves.');
   }
 }
 
-function updateConnectionStatus(status) {
+function updateConnectionFromManager() {
+  if (!connectionManager) return;
+  const snap = connectionManager.getSnapshot();
   const statusEl = document.getElementById('connection-status');
+  const urlEl = document.getElementById('connection-url-label');
+  const timeEl = document.getElementById('connection-last-ok');
   if (!statusEl) return;
-  
-  statusEl.className = 'connection-status connection-' + status;
-  var label = 'Connection status: ';
-  switch (status) {
-    case 'connected':
-      statusEl.textContent = '●';
-      statusEl.title = 'Connected';
+
+  let cssSuffix = 'disconnected';
+  let title = '';
+  let label = 'Connection status: ';
+
+  switch (snap.state) {
+    case CONNECTION_STATE.CONNECTED:
+      cssSuffix = 'connected';
+      title = snap.serverUrl || 'Connected';
       label += 'Connected';
-      break;
-    case 'error':
       statusEl.textContent = '●';
-      statusEl.title = 'Connection error';
-      label += 'Error';
       break;
-    case 'disconnected':
-      statusEl.textContent = '○';
-      statusEl.title = 'Disconnected';
-      label += 'Disconnected';
+    case CONNECTION_STATE.OFFLINE:
+      cssSuffix = 'offline';
+      title = snap.lastError || 'Offline';
+      label += 'Offline';
+      statusEl.textContent = '●';
+      break;
+    case CONNECTION_STATE.CONNECTING:
+      cssSuffix = 'connecting';
+      title = snap.lastError || 'Connecting…';
+      label += 'Connecting';
+      statusEl.textContent = '◐';
+      break;
+    case CONNECTION_STATE.ERROR:
+      cssSuffix = 'error';
+      title = snap.lastError || 'Connection error';
+      label += 'Error';
+      statusEl.textContent = '●';
       break;
     default:
-      label += 'Unknown';
+      title = snap.serverUrl || 'Not configured';
+      label += 'Not configured';
+      statusEl.textContent = '○';
   }
+
+  statusEl.className = 'connection-status connection-' + cssSuffix;
+  statusEl.title = title;
   statusEl.setAttribute('aria-label', label);
+
+  if (urlEl) {
+    urlEl.textContent = snap.serverUrl ? truncateUrl(snap.serverUrl) : '—';
+    urlEl.title = snap.serverUrl || '';
+  }
+  if (timeEl) {
+    timeEl.textContent = snap.lastConnectedAt ? formatDateTime(new Date(snap.lastConnectedAt)) : '—';
+  }
 }
 
 async function forceRelogin(message) {
   state.authFailureStreak = 0;
   const url = await storeGet('server_url');
-  await storeDelete('api_token');
-  state.apiClient = null;
   if (state.isTimerRunning) {
     state.isTimerRunning = false;
     stopTimerPolling();
   }
+  await connectionManager.logoutKeepServer();
   showLoginScreen({
-    prefillServerUrl: url || '',
+    prefillServerUrl: url ? ApiClient.normalizeBaseUrl(String(url)) : '',
     openTokenStep: true,
     bannerMessage: message,
   });
 }
 
-function showWizardServerStep() {
+function showWizardWelcomeStep() {
+  loginWizardStep = 'welcome';
+  const w = document.getElementById('wizard-step-welcome');
   const s1 = document.getElementById('wizard-step-server');
   const s2 = document.getElementById('wizard-step-token');
+  if (w) w.style.display = '';
+  if (s1) s1.style.display = 'none';
+  if (s2) s2.style.display = 'none';
+}
+
+function showWizardServerStep() {
+  loginWizardStep = 'server';
+  const w = document.getElementById('wizard-step-welcome');
+  const s1 = document.getElementById('wizard-step-server');
+  const s2 = document.getElementById('wizard-step-token');
+  if (w) w.style.display = 'none';
   if (s1) s1.style.display = '';
   if (s2) s2.style.display = 'none';
 }
 
 function showWizardTokenStep() {
+  loginWizardStep = 'token';
+  const w = document.getElementById('wizard-step-welcome');
   const s1 = document.getElementById('wizard-step-server');
   const s2 = document.getElementById('wizard-step-token');
+  if (w) w.style.display = 'none';
   if (s1) s1.style.display = 'none';
   if (s2) s2.style.display = '';
 }
 
 function resetLoginWizard() {
-  showWizardServerStep();
-  const cont = document.getElementById('login-wizard-continue');
-  if (cont) cont.disabled = true;
+  showWizardWelcomeStep();
+  const contServer = document.getElementById('login-wizard-continue-server');
+  if (contServer) contServer.disabled = true;
+  const testBtn = document.getElementById('login-test-server-btn');
+  if (testBtn) testBtn.disabled = false;
   clearLoginError();
 }
 
@@ -184,9 +285,11 @@ function setupEventListeners() {
   }
   const loginTestServerBtn = document.getElementById('login-test-server-btn');
   const loginWizardContinue = document.getElementById('login-wizard-continue');
+  const loginWizardContinueServer = document.getElementById('login-wizard-continue-server');
   const loginWizardBack = document.getElementById('login-wizard-back');
   if (loginTestServerBtn) loginTestServerBtn.addEventListener('click', handleLoginTestServer);
   if (loginWizardContinue) loginWizardContinue.addEventListener('click', handleLoginWizardContinue);
+  if (loginWizardContinueServer) loginWizardContinueServer.addEventListener('click', handleLoginWizardContinue);
   if (loginWizardBack) loginWizardBack.addEventListener('click', handleLoginWizardBack);
   
   // Navigation
@@ -223,6 +326,8 @@ function setupEventListeners() {
   const autoSyncInput = document.getElementById('auto-sync');
   if (saveSettingsBtn) saveSettingsBtn.addEventListener('click', handleSaveSettings);
   if (testConnectionBtn) testConnectionBtn.addEventListener('click', handleTestConnection);
+  const resetConfigBtn = document.getElementById('reset-configuration-btn');
+  if (resetConfigBtn) resetConfigBtn.addEventListener('click', handleResetConfiguration);
   if (autoSyncInput) {
     autoSyncInput.addEventListener('change', () => updateSyncIntervalState());
   }
@@ -285,18 +390,29 @@ async function handleLoginTestServer() {
     return;
   }
   const serverUrl = ApiClient.normalizeBaseUrl(normalizedInput);
-  const pub = await ApiClient.testPublicServerInfo(serverUrl);
+  const testBtn = document.getElementById('login-test-server-btn');
+  const contServer = document.getElementById('login-wizard-continue-server');
+  if (testBtn) testBtn.disabled = true;
+  if (contServer) contServer.disabled = true;
+  const pub = await connectionManager.testServer(serverUrl);
+  if (testBtn) testBtn.disabled = false;
+  if (contServer) contServer.disabled = true;
   if (!pub.ok) {
     showLoginError(pub.message);
     return;
   }
-  showSuccess('TimeTracker server detected. Continue to enter your API token.');
-  const cont = document.getElementById('login-wizard-continue');
-  if (cont) cont.disabled = false;
+  const ver = pub.app_version ? ` (server version ${pub.app_version})` : '';
+  showSuccess(`TimeTracker server detected${ver}. Continue to enter your API token.`);
+  if (contServer) contServer.disabled = false;
 }
 
 async function handleLoginWizardContinue() {
   clearLoginError();
+  if (loginWizardStep === 'welcome') {
+    showWizardServerStep();
+    return;
+  }
+
   const raw = document.getElementById('server-url')?.value.trim() || '';
   const normalizedInput = normalizeServerUrlInput(raw);
   if (!normalizedInput || !isValidUrl(normalizedInput)) {
@@ -304,17 +420,29 @@ async function handleLoginWizardContinue() {
     return;
   }
   const serverUrl = ApiClient.normalizeBaseUrl(normalizedInput);
-  const pub = await ApiClient.testPublicServerInfo(serverUrl);
+  const contServer = document.getElementById('login-wizard-continue-server');
+  if (contServer) contServer.disabled = true;
+  const pub = await connectionManager.testServer(serverUrl);
   if (!pub.ok) {
+    if (contServer) contServer.disabled = true;
     showLoginError(pub.message);
     return;
   }
+  if (contServer) contServer.disabled = false;
   showWizardTokenStep();
 }
 
 function handleLoginWizardBack() {
   clearLoginError();
-  showWizardServerStep();
+  if (loginWizardStep === 'token') {
+    showWizardServerStep();
+    return;
+  }
+  if (loginWizardStep === 'server') {
+    showWizardWelcomeStep();
+    return;
+  }
+  showWizardWelcomeStep();
 }
 
 async function handleLogin(e) {
@@ -334,35 +462,22 @@ async function handleLogin(e) {
     return;
   }
 
-  const pub = await ApiClient.testPublicServerInfo(serverUrl);
-  if (!pub.ok) {
-    showLoginError(pub.message);
-    showWizardServerStep();
-    return;
-  }
+  const result = await connectionManager.login(serverUrl, apiToken);
 
-  await storeSet('server_url', serverUrl);
-  await storeSet('api_token', apiToken);
-
-  state.apiClient = new ApiClient(serverUrl);
-  await state.apiClient.setAuthToken(apiToken);
-
-  const session = await state.apiClient.validateSession();
-  if (session.ok) {
+  if (result.ok) {
     state.authFailureStreak = 0;
     await loadCurrentUserProfile();
-    updateConnectionStatus('connected');
     showMainScreen();
     loadDashboard();
   } else {
-    updateConnectionStatus('error');
-    await storeDelete('api_token');
-    state.apiClient = null;
-    showLoginError(session.message || 'Login failed');
-    if (session.code === 'UNAUTHORIZED' || session.code === 'FORBIDDEN') {
-      const cont = document.getElementById('login-wizard-continue');
-      if (cont) cont.disabled = false;
+    const msg = result.session?.message || result.message || 'Login failed';
+    showLoginError(msg);
+    if (result.step === 'auth' && (result.session?.code === 'UNAUTHORIZED' || result.session?.code === 'FORBIDDEN')) {
+      const contServer = document.getElementById('login-wizard-continue-server');
+      if (contServer) contServer.disabled = false;
       showWizardTokenStep();
+    } else if (result.step === 'server') {
+      showWizardServerStep();
     } else {
       showWizardServerStep();
     }
@@ -392,8 +507,8 @@ function showLoginScreen(options = {}) {
   }
 
   if (options.openTokenStep) {
-    const cont = document.getElementById('login-wizard-continue');
-    if (cont) cont.disabled = false;
+    const contServer = document.getElementById('login-wizard-continue-server');
+    if (contServer) contServer.disabled = false;
     showWizardTokenStep();
     if (options.bannerMessage) {
       showLoginError(options.bannerMessage);
@@ -403,11 +518,17 @@ function showLoginScreen(options = {}) {
     return;
   }
 
+  if (options.bannerMessage && !options.sessionError) {
+    resetLoginWizard();
+    showLoginError(options.bannerMessage);
+    return;
+  }
+
   if (options.sessionError) {
     const se = options.sessionError;
     if (se.code === 'UNAUTHORIZED' || se.code === 'FORBIDDEN') {
-      const cont = document.getElementById('login-wizard-continue');
-      if (cont) cont.disabled = false;
+      const contServer = document.getElementById('login-wizard-continue-server');
+      if (contServer) contServer.disabled = false;
       showWizardTokenStep();
       showLoginError(se.message || 'Authentication failed');
       return;
@@ -485,6 +606,9 @@ async function loadDashboard() {
     loadRecentEntries();
   } catch (error) {
     console.error('Error loading dashboard:', error);
+    if (error && error.stack) console.error(error.stack);
+    const { message } = classifyAxiosError(error);
+    showError(message || 'Could not load the dashboard.');
   }
 }
 
@@ -512,6 +636,9 @@ async function loadRecentEntries() {
     `).join('');
   } catch (error) {
     console.error('Error loading recent entries:', error);
+    if (error && error.stack) console.error(error.stack);
+    const { message } = classifyAxiosError(error);
+    showError(message || 'Could not load recent entries.');
   }
 }
 
@@ -536,6 +663,9 @@ async function loadProjects() {
     `).join('');
   } catch (error) {
     console.error('Error loading projects:', error);
+    if (error && error.stack) console.error(error.stack);
+    const { message } = classifyAxiosError(error);
+    showError(message || 'Could not load projects.');
   }
 }
 
@@ -624,7 +754,7 @@ async function handleStartTimer() {
   if (!result) return; // User cancelled
   
   try {
-    const response = await state.apiClient.startTimer({
+    const response = await startTimerWithReconcile(state.apiClient, {
       projectId: result.projectId,
       taskId: result.taskId,
       notes: result.notes,
@@ -637,7 +767,10 @@ async function handleStartTimer() {
       document.getElementById('stop-timer-btn').style.display = 'block';
     }
   } catch (error) {
-    showError('Failed to start timer: ' + (error.response?.data?.error || error.message));
+    console.error('Failed to start timer:', error);
+    if (error && error.stack) console.error(error.stack);
+    const { message } = classifyAxiosError(error);
+    showError(message || 'Failed to start timer: ' + (error.response?.data?.error || error.message));
   }
 }
 
@@ -647,16 +780,24 @@ async function showStartTimerDialog() {
     let projects = [];
     let requirements = { require_task: false, require_description: false, description_min_length: 20 };
     try {
-      const [projectsResponse, usersMeResponse] = await Promise.all([
-        state.apiClient.getProjects({ status: 'active' }),
-        state.apiClient.getUsersMe().catch(() => ({})),
-      ]);
+      const projectsResponse = await state.apiClient.getProjects({ status: 'active' });
       projects = projectsResponse.data.projects || [];
-      if (usersMeResponse.time_entry_requirements) {
-        requirements = usersMeResponse.time_entry_requirements;
+      try {
+        const usersMeResponse = await state.apiClient.getUsersMe();
+        if (usersMeResponse && usersMeResponse.time_entry_requirements) {
+          requirements = usersMeResponse.time_entry_requirements;
+        }
+      } catch (meErr) {
+        console.error('getUsersMe for timer dialog:', meErr);
+        if (meErr && meErr.stack) console.error(meErr.stack);
+        const { message } = classifyAxiosError(meErr);
+        showError(message || 'Could not load time entry rules; using defaults.');
       }
     } catch (error) {
-      showError('Failed to load projects');
+      console.error('Failed to load projects for timer dialog:', error);
+      if (error && error.stack) console.error(error.stack);
+      const { message } = classifyAxiosError(error);
+      showError(message || 'Failed to load projects');
       resolve(null);
       return;
     }
@@ -772,7 +913,7 @@ async function handleStopTimer() {
   if (!state.apiClient) return;
   
   try {
-    await state.apiClient.stopTimer();
+    await stopTimerWithReconcile(state.apiClient);
     state.isTimerRunning = false;
     stopTimerPolling();
     document.getElementById('timer-display').textContent = '00:00:00';
@@ -788,7 +929,9 @@ async function handleStopTimer() {
     loadRecentEntries();
   } catch (error) {
     console.error('Error stopping timer:', error);
-    showError('Failed to stop timer: ' + (error.response?.data?.error || error.message));
+    if (error && error.stack) console.error(error.stack);
+    const { message } = classifyAxiosError(error);
+    showError(message || 'Failed to stop timer: ' + (error.response?.data?.error || error.message));
   }
 }
 
@@ -807,8 +950,11 @@ function startTimerPolling() {
         stopTimerPolling();
       }
     } catch (error) {
-      console.warn('Error polling timer:', error && error.message ? error.message : error);
-      updateConnectionStatus('error');
+      console.error('Error polling timer:', error);
+      if (error && error.stack) console.error(error.stack);
+      const { message } = classifyAxiosError(error);
+      connectionManager.signalError(message || 'Lost connection while syncing the active timer.');
+      updateConnectionFromManager();
       const now = Date.now();
       if (!state.lastTimerPollUserMessageAt || now - state.lastTimerPollUserMessageAt > 60000) {
         state.lastTimerPollUserMessageAt = now;
@@ -1614,40 +1760,28 @@ async function handleSaveSettings() {
     showSettingsMessage('Sync interval must be at least 10 seconds', 'error');
     return;
   }
-  
-  // Save settings
-  try {
-    await storeSet('server_url', serverUrl);
-    await storeSet('api_token', finalApiToken);
-    await storeSet('auto_sync', autoSync);
-    await storeSet('sync_interval', syncInterval);
 
-    const pub = await ApiClient.testPublicServerInfo(serverUrl);
-    if (!pub.ok) {
-      updateConnectionStatus('error');
-      showSettingsMessage(pub.message, 'error');
+  try {
+    const saved = await connectionManager.saveServerAndToken(serverUrl, finalApiToken, {
+      auto_sync: autoSync,
+      sync_interval: syncInterval,
+    });
+    if (!saved.ok) {
+      showSettingsMessage(saved.message || saved.session?.message || 'Could not save settings.', 'error');
+      updateConnectionFromManager();
       return;
     }
-
-    state.apiClient = new ApiClient(serverUrl);
-    await state.apiClient.setAuthToken(finalApiToken);
-
-    const session = await state.apiClient.validateSession();
-    if (session.ok) {
-      state.authFailureStreak = 0;
-      await loadCurrentUserProfile();
-      updateConnectionStatus('connected');
-      showSettingsMessage('Settings saved successfully!', 'success');
-      apiTokenInput.value = '••••••••';
-      apiTokenInput.dataset.hasToken = 'true';
-      serverUrlInput.value = serverUrl;
-    } else {
-      updateConnectionStatus('error');
-      showSettingsMessage(session.message || 'Session check failed after save.', 'warning');
-    }
+    state.authFailureStreak = 0;
+    await loadCurrentUserProfile();
+    updateConnectionFromManager();
+    showSettingsMessage('Settings saved successfully!', 'success');
+    apiTokenInput.value = '••••••••';
+    apiTokenInput.dataset.hasToken = 'true';
+    serverUrlInput.value = serverUrl;
   } catch (error) {
     console.error('Error saving settings:', error);
-    showSettingsMessage('Error saving settings: ' + error.message, 'error');
+    if (error && error.stack) console.error(error.stack);
+    showSettingsMessage('Error saving settings: ' + (error.message || String(error)), 'error');
   }
 }
 
@@ -1680,27 +1814,24 @@ async function handleTestConnection() {
 
   try {
     showSettingsMessage('Testing connection...', 'info');
-    const pub = await ApiClient.testPublicServerInfo(serverUrl);
-    if (!pub.ok) {
-      updateConnectionStatus('error');
-      showSettingsMessage(pub.message, 'error');
+    const r = await connectionManager.testServerAndSession(serverUrl, apiToken);
+    if (!r.ok) {
+      showSettingsMessage(r.message || 'Connection test failed.', 'error');
+      updateConnectionFromManager();
       return;
     }
-
-    const testClient = new ApiClient(serverUrl);
-    await testClient.setAuthToken(apiToken);
-    const session = await testClient.validateSession();
-
-    if (session.ok) {
-      updateConnectionStatus('connected');
-      showSettingsMessage('Connection successful: server and API token are valid.', 'success');
-    } else {
-      updateConnectionStatus('error');
-      showSettingsMessage(session.message || 'Token validation failed.', 'error');
+    const snap = connectionManager.getSnapshot();
+    if (snap.serverUrl === serverUrl && connectionManager.getClient()) {
+      await connectionManager.validateSessionRefresh();
     }
+    updateConnectionFromManager();
+    const ver = r.app_version ? ` (${r.app_version})` : '';
+    showSettingsMessage(`Connection successful: server and API token are valid${ver}.`, 'success');
   } catch (error) {
     console.error('Error testing connection:', error);
-    showSettingsMessage('Connection error: ' + error.message, 'error');
+    if (error && error.stack) console.error(error.stack);
+    const { message } = classifyAxiosError(error);
+    showSettingsMessage(message || 'Connection error: ' + error.message, 'error');
   }
 }
 
@@ -1721,13 +1852,29 @@ function showSettingsMessage(message, type = 'info') {
 }
 
 async function handleLogout() {
-  if (confirm('Are you sure you want to logout?')) {
-    await storeClear();
-    state.apiClient = null;
+  if (!confirm('Sign out and remove the API token? Your server URL will be kept.')) return;
+  if (state.isTimerRunning) {
     state.isTimerRunning = false;
     stopTimerPolling();
-    showLoginScreen();
   }
+  await connectionManager.logoutKeepServer();
+  showLoginScreen({ prefillServerUrl: connectionManager.getSnapshot().serverUrl || '' });
+}
+
+async function handleResetConfiguration() {
+  if (
+    !confirm(
+      'Reset all app configuration (server URL, token, sync settings)? This cannot be undone.',
+    )
+  ) {
+    return;
+  }
+  if (state.isTimerRunning) {
+    state.isTimerRunning = false;
+    stopTimerPolling();
+  }
+  await connectionManager.fullStoreReset();
+  showLoginScreen({ prefillServerUrl: '' });
 }
 
 // Initialize when DOM is ready
@@ -1790,25 +1937,37 @@ async function loadProjectsForFilter() {
     }
   } catch (error) {
     console.error('Error loading projects for filter:', error);
+    if (error && error.stack) console.error(error.stack);
+    const { message } = classifyAxiosError(error);
+    showError(message || 'Could not load projects for filter.');
   }
 }
 
 // Time entry form
 async function showTimeEntryForm(entryId = null) {
+  if (!state.apiClient) return;
   // Load projects and time entry requirements
   let projects = [];
   let requirements = { require_task: false, require_description: false, description_min_length: 20 };
   try {
-    const [projectsResponse, usersMeResponse] = await Promise.all([
-      state.apiClient.getProjects({ status: 'active' }),
-      state.apiClient.getUsersMe().catch(() => ({})),
-    ]);
+    const projectsResponse = await state.apiClient.getProjects({ status: 'active' });
     projects = projectsResponse.data.projects || [];
-    if (usersMeResponse.time_entry_requirements) {
-      requirements = usersMeResponse.time_entry_requirements;
+    try {
+      const usersMeResponse = await state.apiClient.getUsersMe();
+      if (usersMeResponse && usersMeResponse.time_entry_requirements) {
+        requirements = usersMeResponse.time_entry_requirements;
+      }
+    } catch (meErr) {
+      console.error('getUsersMe for time entry form:', meErr);
+      if (meErr && meErr.stack) console.error(meErr.stack);
+      const { message } = classifyAxiosError(meErr);
+      showError(message || 'Could not load time entry rules; using defaults.');
     }
   } catch (error) {
-    showError('Failed to load projects');
+    console.error('Failed to load projects for time entry form:', error);
+    if (error && error.stack) console.error(error.stack);
+    const { message } = classifyAxiosError(error);
+    showError(message || 'Failed to load projects');
     return;
   }
   

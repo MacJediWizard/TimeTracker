@@ -483,16 +483,25 @@ class User(UserMixin, db.Model):
         """True if user is restricted to assigned clients (e.g. subcontractor role)."""
         return "subcontractor" in self.get_role_names()
 
+    @property
+    def is_client_portal_user(self):
+        """Check if user has client portal access enabled"""
+        return self.client_portal_enabled and self.client_id is not None
+
     def get_allowed_client_ids(self):
         """Return list of client IDs this user may access, or None for full access."""
-        if self.is_admin or not self.is_scope_restricted:
+        if self.is_admin:
+            return None
+        if self.is_client_portal_user:
+            return [self.client_id] if self.client_id else []
+        if not self.is_scope_restricted:
             return None
         ids = [c.id for c in self.assigned_clients.all()]
         return ids if ids else []
 
     def get_allowed_project_ids(self):
         """Return list of project IDs this user may access, or None for full access."""
-        if self.is_admin or not self.is_scope_restricted:
+        if self.is_admin:
             return None
         from .project import Project
 
@@ -505,11 +514,6 @@ class User(UserMixin, db.Model):
         return [r[0] for r in rows]
 
     # Client portal helpers
-    @property
-    def is_client_portal_user(self):
-        """Check if user has client portal access enabled"""
-        return self.client_portal_enabled and self.client_id is not None
-
     def get_client_portal_data(self):
         """Get data for client portal view (projects, invoices, time entries for assigned client)"""
         if not self.is_client_portal_user:

@@ -15,10 +15,10 @@
     "build:mac": "npm run build:renderer && electron-builder --mac",
     "build:linux": "npm run build:renderer && electron-builder --linux",
     "build:all": "node scripts/build-all-platforms.js",
-    "build:win+linux": "electron-builder --win --linux",
-    "build:all-force": "electron-builder --win --mac --linux",
+    "build:win+linux": "npm run build:renderer && electron-builder --win --linux",
+    "build:all-force": "npm run build:renderer && electron-builder --win --mac --linux",
     "clean:cache": "node scripts/clean-cache.js",
-    "dist": "electron-builder --publish=never"
+    "dist": "npm run build:renderer && electron-builder --publish=never"
   },
   "keywords": [
     "timetracker",
@@ -49,6 +49,7 @@
     },
     "files": [
       "src/**/*",
+      "assets/**/*",
       "package.json"
     ],
     "asar": true,
@@ -63,8 +64,7 @@
         }
       ],
       "icon": "assets/icon.ico",
-      "artifactName": "${productName}-${version}-${arch}.${ext}",
-      "sign": null
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "mac": {
       "target": [

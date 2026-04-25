@@ -1,15 +1,23 @@
 // Main application logic
 // First-run depends on ../shared/config.js exposing window.config before this bundle (see index.html).
 require('./utils/helpers');
-const { storeGet, storeSet, storeDelete, storeClear } = window.config || {};
 const ApiClient = require('./api/client');
 const { createConnectionManager } = require('./connection/connection_manager');
 const { CONNECTION_STATE } = require('./connection/connection_state');
 const { startTimerWithReconcile, stopTimerWithReconcile } = require('./connection/timer_operations');
 const { classifyAxiosError } = require('./api/client');
-const StorageService = require('./storage/storage');
 const { showError, showSuccess } = require('./ui/notifications');
 const state = require('./state');
+
+const {
+  formatDuration,
+  formatDurationLong,
+  formatDateTime,
+  isValidUrl,
+  normalizeServerUrlInput,
+} = window.Helpers || {};
+
+const { storeGet, storeSet, storeDelete, storeClear } = window.config || {};
 
 /** @type {ReturnType<typeof createConnectionManager> | null} */
 let connectionManager = null;
@@ -26,6 +34,15 @@ function truncateUrl(url, maxLen) {
 
 // Initialize app
 async function initApp() {
+  if (
+    typeof storeGet !== 'function' ||
+    typeof storeSet !== 'function' ||
+    typeof storeDelete !== 'function' ||
+    typeof storeClear !== 'function'
+  ) {
+    throw new Error('Desktop configuration bridge is unavailable.');
+  }
+
   connectionManager = createConnectionManager({
     storeGet,
     storeSet,
@@ -41,13 +58,15 @@ async function initApp() {
     updateConnectionFromManager();
   });
 
+  setupEventListeners();
+  setupTrayListeners();
+
   const boot = await connectionManager.bootstrapFromStore();
 
   if (boot.ok) {
     state.authFailureStreak = 0;
-    await loadCurrentUserProfile();
     showMainScreen();
-    loadDashboard();
+    await loadInitialData();
   } else if (boot.reason === 'offline' && boot.hadCredentials) {
     showLoginScreen({
       prefillServerUrl: connectionManager.getSnapshot().serverUrl || '',
@@ -61,25 +80,54 @@ async function initApp() {
       prefillServerUrl: connectionManager.getSnapshot().serverUrl || '',
       bannerMessage: connectionManager.getSnapshot().lastError || 'Please sign in again.',
     });
+  } else if (boot.reason === 'no_server') {
+    showLoginScreen({ prefillServerUrl: '', startAtServer: true });
+  } else if (boot.reason === 'no_token') {
+    showLoginScreen({
+      prefillServerUrl: connectionManager.getSnapshot().serverUrl || '',
+      openTokenStep: true,
+    });
+  } else if (boot.reason === 'bootstrap_timeout') {
+    showLoginScreen({
+      prefillServerUrl: connectionManager.getSnapshot().serverUrl || '',
+      openTokenStep: true,
+      bannerMessage: boot.message || 'Server did not respond in time. Check the URL or network, then try signing in again.',
+    });
+  } else if (boot.reason === 'session_unreachable') {
+    showLoginScreen({
+      prefillServerUrl: connectionManager.getSnapshot().serverUrl || '',
+      openTokenStep: true,
+      bannerMessage: boot.message || 'Server is not reachable. Check the URL or network, then try signing in again.',
+    });
   } else {
     showLoginScreen({ prefillServerUrl: connectionManager.getSnapshot().serverUrl || '' });
   }
 
-  setupEventListeners();
   startConnectionCheck();
-  setupTrayListeners();
 
   window.addEventListener('online', async () => {
     if (!connectionManager.getClient()) {
       const retry = await connectionManager.bootstrapFromStore();
       if (retry.ok && document.getElementById('main-screen')?.classList.contains('active')) {
         state.authFailureStreak = 0;
-        await loadCurrentUserProfile();
-        loadDashboard();
+        await loadInitialData();
       }
     }
     await checkConnection();
   });
+}
+
+async function loadInitialData() {
+  try {
+    await loadCurrentUserProfile();
+  } catch (err) {
+    console.error('Initial profile load failed:', err);
+  }
+  try {
+    await loadDashboard();
+  } catch (err) {
+    console.error('Initial dashboard load failed:', err);
+  }
 }
 
 function setupTrayListeners() {
@@ -510,6 +558,16 @@ function showLoginScreen(options = {}) {
     const contServer = document.getElementById('login-wizard-continue-server');
     if (contServer) contServer.disabled = false;
     showWizardTokenStep();
+    if (options.bannerMessage) {
+      showLoginError(options.bannerMessage);
+    } else {
+      clearLoginError();
+    }
+    return;
+  }
+
+  if (options.startAtServer) {
+    showWizardServerStep();
     if (options.bannerMessage) {
       showLoginError(options.bannerMessage);
     } else {
@@ -1874,24 +1932,33 @@ async function handleResetConfiguration() {
     stopTimerPolling();
   }
   await connectionManager.fullStoreReset();
-  showLoginScreen({ prefillServerUrl: '' });
+  showLoginScreen({ prefillServerUrl: '', startAtServer: true });
 }
 
 // Initialize when DOM is ready
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initApp);
-} else {
-  initApp();
+async function safeInitApp() {
+  try {
+    await initApp();
+  } catch (err) {
+    console.error('initApp failed:', err);
+    try {
+      showLoginScreen({
+        prefillServerUrl: '',
+        startAtServer: true,
+        bannerMessage:
+          'Startup failed. Please re-enter your server URL and sign in again.',
+      });
+    } catch (e) {
+      console.error('Failed to show login screen after init failure:', e);
+    }
+  }
 }
 
-// Use helper functions from helpers.js
-const {
-  formatDuration,
-  formatDurationLong,
-  formatDateTime,
-  isValidUrl,
-  normalizeServerUrlInput,
-} = window.Helpers || {};
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', safeInitApp);
+} else {
+  safeInitApp();
+}
 
 // Filter functions
 function toggleFilters() {

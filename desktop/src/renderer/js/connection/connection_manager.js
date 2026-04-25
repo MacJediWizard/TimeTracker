@@ -67,6 +67,17 @@ function createConnectionManager(deps) {
     apiClient = null;
   }
 
+  function isTransportSessionError(code) {
+    return [
+      'TIMEOUT',
+      'REFUSED',
+      'UNREACHABLE',
+      'DNS',
+      'TLS',
+      'UNKNOWN',
+    ].includes(code);
+  }
+
   function attachWindowListeners() {
     if (typeof window === 'undefined' || offlineListenerBound) return;
     offlineListenerBound = true;
@@ -159,7 +170,10 @@ function createConnectionManager(deps) {
       return { ok: false, reason: 'token_server_mismatch' };
     }
 
-    apiClient = new ApiClient(serverUrl);
+    apiClient = new ApiClient(serverUrl, {
+      enableIdempotentRetry: false,
+      timeoutMs: 15000,
+    });
     await apiClient.setAuthToken(String(token));
 
     setSnap({
@@ -169,6 +183,7 @@ function createConnectionManager(deps) {
     });
 
     const session = await apiClient.validateSession();
+
     if (session.ok) {
       if (!tokenNorm) {
         await storeSet(STORE_TOKEN_SERVER, serverUrl);
@@ -182,6 +197,17 @@ function createConnectionManager(deps) {
         serverVersion: null,
       });
       return { ok: true, session };
+    }
+
+    if (isTransportSessionError(session.code)) {
+      tearDownClient();
+      setSnap({
+        state: CONNECTION_STATE.ERROR,
+        serverUrl,
+        lastError: session.message || 'Server not reachable.',
+        serverVersion: null,
+      });
+      return { ok: false, reason: 'session_unreachable', session, message: session.message };
     }
 
     tearDownClient();

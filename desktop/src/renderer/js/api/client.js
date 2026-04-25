@@ -67,7 +67,7 @@ function classifyAxiosError(error) {
     }
     return { code: 'HTTP_' + status, message: `Server returned HTTP ${status}.` };
   }
-  if (error.code === 'ECONNABORTED') {
+  if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
     return {
       code: 'TIMEOUT',
       message: 'Request timed out. Check the server URL, firewall, and network.',
@@ -121,14 +121,14 @@ const { attachIdempotentRetryInterceptors } = require('../connection/request_pol
 class ApiClient {
   /**
    * @param {string} baseUrl
-   * @param {{ enableIdempotentRetry?: boolean }} [options]
+   * @param {{ enableIdempotentRetry?: boolean, timeoutMs?: number }} [options]
    */
   constructor(baseUrl, options = {}) {
     const normalized = ApiClient.normalizeBaseUrl(baseUrl);
     this.baseUrl = normalized;
     this.client = axios.create({
       baseURL: normalized,
-      timeout: 10000,
+      timeout: options.timeoutMs ?? 10000,
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',

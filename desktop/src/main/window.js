@@ -1,5 +1,6 @@
-const { BrowserWindow, screen } = require('electron');
+const { app, BrowserWindow, screen } = require('electron');
 const path = require('path');
+const fs = require('fs');
 
 let windowState = {
   width: 1200,
@@ -9,23 +10,24 @@ let windowState = {
   isMaximized: false,
 };
 
-// Try to restore window state
-try {
-  const fs = require('fs');
-  const userDataPath = require('electron').app.getPath('userData');
-  const stateFile = path.join(userDataPath, 'window-state.json');
-  if (fs.existsSync(stateFile)) {
-    windowState = { ...windowState, ...JSON.parse(fs.readFileSync(stateFile, 'utf8')) };
+let windowStateLoaded = false;
+
+function loadWindowState() {
+  if (windowStateLoaded) return;
+  windowStateLoaded = true;
+  try {
+    const stateFile = path.join(app.getPath('userData'), 'window-state.json');
+    if (fs.existsSync(stateFile)) {
+      windowState = { ...windowState, ...JSON.parse(fs.readFileSync(stateFile, 'utf8')) };
+    }
+  } catch (e) {
+    // Ignore errors loading window state
   }
-} catch (e) {
-  // Ignore errors loading window state
 }
 
 function saveWindowState() {
   try {
-    const fs = require('fs');
-    const userDataPath = require('electron').app.getPath('userData');
-    const stateFile = path.join(userDataPath, 'window-state.json');
+    const stateFile = path.join(app.getPath('userData'), 'window-state.json');
     fs.writeFileSync(stateFile, JSON.stringify(windowState));
   } catch (e) {
     // Ignore errors saving window state
@@ -34,12 +36,14 @@ function saveWindowState() {
 
 let splashWindow = null;
 
-function createWindow() {
+function createWindow(options = {}) {
+  loadWindowState();
+
   // Create splash screen first (only if splash.html exists)
   const splashPath = path.join(__dirname, '../renderer/splash.html');
-  const fs = require('fs');
+  const showSplash = options.showSplash !== false;
   
-  if (fs.existsSync(splashPath)) {
+  if (showSplash && fs.existsSync(splashPath)) {
     splashWindow = new BrowserWindow({
       width: 500,
       height: 400,
@@ -49,6 +53,7 @@ function createWindow() {
       skipTaskbar: true,
       backgroundColor: '#00000000',
       webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
         nodeIntegration: false,
         contextIsolation: true,
         sandbox: false,
@@ -145,7 +150,7 @@ function createWindow() {
   // Load the HTML file
   const isDev = process.argv.includes('--dev');
   if (isDev) {
-    mainWindow.loadURL('http://localhost:3000');
+    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
     mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));

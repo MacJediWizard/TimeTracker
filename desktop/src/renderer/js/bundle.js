@@ -2857,7 +2857,7 @@
           if (status === 401) {
             return {
               code: "UNAUTHORIZED",
-              message: "Authentication failed. Check your API token."
+              message: "Authentication failed. Sign in again."
             };
           }
           if (status === 403) {
@@ -2953,7 +2953,7 @@
                 const status = error.response.status;
                 const data = error.response.data;
                 if (status === 401) {
-                  error.message = "Authentication failed. Please check your API token.";
+                  error.message = "Authentication failed. Please sign in again.";
                 } else if (status === 403) {
                   error.message = "Access denied. Your token may not have the required permissions.";
                 } else if (status === 404) {
@@ -3035,6 +3035,43 @@
             return { ok: false, code, message };
           }
         }
+        /**
+         * Login with the same username/password flow used by the mobile app.
+         * The server returns an API token, which the desktop stores internally.
+         * @param {string} baseUrl
+         * @param {string} username
+         * @param {string} password
+         * @returns {Promise<{ ok: true, token: string } | ValidationResult>}
+         */
+        static async loginWithPassword(baseUrl, username, password) {
+          const normalized = _ApiClient.normalizeBaseUrl(baseUrl);
+          const plain = axios.create({
+            baseURL: normalized,
+            timeout: 15e3,
+            headers: {
+              Accept: "application/json",
+              "Content-Type": "application/json"
+            }
+          });
+          try {
+            const response = await plain.post("/api/v1/auth/login", {
+              username,
+              password
+            });
+            const token = response.data && response.data.token;
+            if (response.status !== 200 || typeof token !== "string" || !token.startsWith("tt_")) {
+              return {
+                ok: false,
+                code: "INVALID_RESPONSE",
+                message: "Server login response did not include a valid app token."
+              };
+            }
+            return { ok: true, token };
+          } catch (error) {
+            const { code, message } = classifyAxiosError2(error);
+            return { ok: false, code, message };
+          }
+        }
         async setAuthToken(token) {
           await storeSet2("api_token", token);
         }
@@ -3081,7 +3118,7 @@
               return {
                 ok: false,
                 code: "FORBIDDEN",
-                message: "This API token cannot access your profile or timer. Use a token with read:users or read:time_entries."
+                message: "This signed-in account cannot access your profile or timer."
               };
             }
             const { code, message } = classifyAxiosError2(error);
@@ -3290,6 +3327,7 @@
       var STORE_SERVER = "server_url";
       var STORE_TOKEN = "api_token";
       var STORE_TOKEN_SERVER = "api_token_server_url";
+      var STORE_USERNAME = "username";
       function createConnectionManager2(deps) {
         const storeGet2 = deps.storeGet;
         const storeSet2 = deps.storeSet;
@@ -3414,7 +3452,7 @@
             setSnap({
               state: CONNECTION_STATE2.NOT_CONFIGURED,
               serverUrl,
-              lastError: "This API token was saved for a different server. Please sign in again.",
+              lastError: "This saved sign-in was for a different server. Please sign in again.",
               serverVersion: null
             });
             return { ok: false, reason: "token_server_mismatch" };
@@ -3466,7 +3504,7 @@
           });
           return { ok: false, reason: "session", session };
         }
-        async function login(serverUrl, token) {
+        async function login(serverUrl, username, password) {
           const normalized = ApiClient2.normalizeBaseUrl(String(serverUrl || "").trim());
           const pub = await ApiClient2.testPublicServerInfo(normalized);
           if (!pub.ok) {
@@ -3477,8 +3515,18 @@
             });
             return { ok: false, step: "server", ...pub };
           }
+          const auth = await ApiClient2.loginWithPassword(normalized, username, password);
+          if (!auth.ok) {
+            setSnap({
+              state: CONNECTION_STATE2.ERROR,
+              serverUrl: normalized,
+              lastError: auth.message || "Login failed",
+              serverVersion: pub.app_version || null
+            });
+            return { ok: false, step: "auth", session: auth };
+          }
           const probe = new ApiClient2(normalized);
-          await probe.setAuthToken(token);
+          await probe.setAuthToken(auth.token);
           const session = await probe.validateSession();
           if (!session.ok) {
             setSnap({
@@ -3490,8 +3538,9 @@
             return { ok: false, step: "auth", session };
           }
           await storeSet2(STORE_SERVER, normalized);
-          await storeSet2(STORE_TOKEN, token);
+          await storeSet2(STORE_TOKEN, auth.token);
           await storeSet2(STORE_TOKEN_SERVER, normalized);
+          await storeSet2(STORE_USERNAME, String(username || "").trim());
           apiClient = probe;
           const now = Date.now();
           setSnap({
@@ -3576,7 +3625,7 @@
           });
           return session;
         }
-        async function saveServerAndToken(serverUrl, token, syncExtras) {
+        async function saveServerAndCredentials(serverUrl, username, password, syncExtras) {
           const normalized = ApiClient2.normalizeBaseUrl(String(serverUrl || "").trim());
           const pub = await ApiClient2.testPublicServerInfo(normalized);
           if (!pub.ok) {
@@ -3586,8 +3635,16 @@
             });
             return { ok: false, step: "server", ...pub };
           }
+          const auth = await ApiClient2.loginWithPassword(normalized, username, password);
+          if (!auth.ok) {
+            setSnap({
+              state: CONNECTION_STATE2.ERROR,
+              lastError: auth.message || "Login failed. Settings were not saved."
+            });
+            return { ok: false, step: "auth", session: auth };
+          }
           const probe = new ApiClient2(normalized);
-          await probe.setAuthToken(token);
+          await probe.setAuthToken(auth.token);
           const session = await probe.validateSession();
           if (!session.ok) {
             setSnap({
@@ -3601,8 +3658,9 @@
             if (syncExtras.sync_interval !== void 0) await storeSet2("sync_interval", syncExtras.sync_interval);
           }
           await storeSet2(STORE_SERVER, normalized);
-          await storeSet2(STORE_TOKEN, token);
+          await storeSet2(STORE_TOKEN, auth.token);
           await storeSet2(STORE_TOKEN_SERVER, normalized);
+          await storeSet2(STORE_USERNAME, String(username || "").trim());
           apiClient = probe;
           const now = Date.now();
           setSnap({
@@ -3614,12 +3672,14 @@
           });
           return { ok: true, session };
         }
-        async function testServerAndSession(serverUrl, token) {
+        async function testServerAndCredentials(serverUrl, username, password) {
           const normalized = ApiClient2.normalizeBaseUrl(String(serverUrl || "").trim());
           const pub = await ApiClient2.testPublicServerInfo(normalized);
           if (!pub.ok) return pub;
+          const auth = await ApiClient2.loginWithPassword(normalized, username, password);
+          if (!auth.ok) return auth;
           const probe = new ApiClient2(normalized);
-          await probe.setAuthToken(token);
+          await probe.setAuthToken(auth.token);
           const session = await probe.validateSession();
           if (!session.ok) return session;
           return { ok: true, app_version: pub.app_version || null };
@@ -3646,13 +3706,13 @@
           getClient,
           subscribe,
           testServer,
-          testServerAndSession,
+          testServerAndCredentials,
           bootstrapFromStore,
           login,
           logoutKeepServer,
           fullStoreReset,
           validateSessionRefresh,
-          saveServerAndToken,
+          saveServerAndCredentials,
           tearDownClient,
           signalError,
           /** Expose for tests */
@@ -4188,7 +4248,7 @@
       return;
     }
     const ver = pub.app_version ? ` (server version ${pub.app_version})` : "";
-    showSuccess(`TimeTracker server detected${ver}. Continue to enter your API token.`);
+    showSuccess(`TimeTracker server detected${ver}. Continue to sign in.`);
     if (contServer) contServer.disabled = false;
   }
   async function handleLoginWizardContinue() {
@@ -4236,17 +4296,17 @@
       return;
     }
     const serverUrl = ApiClient.normalizeBaseUrl(normalizedInput);
-    const apiToken = document.getElementById("api-token")?.value.trim() || "";
-    if (!apiToken || !apiToken.startsWith("tt_")) {
-      showLoginError("Please enter a valid API token (must start with tt_)");
+    const username = document.getElementById("login-username")?.value.trim() || "";
+    const password = document.getElementById("login-password")?.value || "";
+    if (!username || !password) {
+      showLoginError("Please enter your username and password");
       return;
     }
-    const result = await connectionManager.login(serverUrl, apiToken);
+    const result = await connectionManager.login(serverUrl, username, password);
     if (result.ok) {
       state.authFailureStreak = 0;
-      await loadCurrentUserProfile();
       showMainScreen();
-      loadDashboard();
+      await loadInitialData();
     } else {
       const msg = result.session?.message || result.message || "Login failed";
       showLoginError(msg);
@@ -5210,19 +5270,22 @@
   }
   async function loadSettings() {
     const serverUrl = await storeGet("server_url") || "";
-    const apiToken = await storeGet("api_token") || "";
+    const username = await storeGet("username") || "";
     const autoSync = await storeGet("auto_sync");
     const syncInterval = await storeGet("sync_interval");
     const serverUrlInput = document.getElementById("settings-server-url");
-    const apiTokenInput = document.getElementById("settings-api-token");
+    const usernameInput = document.getElementById("settings-username");
+    const passwordInput = document.getElementById("settings-password");
     const autoSyncInput = document.getElementById("auto-sync");
     const syncIntervalInput = document.getElementById("sync-interval");
     if (serverUrlInput) {
       serverUrlInput.value = serverUrl ? ApiClient.normalizeBaseUrl(String(serverUrl)) : "";
     }
-    if (apiTokenInput) {
-      apiTokenInput.value = apiToken ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : "";
-      apiTokenInput.dataset.hasToken = apiToken ? "true" : "false";
+    if (usernameInput) {
+      usernameInput.value = username ? String(username) : "";
+    }
+    if (passwordInput) {
+      passwordInput.value = "";
     }
     if (autoSyncInput) {
       autoSyncInput.checked = autoSync !== null ? Boolean(autoSync) : true;
@@ -5240,14 +5303,16 @@
   }
   async function handleSaveSettings() {
     const serverUrlInput = document.getElementById("settings-server-url");
-    const apiTokenInput = document.getElementById("settings-api-token");
+    const usernameInput = document.getElementById("settings-username");
+    const passwordInput = document.getElementById("settings-password");
     const autoSyncInput = document.getElementById("auto-sync");
     const syncIntervalInput = document.getElementById("sync-interval");
     const messageDiv = document.getElementById("settings-message");
-    if (!serverUrlInput || !apiTokenInput || !autoSyncInput || !syncIntervalInput) return;
+    if (!serverUrlInput || !usernameInput || !passwordInput || !autoSyncInput || !syncIntervalInput) return;
     const rawServer = serverUrlInput.value.trim();
     const normalizedInput = normalizeServerUrlInput(rawServer);
-    const apiToken = apiTokenInput.value.trim();
+    const username = usernameInput.value.trim();
+    const password = passwordInput.value;
     const autoSync = autoSyncInput.checked;
     const syncInterval = parseInt(syncIntervalInput.value, 10);
     if (!normalizedInput || !isValidUrl(normalizedInput)) {
@@ -5255,12 +5320,8 @@
       return;
     }
     const serverUrl = ApiClient.normalizeBaseUrl(normalizedInput);
-    const hasExistingToken = apiTokenInput.dataset.hasToken === "true";
-    let finalApiToken = apiToken;
-    if (hasExistingToken && apiToken === "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022") {
-      finalApiToken = await storeGet("api_token");
-    } else if (!apiToken || !apiToken.startsWith("tt_")) {
-      showSettingsMessage("Please enter a valid API token (must start with tt_)", "error");
+    if (!username || !password) {
+      showSettingsMessage("Please enter your username and password to save settings", "error");
       return;
     }
     if (Number.isNaN(syncInterval) || syncInterval < 10) {
@@ -5268,7 +5329,7 @@
       return;
     }
     try {
-      const saved = await connectionManager.saveServerAndToken(serverUrl, finalApiToken, {
+      const saved = await connectionManager.saveServerAndCredentials(serverUrl, username, password, {
         auto_sync: autoSync,
         sync_interval: syncInterval
       });
@@ -5281,8 +5342,7 @@
       await loadCurrentUserProfile();
       updateConnectionFromManager();
       showSettingsMessage("Settings saved successfully!", "success");
-      apiTokenInput.value = "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
-      apiTokenInput.dataset.hasToken = "true";
+      passwordInput.value = "";
       serverUrlInput.value = serverUrl;
     } catch (error) {
       console.error("Error saving settings:", error);
@@ -5292,28 +5352,26 @@
   }
   async function handleTestConnection() {
     const serverUrlInput = document.getElementById("settings-server-url");
-    const apiTokenInput = document.getElementById("settings-api-token");
+    const usernameInput = document.getElementById("settings-username");
+    const passwordInput = document.getElementById("settings-password");
     const messageDiv = document.getElementById("settings-message");
-    if (!serverUrlInput || !apiTokenInput) return;
+    if (!serverUrlInput || !usernameInput || !passwordInput) return;
     const rawServer = serverUrlInput.value.trim();
     const normalizedInput = normalizeServerUrlInput(rawServer);
-    let apiToken = apiTokenInput.value.trim();
+    const username = usernameInput.value.trim();
+    const password = passwordInput.value;
     if (!normalizedInput || !isValidUrl(normalizedInput)) {
       showSettingsMessage("Please enter a valid server URL", "error");
       return;
     }
     const serverUrl = ApiClient.normalizeBaseUrl(normalizedInput);
-    const hasExistingToken = apiTokenInput.dataset.hasToken === "true";
-    if (hasExistingToken && apiToken === "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022") {
-      apiToken = await storeGet("api_token");
-    }
-    if (!apiToken || !apiToken.startsWith("tt_")) {
-      showSettingsMessage("Please enter a valid API token (must start with tt_)", "error");
+    if (!username || !password) {
+      showSettingsMessage("Please enter your username and password to test connection", "error");
       return;
     }
     try {
       showSettingsMessage("Testing connection...", "info");
-      const r = await connectionManager.testServerAndSession(serverUrl, apiToken);
+      const r = await connectionManager.testServerAndCredentials(serverUrl, username, password);
       if (!r.ok) {
         showSettingsMessage(r.message || "Connection test failed.", "error");
         updateConnectionFromManager();
@@ -5325,7 +5383,7 @@
       }
       updateConnectionFromManager();
       const ver = r.app_version ? ` (${r.app_version})` : "";
-      showSettingsMessage(`Connection successful: server and API token are valid${ver}.`, "success");
+      showSettingsMessage(`Connection successful: credentials are valid${ver}.`, "success");
     } catch (error) {
       console.error("Error testing connection:", error);
       if (error && error.stack) console.error(error.stack);
@@ -5346,7 +5404,7 @@
     }
   }
   async function handleLogout() {
-    if (!confirm("Sign out and remove the API token? Your server URL will be kept.")) return;
+    if (!confirm("Sign out of this desktop app? Your server URL will be kept.")) return;
     if (state.isTimerRunning) {
       state.isTimerRunning = false;
       stopTimerPolling();

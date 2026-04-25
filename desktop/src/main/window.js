@@ -85,6 +85,7 @@ function createWindow(options = {}) {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
+      webSecurity: false,
     },
     // Icon path - use .ico on Windows, .icns on macOS, .png on Linux
     icon: (() => {
@@ -147,13 +148,16 @@ function createWindow(options = {}) {
     saveWindowState();
   });
 
-  // Load the HTML file
+  // Load the Vite-built React renderer. The old renderer source remains in src/renderer
+  // during the migration, but Electron loads dist-renderer.
   const isDev = process.argv.includes('--dev');
+  const rendererIndex = path.join(__dirname, '../../dist-renderer/index.html');
+  const legacyIndex = path.join(__dirname, '../renderer/index.html');
   if (isDev) {
-    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+    mainWindow.loadFile(fs.existsSync(rendererIndex) ? rendererIndex : legacyIndex);
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+    mainWindow.loadFile(fs.existsSync(rendererIndex) ? rendererIndex : legacyIndex);
   }
 
   return mainWindow;

@@ -47,6 +47,38 @@ if (!singleInstanceLock) {
   app.quit();
 }
 
+function isLocalOrPrivateHost(hostname) {
+  const h = String(hostname || '').toLowerCase();
+  if (h === 'localhost' || h === '127.0.0.1' || h === '::1') return true;
+  if (h.endsWith('.local')) return true;
+  if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
+  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
+  const m = h.match(/^172\.(\d{1,2})\.\d{1,3}\.\d{1,3}$/);
+  if (m) {
+    const second = Number(m[1]);
+    return second >= 16 && second <= 31;
+  }
+  return false;
+}
+
+app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
+  let hostname = '';
+  try {
+    hostname = new URL(url).hostname;
+  } catch (_) {
+    callback(false);
+    return;
+  }
+
+  if (isLocalOrPrivateHost(hostname)) {
+    event.preventDefault();
+    callback(true);
+    return;
+  }
+
+  callback(false);
+});
+
 function isUsableWindow(win) {
   return win && !win.isDestroyed();
 }
@@ -142,15 +174,18 @@ ipcMain.handle('app:get-version', () => {
 });
 
 ipcMain.handle('store:get', (event, key) => {
+  if (!isAllowedStoreKey(key)) return undefined;
   return store ? store.get(key) : undefined;
 });
 
 ipcMain.handle('store:set', (event, key, value) => {
+  if (!isAllowedStoreKey(key)) return;
   if (!store) return;
   store.set(key, value);
 });
 
 ipcMain.handle('store:delete', (event, key) => {
+  if (!isAllowedStoreKey(key)) return;
   if (!store) return;
   store.delete(key);
 });
@@ -216,6 +251,20 @@ function formatDuration(seconds) {
 let updateTrayTooltip = (text) => {
   // Will be set by tray module
 };
+
+const ALLOWED_STORE_KEYS = new Set([
+  'server_url',
+  'api_token',
+  'api_token_server_url',
+  'username',
+  'theme_mode',
+  'auto_sync',
+  'sync_interval',
+]);
+
+function isAllowedStoreKey(key) {
+  return typeof key === 'string' && ALLOWED_STORE_KEYS.has(key);
+}
 
 // Window management
 ipcMain.on('window:minimize', () => {

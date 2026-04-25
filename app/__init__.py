@@ -575,6 +575,16 @@ def create_app(config=None):
         except Exception:
             pass
 
+    @app.before_request
+    def handle_api_cors_preflight():
+        if request.method == "OPTIONS" and request.path.startswith("/api/v1/"):
+            response = app.response_class(status=204)
+            response.headers["Access-Control-Allow-Origin"] = request.headers.get("Origin") or "*"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, Accept, X-Request-ID"
+            response.headers["Access-Control-Max-Age"] = "600"
+            return response
+
     # Start timer for Prometheus metrics
     @app.before_request
     def prom_start_timer():
@@ -746,6 +756,15 @@ def create_app(config=None):
         # CSRF cookie/token handling
         # If CSRF is enabled, ensure CSRF cookie exists for HTML GET responses
         # If CSRF is disabled, explicitly clear any existing CSRF cookie to avoid confusion
+        try:
+            if request.path.startswith("/api/v1/"):
+                response.headers["Access-Control-Allow-Origin"] = request.headers.get("Origin") or "*"
+                response.headers["Vary"] = "Origin"
+                response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+                response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, Accept, X-Request-ID"
+        except Exception:
+            pass
+
         if app.config.get("WTF_CSRF_ENABLED"):
             try:
                 # Only for safe, HTML page responses

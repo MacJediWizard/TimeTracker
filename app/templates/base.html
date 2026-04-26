@@ -65,7 +65,7 @@
         html[dir="rtl"] .text-right { text-align: left; }
         html[dir="rtl"] #sidebar { left: auto; right: 0; }
         html[dir="rtl"] #mainContent { margin-left: 0; margin-right: 16rem; }
-        @media (max-width: 1024px) {
+        @media (max-width: 767px) {
             html[dir="rtl"] #mainContent { margin-right: 0; }
         }
         
@@ -198,7 +198,8 @@
                 white-space: nowrap;
                 border-width: 0;
             }
-            .mobile-bottom-nav a.relative {
+            .mobile-bottom-nav a.relative,
+            .mobile-bottom-nav button.relative {
                 padding-top: 0.25rem;
                 padding-bottom: 0.25rem;
             }
@@ -361,7 +362,7 @@
     <a href="#mainContentAnchor" class="sr-only focus:not-sr-only focus-ring absolute left-2 top-2 z-[1000] px-3 py-2 bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark rounded">{{ _('Skip to content') }}</a>
     <div id="appShell" class="flex min-h-screen">
         <!-- Sidebar -->
-        <aside id="sidebar" class="sidebar-scrollbar-hover w-64 bg-card-light dark:bg-card-dark text-text-light dark:text-text-dark p-4 flex-col hidden lg:flex transition-all duration-200 ease-in-out fixed top-0 left-0 h-screen overflow-y-auto z-10" aria-label="{{ _('Main navigation') }}">
+        <aside id="sidebar" class="sidebar-scrollbar-hover w-64 bg-card-light dark:bg-card-dark text-text-light dark:text-text-dark p-4 flex-col hidden md:flex transition-all duration-200 ease-in-out fixed top-0 left-0 h-screen overflow-y-auto z-10" aria-label="{{ _('Main navigation') }}">
             <div class="flex items-center mb-8">
                 <img src="{{ url_for('static', filename='images/timetracker-logo.svg') }}" alt="Logo" class="h-10 w-10 mr-2">
                 <h1 class="text-2xl font-bold text-primary sidebar-header-title"><a href="{{ url_for('main.dashboard') }}" class="no-underline">TimeTracker</a></h1>
@@ -1088,11 +1089,11 @@
         </aside>
 
         <!-- Main content: pb for mobile bottom nav + safe-area -->
-        <div id="mainContent" class="flex-1 flex flex-col min-h-screen min-w-0 transition-all duration-200 ease-in-out lg:ml-64 lg:pb-0 pb-[calc(5rem+env(safe-area-inset-bottom,0px))]">
+        <div id="mainContent" class="flex-1 flex flex-col min-h-screen min-w-0 transition-all duration-200 ease-in-out md:ml-64 md:pb-0 pb-16">
             <!-- Header -->
             <header class="bg-card-light dark:bg-card-dark p-3 sm:p-4 border-b border-border-light dark:border-border-dark flex items-center gap-2 min-w-0 shadow-sm">
                 <!-- Mobile menu button -->
-                <button id="mobileSidebarBtn" class="lg:hidden shrink-0 flex items-center justify-center w-10 h-10 rounded-lg text-text-light dark:text-text-dark hover:bg-background-light dark:hover:bg-background-dark" aria-label="{{ _('Open sidebar') }}" type="button">
+                <button id="mobileSidebarBtn" class="md:hidden shrink-0 flex items-center justify-center w-10 h-10 rounded-lg text-text-light dark:text-text-dark hover:bg-background-light dark:hover:bg-background-dark" aria-label="{{ _('Open sidebar') }}" type="button">
                     <i class="fas fa-bars text-lg"></i>
                 </button>
 
@@ -1298,34 +1299,6 @@
         <meta name="idle-timeout-minutes" content="{{ settings.idle_timeout_minutes if settings else 30 }}">
         {% endif %}
 
-        <!-- Mobile Bottom Navigation -->
-        {% set _nav_ep = request.endpoint or '' %}
-        <nav class="mobile-bottom-nav lg:hidden fixed bottom-0 inset-x-0 z-40 bg-card-light dark:bg-card-dark border-t border-border-light dark:border-border-dark flex justify-around items-stretch min-h-[52px] pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_10px_rgba(0,0,0,0.06)] dark:shadow-[0_-2px_10px_rgba(0,0,0,0.2)]" role="navigation" aria-label="{{ _('Main') }}">
-            <a href="{{ url_for('main.dashboard') }}" class="relative flex flex-col items-center justify-center min-h-[44px] flex-1 min-w-0 py-1.5 rounded-t-lg transition-colors {% if _nav_ep == 'main.dashboard' %}text-primary bg-primary/10 dark:bg-primary/20 font-medium{% else %}text-text-light dark:text-text-dark hover:bg-background-light dark:hover:bg-background-dark{% endif %}" aria-label="{{ _('Dashboard') }}" aria-current="{% if _nav_ep == 'main.dashboard' %}page{% endif %}">
-                <i class="fas fa-tachometer-alt text-lg shrink-0" aria-hidden="true"></i>
-                <span class="bottom-nav-text text-xs mt-0.5 leading-tight text-center truncate w-full px-0.5">{{ _('Dashboard') }}</span>
-            </a>
-            <a href="{{ url_for('projects.list_projects') }}" class="relative flex flex-col items-center justify-center min-h-[44px] flex-1 min-w-0 py-1.5 rounded-t-lg transition-colors {% if _nav_ep and _nav_ep.startswith('projects.') %}text-primary bg-primary/10 dark:bg-primary/20 font-medium{% else %}text-text-light dark:text-text-dark hover:bg-background-light dark:hover:bg-background-dark{% endif %}" aria-label="{{ _('Projects') }}" aria-current="{% if _nav_ep and _nav_ep.startswith('projects.') %}page{% endif %}">
-                <i class="fas fa-briefcase text-lg shrink-0" aria-hidden="true"></i>
-                <span class="bottom-nav-text text-xs mt-0.5 leading-tight text-center truncate w-full px-0.5">{{ _('Projects') }}</span>
-            </a>
-            <a href="{{ url_for('timer.time_entries_overview') }}" class="relative flex flex-col items-center justify-center min-h-[44px] flex-1 min-w-0 py-1.5 rounded-t-lg transition-colors {% if _nav_ep == 'timer.time_entries_overview' %}text-primary bg-primary/10 dark:bg-primary/20 font-medium{% else %}text-text-light dark:text-text-dark hover:bg-background-light dark:hover:bg-background-dark{% endif %}" aria-label="{{ _('Time entries') }}" aria-current="{% if _nav_ep == 'timer.time_entries_overview' %}page{% endif %}">
-                <i class="fas fa-list-alt text-lg shrink-0" aria-hidden="true"></i>
-                <span class="bottom-nav-text text-xs mt-0.5 leading-tight text-center truncate w-full px-0.5">{{ _('Time entries') }}</span>
-            </a>
-            <a href="{{ url_for('timer.manual_entry') }}" class="flex items-center justify-center flex-shrink-0 w-14 h-14 -mt-5 rounded-full bg-primary text-white hover:bg-primary-dark shadow-lg active:scale-95 transition-all border-4 border-card-light dark:border-card-dark" aria-label="{{ _('New time entry') }}">
-                <i class="fas fa-plus text-xl" aria-hidden="true"></i>
-            </a>
-            <a href="{{ url_for('reports.reports') }}" class="relative flex flex-col items-center justify-center min-h-[44px] flex-1 min-w-0 py-1.5 rounded-t-lg transition-colors {% if _nav_ep and _nav_ep.startswith('reports.') %}text-primary bg-primary/10 dark:bg-primary/20 font-medium{% else %}text-text-light dark:text-text-dark hover:bg-background-light dark:hover:bg-background-dark{% endif %}" aria-label="{{ _('Reports') }}" aria-current="{% if _nav_ep and _nav_ep.startswith('reports.') %}page{% endif %}">
-                <i class="fas fa-chart-line text-lg shrink-0" aria-hidden="true"></i>
-                <span class="bottom-nav-text text-xs mt-0.5 leading-tight text-center truncate w-full px-0.5">{{ _('Reports') }}</span>
-            </a>
-            <a href="{{ url_for('auth.profile') }}" class="relative flex flex-col items-center justify-center min-h-[44px] flex-1 min-w-0 py-1.5 rounded-t-lg transition-colors {% if _nav_ep and _nav_ep.startswith('auth.profile') %}text-primary bg-primary/10 dark:bg-primary/20 font-medium{% else %}text-text-light dark:text-text-dark hover:bg-background-light dark:hover:bg-background-dark{% endif %}" aria-label="{{ _('Profile') }}" aria-current="{% if _nav_ep and _nav_ep.startswith('auth.profile') %}page{% endif %}">
-                <i class="fas fa-user-circle text-lg shrink-0" aria-hidden="true"></i>
-                <span class="bottom-nav-text text-xs mt-0.5 leading-tight text-center truncate w-full px-0.5">{{ _('Profile') }}</span>
-            </a>
-        </nav>
-
         {% if is_admin_user %}
         <div id="adminVersionUpdateRoot" class="hidden fixed bottom-20 right-4 z-[60] max-w-sm w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-border-light dark:border-border-dark bg-card-light dark:bg-card-dark shadow-xl" role="region" aria-label="{{ _('Software update') }}">
             <div class="p-4 sm:p-5">
@@ -1437,8 +1410,8 @@
                     sidebar.classList.add('w-16');
                     sidebar.classList.remove('w-64');
                     // Adjust main content margin for collapsed sidebar
-                    main.classList.remove('lg:ml-64');
-                    main.classList.add('lg:ml-16');
+                    main.classList.remove('md:ml-64');
+                    main.classList.add('md:ml-16');
                     icon && icon.classList.remove('fa-angles-left');
                     icon && icon.classList.add('fa-angles-right');
                 } else {
@@ -1447,8 +1420,8 @@
                     sidebar.classList.remove('w-16');
                     sidebar.classList.add('w-64');
                     // Adjust main content margin for expanded sidebar
-                    main.classList.remove('lg:ml-16');
-                    main.classList.add('lg:ml-64');
+                    main.classList.remove('md:ml-16');
+                    main.classList.add('md:ml-64');
                     icon && icon.classList.remove('fa-angles-right');
                     icon && icon.classList.add('fa-angles-left');
                 }
@@ -1474,7 +1447,7 @@
                 if (!backdrop) {
                     backdrop = document.createElement('div');
                     backdrop.id = 'sidebarBackdrop';
-                    backdrop.className = 'fixed inset-0 bg-black/50 z-40 lg:hidden';
+                    backdrop.className = 'fixed inset-0 bg-black/50 z-40 md:hidden';
                     backdrop.style.display = 'none';
                     document.body.appendChild(backdrop);
                     
@@ -1485,7 +1458,7 @@
             }
             
             function openMobileSidebar() {
-                const isSmallScreen = window.innerWidth < 1024; // lg breakpoint
+                const isSmallScreen = window.innerWidth < 768; // md breakpoint
                 if (!isSmallScreen) return;
                 
                 sidebar.classList.remove('hidden');
@@ -1505,7 +1478,7 @@
             }
             
             function isSmallScreen() {
-                return window.innerWidth < 1024; // lg breakpoint
+                return window.innerWidth < 768; // md breakpoint
             }
             
             // Mobile toggle button
@@ -2403,6 +2376,7 @@ function trackBannerImpression(source) {
     </script>
     
     {% block scripts_extra %}{% endblock %}
+    {% include 'partials/_bottom_nav.html' %}
 </body>
 </html>
 

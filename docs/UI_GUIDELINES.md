@@ -60,6 +60,7 @@ Use the `page_header` macro from `app/templates/components/ui.html` on every mai
 - **Content width:** Main content is wrapped in a max-width container (`max-w-7xl`, 1280px) and centered (`mx-auto`) so lines don’t stretch on large screens. Applied in `base.html` to the main content area.
 - **Grid:** Use Tailwind grid for dashboards and two-column layouts: e.g. `grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3`; main content often `lg:col-span-2`, sidebar `lg:col-span-1`.
 - **Spacing:** Use the design tokens in `app/static/src/input.css` (`--spacing-xs` through `--spacing-3xl`). Prefer `gap-4` for card groups, `gap-6` for sections, `p-6` for card padding.
+- **Mobile navigation:** From the `md` breakpoint up, the primary nav is the **sidebar** (`hidden md:flex` on the sidebar aside). Below `md`, the sidebar is off-canvas (hamburger opens it with a backdrop). The **primary** small-screen shortcuts are the **bottom bar** in `partials/_bottom_nav.html` (`md:hidden`, `z-50`, top border, `pb-safe` for the iOS home indicator). Main shell `#mainContent` uses `pb-16 md:pb-0` so scrollable content clears the bar. The **More** tab opens a bottom sheet (backdrop + panel, `z-[55]` / `z-[60]`); open/close lives in `app/static/mobile.js` (`BottomNavMoreDrawer`). Active tab styling uses `text-primary` and `bg-primary/10` (and dark variants). Prefer **inline SVG** (Heroicons-style stroke paths) in that partial for bar icons to avoid an extra icon font dependency on the bar.
 
 ## Styling conventions
 
@@ -80,6 +81,8 @@ Use the `page_header` macro from `app/templates/components/ui.html` on every mai
 | Area | Files |
 |------|--------|
 | Base layout | `app/templates/base.html` |
+| Mobile bottom nav (partial) | `app/templates/partials/_bottom_nav.html` |
+| Mobile shell behavior | `app/static/mobile.js` |
 | Design tokens / Tailwind | `app/static/src/input.css`, `tailwind.config.js` |
 | Components | `app/templates/components/ui.html`, `app/templates/components/cards.html` |
 | Dashboard | `app/templates/main/dashboard.html` |

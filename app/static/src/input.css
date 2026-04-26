@@ -637,6 +637,13 @@
   }
 }
 
+@layer utilities {
+  /* iOS home indicator / safe area (used by mobile bottom nav; safelist in tailwind.config.js) */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
 /* Focus, skip link, responsive, reduced motion, high contrast (from enhanced-ui / ui-enhancements) */
 :focus-visible { outline: 2px solid #4A90E2; outline-offset: 2px; }
 .skip-link { position: absolute; top: -40px; left: 0; background: #4A90E2; color: white; padding: 8px 16px; z-index: 100; border-radius: 0 0 4px 0; }

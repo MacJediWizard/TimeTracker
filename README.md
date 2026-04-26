@@ -76,7 +76,9 @@ TimeTracker is built with modern, reliable technologies:
 
 ## 🖥️ UI overview
 
-The web app uses a **single main layout** with a sidebar and top header. Content is centered with a max width for readability. **Getting around:** **Dashboard** — overview, today’s stats, and the main **Timer** widget (start/stop, quick start, repeat last). **Timer** and **Time entries** are first-class in the sidebar for fast access. **Time entries** is the place to filter, review, and export all logged time. **Reports** (time, project, finance) are available from the sidebar (top-level **Reports** link or **Finance & Expenses → Reports** for Report Builder, Saved Views, Scheduled Reports), and from the bottom bar on mobile. **Projects**, **Finance**, and **Settings** are available from the sidebar and navigation. For design and component conventions, see [UI Guidelines](docs/UI_GUIDELINES.md).
+The web app uses a **single main layout** with a sidebar and top header. Content is centered with a max width for readability. **Getting around:** **Dashboard** — overview, today’s stats, and the main **Timer** widget (start/stop, quick start, repeat last). **Timer** and **Time entries** are first-class in the sidebar for fast access. **Time entries** is the place to filter, review, and export all logged time. **Reports** (time, project, finance) are available from the sidebar (top-level **Reports** link or **Finance & Expenses → Reports** for Report Builder, Saved Views, Scheduled Reports). **Projects**, **Finance**, and **Settings** are available from the sidebar and navigation.
+
+On **narrow viewports** (below the `md` breakpoint), the sidebar is hidden in favor of a **fixed bottom navigation bar** (inline Heroicons): Dashboard, Timer, Time entries, Projects, and **More** (slide-up sheet for Invoices, Clients, Reports, and user Settings when those modules or routes apply). The hamburger control still opens the full sidebar overlay if you need every menu item. For design and component conventions, see [UI Guidelines](docs/UI_GUIDELINES.md).
 
 ---
 

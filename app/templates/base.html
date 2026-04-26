@@ -45,9 +45,7 @@
     <link rel="manifest" href="{{ url_for('main.manifest') }}">
     <meta name="vapid-public-key" content="{{ config.get('VAPID_PUBLIC_KEY', '') }}">
     <script src="{{ url_for('static', filename='pwa-enhancements.js') }}"></script>
-    <!-- Inter font (Bunny Fonts, GDPR-friendly) -->
-    <link rel="preconnect" href="https://fonts.bunny.net" crossorigin>
-    <link href="https://fonts.bunny.net/css?family=Inter:400,500,600,700&display=swap" rel="stylesheet">
+    <!-- Inter font is loaded via CSS @import in app/static/src/input.css -->
     <link rel="stylesheet" href="{{ url_for('static', filename='dist/output.css') }}?v={{ app_version }}-toastfix1">
     <!-- Font Awesome -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">

@@ -98,15 +98,16 @@ def kiosk_login():
         return redirect(url_for("kiosk.kiosk_dashboard"))
 
     # Get authentication method
-    try:
-        from app.config import Config
+    from app.config import Config
+    from app.utils.auth_method import normalize_auth_method, requires_password_form
 
-        auth_method = (getattr(Config, "AUTH_METHOD", "local") or "local").strip().lower()
+    try:
+        auth_method = normalize_auth_method(getattr(Config, "AUTH_METHOD", "local"))
     except Exception:
         auth_method = "local"
 
-    # Determine if password authentication is required (kiosk doesn't support OIDC)
-    requires_password = auth_method in ("local", "both")
+    # Determine if password authentication is required (kiosk doesn't support OIDC/LDAP flows)
+    requires_password = requires_password_form(auth_method)
 
     if request.method == "POST":
         username = request.form.get("username", "").strip()

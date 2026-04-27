@@ -41,7 +41,7 @@
         
         <div class="flex items-center gap-2 mb-4">
             {% set auth_method = config.get('AUTH_METHOD', 'local') or 'local' %}
-            {% set oidc_enabled = auth_method.lower() in ['oidc', 'both'] %}
+            {% set oidc_enabled = auth_method.lower() in ['oidc', 'both', 'all'] %}
             {% if oidc_enabled %}
             <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 font-medium">
                 <i class="fas fa-check-circle mr-1"></i>{{ _('Enabled') }}

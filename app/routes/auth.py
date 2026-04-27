@@ -16,6 +16,14 @@ from app import db, limiter, log_event, oauth, track_event
 from app.config import Config
 from app.models import User
 from app.utils.cache import get_cache
+from app.utils.auth_method import (
+    auth_includes_ldap,
+    auth_includes_local,
+    auth_includes_oidc,
+    forgot_password_available,
+    normalize_auth_method,
+    requires_password_form,
+)
 from app.utils.config_manager import ConfigManager
 from app.utils.db import safe_commit
 from app.utils.posthog_funnels import track_onboarding_started
@@ -43,12 +51,15 @@ def get_avatar_upload_folder() -> str:
 def _login_template_vars():
     """Common template variables for auth/login.html, including demo mode when enabled."""
     allow_self_register = ConfigManager.get_setting("allow_self_register", Config.ALLOW_SELF_REGISTER)
-    auth_method = (current_app.config.get("AUTH_METHOD", "local") or "local").strip().lower()
-    requires_password = auth_method in ("local", "both")
+    auth_method = normalize_auth_method(current_app.config.get("AUTH_METHOD", "local"))
+    requires_password = requires_password_form(auth_method)
     vars = {
         "allow_self_register": allow_self_register,
         "auth_method": auth_method,
         "requires_password": requires_password,
+        "auth_includes_ldap": auth_includes_ldap(auth_method),
+        "auth_includes_oidc": auth_includes_oidc(auth_method),
+        "show_forgot_password": forgot_password_available(auth_method) and auth_method != "ldap",
     }
     if current_app.config.get("DEMO_MODE"):
         vars["demo_mode"] = True
@@ -92,18 +103,78 @@ def _verify_password_reset_token(token: str, *, max_age_seconds: int) -> User | 
     return user
 
 
+def _finalize_login_after_verification(user: User, *, log_auth_method: str):
+    """After successful local or LDAP verification: 2FA gate or establish session and redirect."""
+    if getattr(user, "two_factor_enabled", False):
+        session["pre_2fa_user_id"] = user.id
+        next_page = request.args.get("next")
+        if next_page and next_page.startswith("/"):
+            session["pre_2fa_next"] = next_page
+        else:
+            session.pop("pre_2fa_next", None)
+        return redirect(url_for("auth.two_factor"))
+
+    from app.telemetry.otel_setup import business_span
+
+    with business_span("auth.login", user_id=user.id, auth_method=log_auth_method):
+        login_user(user, remember=True)
+
+        if not user.roles and user.role:
+            from app.utils.role_migration import migrate_single_user
+
+            if migrate_single_user(user.id):
+                current_app.logger.info(
+                    "Auto-migrated user '%s' from legacy role '%s' to new role system",
+                    user.username,
+                    user.role,
+                )
+
+        user.update_last_login()
+        current_app.logger.info("User '%s' logged in successfully", user.username)
+        log_event("auth.login", user_id=user.id, auth_method=log_auth_method)
+
+    import threading
+
+    def track_login_async():
+        try:
+            track_event(user.id, "auth.login", {"auth_method": log_auth_method})
+        except Exception:
+            pass
+
+    threading.Thread(target=track_login_async, daemon=True).start()
+
+    if user.password_change_required:
+        flash(_("You must change your password before continuing."), "warning")
+        return redirect(url_for("auth.change_password"))
+
+    try:
+        require_admin_2fa = bool(getattr(Config, "REQUIRE_2FA_FOR_ADMINS", False))
+    except Exception:
+        require_admin_2fa = False
+    if require_admin_2fa and user.role == "admin" and not getattr(user, "two_factor_enabled", False):
+        flash(_("Administrator accounts must enable two-factor authentication."), "warning")
+        return redirect(url_for("auth.two_factor_setup"))
+
+    next_page = request.args.get("next")
+    if not next_page or not next_page.startswith("/"):
+        next_page = url_for("main.dashboard")
+    current_app.logger.info("Redirecting '%s' to %s", user.username, next_page)
+    flash(_("Welcome back, %(username)s!", username=user.username), "success")
+    return redirect(next_page)
+
+
 @auth_bp.route("/forgot-password", methods=["GET", "POST"])
 @limiter.limit("5 per minute", methods=["POST"])
 def forgot_password():
     if current_user.is_authenticated:
         return redirect(url_for("main.dashboard"))
 
-    # Password reset only makes sense for password-based modes.
+    # Password reset only when local accounts may exist (not pure LDAP / OIDC-only).
     try:
-        auth_method = (current_app.config.get("AUTH_METHOD", "local") or "local").strip().lower()
+        auth_method = normalize_auth_method(current_app.config.get("AUTH_METHOD", "local"))
     except Exception:
         auth_method = "local"
-    if auth_method not in ("local", "both"):
+    if not forgot_password_available(auth_method):
         flash(_("Password reset is not available for this authentication method."), "warning")
         return redirect(url_for("auth.login"))
 
@@ -132,7 +203,7 @@ def forgot_password():
         if identifier:
             user = User.query.filter((User.username == identifier) | (User.email == identifier)).first()
 
-        if user and user.is_active and user.email:
+        if user and user.is_active and user.email and getattr(user, "auth_provider", "local") == "local":
             try:
                 token = _make_password_reset_token(user)
                 reset_url = url_for("auth.reset_password", token=token, _external=True)
@@ -174,6 +245,10 @@ def reset_password(token: str):
     if not user:
         flash(_("This reset link is invalid or has expired. Please request a new one."), "error")
         return redirect(url_for("auth.forgot_password"))
+
+    if getattr(user, "auth_provider", "local") == "ldap":
+        flash(_("Password reset is not available for this account."), "warning")
+        return redirect(url_for("auth.login"))
 
     if request.method == "POST":
         new_password = (request.form.get("new_password") or "").strip()
@@ -217,13 +292,13 @@ def login():
 
     # Get authentication method from Flask app config (reads from environment)
     try:
-        auth_method = (current_app.config.get("AUTH_METHOD", "local") or "local").strip().lower()
+        auth_method = normalize_auth_method(current_app.config.get("AUTH_METHOD", "local"))
     except Exception:
         auth_method = "local"
 
-    # Determine if password authentication is required
-    # 'none' = no password, 'local' = password required, 'oidc' = OIDC only, 'both' = OIDC + password
-    requires_password = auth_method in ("local", "both")
+    requires_password = requires_password_form(auth_method)
+    include_ldap = auth_includes_ldap(auth_method)
+    include_local = auth_includes_local(auth_method)
 
     # If OIDC-only mode, redirect to OIDC login start
     if auth_method == "oidc":
@@ -274,6 +349,20 @@ def login():
                     flash(_("Only the demo account can be used. Please use the credentials shown below."), "error")
                     return render_template("auth/login.html", **_login_template_vars())
 
+            if auth_method == "ldap":
+                from app.services.ldap_service import LDAPService
+
+                if requires_password and not password:
+                    log_event("auth.login_failed", reason="password_required", auth_method=auth_method)
+                    flash(_("Password is required"), "error")
+                    return render_template("auth/login.html", **_login_template_vars())
+                ldap_user = LDAPService.authenticate(username, password)
+                if ldap_user:
+                    return _finalize_login_after_verification(ldap_user, log_auth_method="ldap")
+                log_event("auth.login_failed", username=username, reason="ldap_auth_failed", auth_method=auth_method)
+                flash(_("Invalid username or password"), "error")
+                return render_template("auth/login.html", **_login_template_vars())
+
             # Normalize admin usernames from config
             try:
                 admin_usernames = [u.strip().lower() for u in (Config.ADMIN_USERNAMES or [])]
@@ -284,10 +373,18 @@ def login():
             user = User.query.filter_by(username=username).first()
             current_app.logger.info("User lookup for '%s': %s", username, "found" if user else "not found")
 
+            if auth_method == "all" and not user and include_ldap:
+                from app.services.ldap_service import LDAPService
+
+                if password:
+                    ldap_user = LDAPService.authenticate(username, password)
+                    if ldap_user:
+                        return _finalize_login_after_verification(ldap_user, log_auth_method="ldap")
+
             if not user:
                 # Check if self-registration is allowed (use ConfigManager to respect database settings)
                 allow_self_register = ConfigManager.get_setting("allow_self_register", Config.ALLOW_SELF_REGISTER)
-                if allow_self_register:
+                if allow_self_register and (include_local or auth_method == "none"):
                     # If password auth is required, validate password during self-registration
                     if requires_password:
                         if not password:
@@ -338,7 +435,10 @@ def login():
                     flash(_("Welcome! Your account has been created."), "success")
                 else:
                     log_event("auth.login_failed", username=username, reason="user_not_found", auth_method=auth_method)
-                    flash(_("User not found. Please contact an administrator."), "error")
+                    if auth_method == "all" and include_ldap:
+                        flash(_("Invalid username or password"), "error")
+                    else:
+                        flash(_("User not found. Please contact an administrator."), "error")
                     return render_template("auth/login.html", **_login_template_vars())
             else:
                 # If existing user matches admin usernames, ensure admin role
@@ -353,6 +453,22 @@ def login():
             if not user.is_active:
                 log_event("auth.login_failed", user_id=user.id, reason="account_disabled", auth_method=auth_method)
                 flash(_("Account is disabled. Please contact an administrator."), "error")
+                return render_template("auth/login.html", **_login_template_vars())
+
+            if auth_method == "all" and include_ldap and getattr(user, "auth_provider", "local") == "ldap":
+                from app.services.ldap_service import LDAPService
+
+                if requires_password and not password:
+                    log_event(
+                        "auth.login_failed", user_id=user.id, reason="password_required", auth_method=auth_method
+                    )
+                    flash(_("Password is required"), "error")
+                    return render_template("auth/login.html", **_login_template_vars())
+                lu = LDAPService.authenticate(username, password)
+                if lu:
+                    return _finalize_login_after_verification(lu, log_auth_method="ldap")
+                log_event("auth.login_failed", user_id=user.id, reason="ldap_auth_failed", auth_method=auth_method)
+                flash(_("Invalid username or password"), "error")
                 return render_template("auth/login.html", **_login_template_vars())
 
             # Handle password authentication based on mode
@@ -371,6 +487,12 @@ def login():
                         log_event(
                             "auth.login_failed", user_id=user.id, reason="invalid_password", auth_method=auth_method
                         )
+                        if auth_method == "all" and include_ldap:
+                            from app.services.ldap_service import LDAPService
+
+                            lu = LDAPService.authenticate(username, password)
+                            if lu:
+                                return _finalize_login_after_verification(lu, log_auth_method="ldap")
                         flash(_("Invalid username or password"), "error")
                         return render_template("auth/login.html", **_login_template_vars())
                 else:
@@ -409,76 +531,7 @@ def login():
                 # This mode is for trusted environments only
                 pass
 
-            # If 2FA is enabled for this user, require TOTP verification before creating a session.
-            if getattr(user, "two_factor_enabled", False):
-                session["pre_2fa_user_id"] = user.id
-                # Preserve intended redirect
-                next_page = request.args.get("next")
-                if next_page and next_page.startswith("/"):
-                    session["pre_2fa_next"] = next_page
-                else:
-                    session.pop("pre_2fa_next", None)
-                return redirect(url_for("auth.two_factor"))
-
-            from app.telemetry.otel_setup import business_span
-
-            with business_span("auth.login", user_id=user.id, auth_method=auth_method):
-                # Log in the user (password validation passed or password not required)
-                login_user(user, remember=True)
-
-                # Auto-migrate user from legacy role to new role system if needed
-                if not user.roles and user.role:
-                    from app.utils.role_migration import migrate_single_user
-
-                    if migrate_single_user(user.id):
-                        current_app.logger.info(
-                            "Auto-migrated user '%s' from legacy role '%s' to new role system",
-                            user.username,
-                            user.role,
-                        )
-
-                user.update_last_login()
-                current_app.logger.info("User '%s' logged in successfully", user.username)
-
-                # Track successful login (log_event is fast, track_event is deferred to avoid blocking)
-                log_event("auth.login", user_id=user.id, auth_method=auth_method)
-            # Defer track_event to avoid blocking redirect - PostHog calls can be slow/timeout
-            import threading
-
-            def track_login_async():
-                try:
-                    track_event(user.id, "auth.login", {"auth_method": auth_method})
-                except Exception:
-                    pass  # Don't let analytics errors affect login
-
-            threading.Thread(target=track_login_async, daemon=True).start()
-
-            # Note: identify_user_with_segments and set_super_properties are deferred to dashboard
-            # to avoid blocking the login redirect. The dashboard calls update_user_segments_if_needed
-            # which has caching logic and will handle this efficiently.
-
-            # Check if password change is required
-            if user.password_change_required:
-                flash(_("You must change your password before continuing."), "warning")
-                return redirect(url_for("auth.change_password"))
-
-            # Optionally enforce 2FA for admins (after login; they will be prompted to enroll).
-            try:
-                require_admin_2fa = bool(getattr(Config, "REQUIRE_2FA_FOR_ADMINS", False))
-            except Exception:
-                require_admin_2fa = False
-            if require_admin_2fa and user.role == "admin" and not getattr(user, "two_factor_enabled", False):
-                flash(_("Administrator accounts must enable two-factor authentication."), "warning")
-                return redirect(url_for("auth.two_factor_setup"))
-
-            # Redirect to intended page or dashboard
-            next_page = request.args.get("next")
-            if not next_page or not next_page.startswith("/"):
-                next_page = url_for("main.dashboard")
-            current_app.logger.info("Redirecting '%s' to %s", user.username, next_page)
-
-            flash(_("Welcome back, %(username)s!", username=user.username), "success")
-            return redirect(next_page)
+            return _finalize_login_after_verification(user, log_auth_method=auth_method)
         except Exception as e:
             current_app.logger.exception("Login error: %s", e)
             flash(_("Unexpected error during login. Please try again or check server logs."), "error")
@@ -641,7 +694,7 @@ def logout():
 
     # Try OIDC end-session if enabled and configured
     try:
-        auth_method = (current_app.config.get("AUTH_METHOD", "local") or "local").strip().lower()
+        auth_method = normalize_auth_method(current_app.config.get("AUTH_METHOD", "local"))
     except Exception:
         auth_method = "local"
 
@@ -673,7 +726,7 @@ def logout():
         pass
     flash(_("Goodbye, %(username)s!", username=username), "info")
 
-    if auth_method in ("oidc", "both"):
+    if auth_includes_oidc(auth_method):
         # Only perform RP-Initiated Logout if OIDC_POST_LOGOUT_REDIRECT_URI is explicitly configured
         post_logout = getattr(Config, "OIDC_POST_LOGOUT_REDIRECT_URI", None)
         if post_logout:
@@ -710,11 +763,12 @@ def edit_profile():
     """Edit user profile"""
     # Get authentication method from Flask app config (reads from environment)
     try:
-        auth_method = (current_app.config.get("AUTH_METHOD", "local") or "local").strip().lower()
+        auth_method = normalize_auth_method(current_app.config.get("AUTH_METHOD", "local"))
     except Exception:
         auth_method = "local"
 
-    requires_password = auth_method in ("local", "both")
+    requires_password = requires_password_form(auth_method)
+    allow_password_change = requires_password and getattr(current_user, "auth_provider", "local") != "ldap"
 
     if request.method == "POST":
         from app.utils.validation import sanitize_input
@@ -730,8 +784,8 @@ def edit_profile():
             # Also set session so it applies immediately
             session["preferred_language"] = preferred_language
 
-        # Handle password update if password auth is required
-        if requires_password:
+        # Handle password update if password auth is required (not LDAP-managed accounts)
+        if allow_password_change:
             password = request.form.get("password", "").strip()
             password_confirm = request.form.get("password_confirm", "").strip()
 
@@ -808,13 +862,17 @@ def edit_profile():
             flash(_("Could not update your profile due to a database error."), "error")
         return redirect(url_for("auth.profile"))
 
-    return render_template("auth/edit_profile.html", requires_password=requires_password)
+    return render_template("auth/edit_profile.html", requires_password=allow_password_change)
 
 
 @auth_bp.route("/change-password", methods=["GET", "POST"])
 @login_required
 def change_password():
     """Change password page - required when password_change_required is True"""
+    if getattr(current_user, "auth_provider", "local") == "ldap":
+        flash(_("Password cannot be changed here for your account."), "warning")
+        return redirect(url_for("main.dashboard"))
+
     if request.method == "POST":
         current_password = request.form.get("current_password", "").strip()
         new_password = request.form.get("new_password", "").strip()
@@ -925,11 +983,11 @@ def login_oidc():
         return redirect(url_for("auth.login"))
 
     try:
-        auth_method = (current_app.config.get("AUTH_METHOD", "local") or "local").strip().lower()
+        auth_method = normalize_auth_method(current_app.config.get("AUTH_METHOD", "local"))
     except Exception:
         auth_method = "local"
 
-    if auth_method not in ("oidc", "both"):
+    if not auth_includes_oidc(auth_method):
         return redirect(url_for("auth.login"))
 
     client = oauth.create_client("oidc")
@@ -1294,6 +1352,7 @@ def oidc_callback():
                 user.is_active = True
                 user.oidc_issuer = issuer
                 user.oidc_sub = sub
+                user.auth_provider = "oidc"
                 # Apply company default for daily working hours (overtime)
                 try:
                     from app.models import Settings
@@ -1334,6 +1393,9 @@ def oidc_callback():
         else:
             # Update linkage and profile fields
             changed = False
+            if getattr(user, "auth_provider", "local") != "oidc":
+                user.auth_provider = "oidc"
+                changed = True
             if not user.oidc_issuer or not user.oidc_sub:
                 user.oidc_issuer = issuer
                 user.oidc_sub = sub

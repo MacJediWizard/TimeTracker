@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **LDAP authentication** — Optional directory login via `AUTH_METHOD=ldap` or combined `AUTH_METHOD=all` (with local + OIDC). New `LDAP_*` settings in `app/config.py`, `LDAPService` (`app/services/ldap_service.py`), login and password-reset behaviour keyed off `users.auth_provider` (`local` | `oidc` | `ldap`), admin **System Settings** LDAP panel and `POST /admin/ldap/test`, production env validation for required LDAP variables, Alembic `153_add_user_auth_provider`, and tests in `tests/test_ldap_auth.py`. Dependency: `ldap3`. Documentation: [docs/admin/configuration/LDAP_SETUP.md](docs/admin/configuration/LDAP_SETUP.md); OIDC and getting-started guides updated for `ldap` / `all`.
+
 ### Fixed
 - **API integration test for project tasks** — `tests/test_api_comprehensive.py` now matches `GET /api/projects/<id>/tasks`, which returns **all** tasks (including done and cancelled) for the time-entry UI.
 - **Quote create returned HTTP 500 after save (#583)** — The quote was saved, but the redirect to the quote detail page crashed when **Valid until** was set: the template compared `valid_until` to `now()`, and `now` was never defined in the Jinja context. The expired badge now uses `Quote.is_expired` (same rule, app timezone). Regression coverage in `tests/test_routes/test_quotes_web.py` posts `valid_until` so the view path is exercised.

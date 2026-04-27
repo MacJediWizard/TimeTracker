@@ -1009,12 +1009,14 @@ def create_app(config=None):
     initialize_ip_cache(ip_cache_ttl)
 
     # Register OAuth OIDC client if enabled
+    from app.utils.auth_method import auth_includes_oidc
+
     try:
         auth_method = (app.config.get("AUTH_METHOD") or "local").strip().lower()
     except Exception:
         auth_method = "local"
 
-    if auth_method in ("oidc", "both"):
+    if auth_includes_oidc(auth_method):
         issuer = app.config.get("OIDC_ISSUER")
         client_id = app.config.get("OIDC_CLIENT_ID")
         client_secret = app.config.get("OIDC_CLIENT_SECRET")

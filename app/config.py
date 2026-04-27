@@ -57,14 +57,40 @@ class Config:
     API_TOKEN_RATE_LIMIT_PER_MINUTE = int(os.getenv("API_TOKEN_RATE_LIMIT_PER_MINUTE", "100"))
     API_TOKEN_RATE_LIMIT_PER_HOUR = int(os.getenv("API_TOKEN_RATE_LIMIT_PER_HOUR", "1000"))
 
-    # Authentication method: 'none' | 'local' | 'oidc' | 'both'
+    # Authentication method: 'none' | 'local' | 'oidc' | 'ldap' | 'both' | 'all'
     # 'none' = no password authentication (username only)
     # 'local' = password authentication required
     # 'oidc' = OIDC/Single Sign-On only
-    # 'both' = OIDC + local password authentication
-    AUTH_METHOD = os.getenv("AUTH_METHOD", "local").strip().lower()
+    # 'ldap' = LDAP bind only
+    # 'both' = OIDC + local password (backwards compatible)
+    # 'all' = local + OIDC + LDAP
+    _auth_method_raw = os.getenv("AUTH_METHOD", "local").strip().lower()
+    _auth_method_valid = frozenset({"none", "local", "oidc", "ldap", "both", "all"})
+    AUTH_METHOD = _auth_method_raw if _auth_method_raw in _auth_method_valid else "local"
 
-    # OIDC settings (used when AUTH_METHOD is 'oidc' or 'both')
+    # LDAP settings (used when AUTH_METHOD is 'ldap' or 'all')
+    LDAP_ENABLED = AUTH_METHOD in ("ldap", "all")
+    LDAP_HOST = os.environ.get("LDAP_HOST", "localhost")
+    LDAP_PORT = int(os.environ.get("LDAP_PORT", "389"))
+    LDAP_USE_SSL = os.environ.get("LDAP_USE_SSL", "false").lower() == "true"
+    LDAP_USE_TLS = os.environ.get("LDAP_USE_TLS", "false").lower() == "true"
+    LDAP_BIND_DN = os.environ.get("LDAP_BIND_DN", "")
+    LDAP_BIND_PASSWORD = os.environ.get("LDAP_BIND_PASSWORD", "")
+    LDAP_BASE_DN = os.environ.get("LDAP_BASE_DN", "dc=example,dc=com")
+    LDAP_USER_DN = os.environ.get("LDAP_USER_DN", "ou=users")
+    LDAP_USER_OBJECT_CLASS = os.environ.get("LDAP_USER_OBJECT_CLASS", "inetOrgPerson")
+    LDAP_USER_LOGIN_ATTR = os.environ.get("LDAP_USER_LOGIN_ATTR", "uid")
+    LDAP_USER_EMAIL_ATTR = os.environ.get("LDAP_USER_EMAIL_ATTR", "mail")
+    LDAP_USER_FNAME_ATTR = os.environ.get("LDAP_USER_FNAME_ATTR", "givenName")
+    LDAP_USER_LNAME_ATTR = os.environ.get("LDAP_USER_LNAME_ATTR", "sn")
+    LDAP_GROUP_DN = os.environ.get("LDAP_GROUP_DN", "ou=groups")
+    LDAP_GROUP_OBJECT_CLASS = os.environ.get("LDAP_GROUP_OBJECT_CLASS", "groupOfNames")
+    LDAP_ADMIN_GROUP = os.environ.get("LDAP_ADMIN_GROUP", "")
+    LDAP_REQUIRED_GROUP = os.environ.get("LDAP_REQUIRED_GROUP", "")
+    LDAP_TLS_CA_CERT_FILE = os.environ.get("LDAP_TLS_CA_CERT_FILE", "")
+    LDAP_TIMEOUT = int(os.environ.get("LDAP_TIMEOUT", "10"))
+
+    # OIDC settings (used when AUTH_METHOD is 'oidc', 'both', or 'all')
     OIDC_ISSUER = os.getenv("OIDC_ISSUER")  # e.g., https://login.microsoftonline.com/<tenant>/v2.0
     OIDC_CLIENT_ID = os.getenv("OIDC_CLIENT_ID")
     OIDC_CLIENT_SECRET = os.getenv("OIDC_CLIENT_SECRET")

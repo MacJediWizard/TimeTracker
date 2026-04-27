@@ -28,6 +28,8 @@ class User(UserMixin, db.Model):
     dismissed_release_version = db.Column(db.String(64), nullable=True)
     oidc_sub = db.Column(db.String(255), nullable=True)
     oidc_issuer = db.Column(db.String(255), nullable=True)
+    # Authentication source: local password, OIDC, or LDAP (synced on login where applicable)
+    auth_provider = db.Column(db.String(20), nullable=False, default="local", server_default="local")
     avatar_filename = db.Column(db.String(255), nullable=True)
     password_hash = db.Column(db.String(255), nullable=True)
     password_change_required = db.Column(

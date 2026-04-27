@@ -36,6 +36,7 @@
         <a href="#section-invoices" class="px-3 py-1.5 text-xs font-medium rounded-full bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark whitespace-nowrap">Invoices</a>
         <a href="#section-peppol" class="px-3 py-1.5 text-xs font-medium rounded-full bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark whitespace-nowrap">Peppol</a>
         <a href="#section-backup" class="px-3 py-1.5 text-xs font-medium rounded-full bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark whitespace-nowrap">Backup</a>
+        <a href="#section-ldap" class="px-3 py-1.5 text-xs font-medium rounded-full bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark whitespace-nowrap">LDAP</a>
         <a href="#section-kiosk" class="px-3 py-1.5 text-xs font-medium rounded-full bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark whitespace-nowrap">Kiosk</a>
         <a href="#section-ai" class="px-3 py-1.5 text-xs font-medium rounded-full bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark whitespace-nowrap">AI Helper</a>
         <a href="#section-analytics" class="px-3 py-1.5 text-xs font-medium rounded-full bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark whitespace-nowrap">Analytics</a>
@@ -400,6 +401,55 @@
                 </div>
             </div>
 
+            <!-- LDAP (read-only; configured via environment) -->
+            <div id="section-ldap" class="border-b border-border-light dark:border-border-dark pb-6">
+                <h2 class="text-lg font-semibold mb-4">{{ _('LDAP') }}</h2>
+                <p class="text-sm text-text-muted-light dark:text-text-muted-dark mb-4">
+                    {{ _('LDAP authentication is configured with environment variables. Values below are read-only.') }}
+                </p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+                    <div>
+                        <span class="form-label text-text-muted-light dark:text-text-muted-dark">{{ _('Enabled for auth') }}</span>
+                        <p class="mt-1 font-medium">{{ _('Yes') if ldap_settings.enabled else _('No') }}</p>
+                    </div>
+                    <div>
+                        <span class="form-label text-text-muted-light dark:text-text-muted-dark">{{ _('Host') }} / {{ _('Port') }}</span>
+                        <p class="mt-1 font-mono text-xs break-all">{{ ldap_settings.host }}:{{ ldap_settings.port }}</p>
+                    </div>
+                    <div>
+                        <span class="form-label text-text-muted-light dark:text-text-muted-dark">{{ _('SSL') }} / {{ _('TLS') }}</span>
+                        <p class="mt-1">{{ _('SSL') }}: {% if ldap_settings.use_ssl %}{{ _('on') }}{% else %}{{ _('off') }}{% endif %},
+                            {{ _('TLS') }}: {% if ldap_settings.use_tls %}{{ _('on') }}{% else %}{{ _('off') }}{% endif %}</p>
+                    </div>
+                    <div>
+                        <span class="form-label text-text-muted-light dark:text-text-muted-dark">{{ _('Base DN') }}</span>
+                        <p class="mt-1 font-mono text-xs break-all">{{ ldap_settings.base_dn }}</p>
+                    </div>
+                    <div>
+                        <span class="form-label text-text-muted-light dark:text-text-muted-dark">{{ _('User DN') }}</span>
+                        <p class="mt-1 font-mono text-xs break-all">{{ ldap_settings.user_dn }}</p>
+                    </div>
+                    <div>
+                        <span class="form-label text-text-muted-light dark:text-text-muted-dark">{{ _('User login attribute') }}</span>
+                        <p class="mt-1 font-mono text-xs">{{ ldap_settings.login_attr }}</p>
+                    </div>
+                    <div>
+                        <span class="form-label text-text-muted-light dark:text-text-muted-dark">{{ _('Admin group (CN)') }}</span>
+                        <p class="mt-1 font-mono text-xs break-all">{{ ldap_settings.admin_group }}</p>
+                    </div>
+                    <div>
+                        <span class="form-label text-text-muted-light dark:text-text-muted-dark">{{ _('Required group (CN)') }}</span>
+                        <p class="mt-1 font-mono text-xs break-all">{{ ldap_settings.required_group }}</p>
+                    </div>
+                </div>
+                <div class="mt-4 flex flex-wrap items-center gap-3">
+                    <button type="button" id="ldapTestConnectionBtn" class="btn btn-secondary">
+                        {{ _('Test LDAP Connection') }}
+                    </button>
+                    <span id="ldapTestConnectionResult" class="text-sm text-text-muted-light dark:text-text-muted-dark"></span>
+                </div>
+            </div>
+
             <!-- Export Settings -->
             <div class="border-b border-border-light dark:border-border-dark pb-6">
                 <h2 class="text-lg font-semibold mb-4">{{ _('Export Settings') }}</h2>
@@ -755,6 +805,39 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         transportMode.addEventListener('change', togglePeppolTransport);
         togglePeppolTransport();
+    }
+
+    const ldapTestBtn = document.getElementById('ldapTestConnectionBtn');
+    const ldapTestResult = document.getElementById('ldapTestConnectionResult');
+    if (ldapTestBtn && ldapTestResult) {
+        ldapTestBtn.addEventListener('click', async function() {
+            ldapTestBtn.disabled = true;
+            ldapTestResult.textContent = '{{ _("Testing connection...") }}';
+            ldapTestResult.className = 'text-sm text-text-muted-light dark:text-text-muted-dark';
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+            try {
+                const response = await fetch('{{ url_for("admin.admin_ldap_test") }}', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                    body: JSON.stringify({})
+                });
+                const data = await response.json().catch(function() { return {}; });
+                if (data.success) {
+                    const cnt = data.user_count != null ? ' (' + data.user_count + ' {{ _("users") }})' : '';
+                    ldapTestResult.textContent = (data.message || '{{ _("OK") }}') + cnt;
+                    ldapTestResult.className = 'text-sm text-green-600 dark:text-green-400';
+                } else {
+                    ldapTestResult.textContent = data.message || '{{ _("Connection failed.") }}';
+                    ldapTestResult.className = 'text-sm text-red-600 dark:text-red-400';
+                }
+            } catch (err) {
+                ldapTestResult.textContent = '{{ _("Request failed.") }}';
+                ldapTestResult.className = 'text-sm text-red-600 dark:text-red-400';
+            } finally {
+                ldapTestBtn.disabled = false;
+            }
+        });
     }
 
     const aiTestBtn = document.getElementById('aiTestConnectionBtn');

@@ -1,10 +1,10 @@
 ## OpenID Connect (OIDC) Setup Guide
 
-This guide explains how to enable Single Sign-On (SSO) with OpenID Connect for TimeTracker. OIDC is optional; you can run with local login only, OIDC only, or both.
+This guide explains how to enable Single Sign-On (SSO) with OpenID Connect for TimeTracker. OIDC is optional; you can run with local login only, OIDC only, both, or combined with LDAP using `AUTH_METHOD=all` (see [LDAP Setup](LDAP_SETUP.md)).
 
 ### Quick Summary
 
-- Set `AUTH_METHOD=oidc` (SSO only) or `AUTH_METHOD=both` (SSO + local password authentication).
+- Set `AUTH_METHOD=oidc` (SSO only), `AUTH_METHOD=both` (SSO + local password), or `AUTH_METHOD=all` (local + SSO + LDAP; LDAP is documented separately).
 - Configure `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `OIDC_REDIRECT_URI`.
 - Optional: Configure admin mapping via `OIDC_ADMIN_GROUP` or `OIDC_ADMIN_EMAILS`.
 - Restart the app. The login page will show an “Sign in with SSO” button when enabled.
@@ -31,7 +31,7 @@ Make sure your external URL and protocol (HTTP/HTTPS) match how users access the
 Add these to your environment (e.g., `.env`, Docker Compose, or Kubernetes Secrets):
 
 ```
-AUTH_METHOD=oidc            # Options: none | local | oidc | both (see section 5 for details)
+AUTH_METHOD=oidc            # Options: none | local | oidc | ldap | both | all (see section 5; LDAP: LDAP_SETUP.md)
 
 # Core OIDC settings
 OIDC_ISSUER=https://idp.example.com/realms/your-realm
@@ -109,7 +109,7 @@ Also ensure the standard app settings are configured (database, secret key, etc.
 
 ### 5) Authentication Methods
 
-The `AUTH_METHOD` environment variable controls how users authenticate with TimeTracker. It supports four options:
+The `AUTH_METHOD` environment variable controls how users authenticate with TimeTracker. It supports these options:
 
 #### Available Options
 
@@ -136,21 +136,33 @@ The `AUTH_METHOD` environment variable controls how users authenticate with Time
    - Requires OIDC configuration (see Required Environment Variables above)
    - Self-registration still works if `ALLOW_SELF_REGISTER=true` (users created on first OIDC login)
 
-4. **`both`** - OIDC + Local password authentication
+4. **`both`** - OIDC + Local password authentication (no LDAP)
    - Shows both SSO button and local login form
    - Users can choose to log in with OIDC or use username/password
    - Local authentication requires passwords (same as `local` mode)
    - Best for organizations transitioning to SSO or supporting mixed authentication
    - Requires OIDC configuration to be set up
 
+5. **`ldap`** - LDAP directory authentication only
+   - Same username/password form; no OIDC button
+   - Users are created or updated from the directory after a successful bind
+   - Configure all `LDAP_*` variables; see [LDAP Setup](LDAP_SETUP.md) and `env.example`
+
+6. **`all`** - Local + OIDC + LDAP
+   - SSO button plus username/password form; LDAP is tried when appropriate (after local password failure for non-LDAP accounts, or as primary for LDAP-only accounts)
+   - Requires OIDC env vars when using SSO, and LDAP env vars for directory login
+   - See [LDAP Setup](LDAP_SETUP.md) for LDAP-specific behaviour
+
 #### Summary Table
 
-| Mode | Password Field | Password Required | OIDC Available | Self-Register | Use Case |
-|------|---------------|-------------------|----------------|---------------|----------|
-| `none` | ❌ No | ❌ No | ❌ No | ✅ Yes | Trusted internal networks, development |
-| `local` | ✅ Yes | ✅ Yes | ❌ No | ✅ Yes | Standard password authentication |
-| `oidc` | ❌ No | ❌ No | ✅ Yes | ✅ Yes | Enterprise SSO only |
-| `both` | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | Mixed authentication (SSO + local) |
+| Mode | Password field | OIDC | LDAP | Self-register (local) | Typical use |
+|------|----------------|------|------|------------------------|-------------|
+| `none` | Optional | ❌ | ❌ | ✅ | Trusted / dev |
+| `local` | Yes | ❌ | ❌ | ✅ | Default self-hosted |
+| `oidc` | N/A (redirect) | ✅ | ❌ | ✅ (first SSO) | SSO only |
+| `both` | Yes | ✅ | ❌ | ✅ | SSO + local |
+| `ldap` | Yes | ❌ | ✅ | ❌ | Directory only |
+| `all` | Yes | ✅ | ✅ | ✅ | Enterprise: all methods |
 
 ### 6) Docker Compose Example
 
@@ -183,7 +195,7 @@ services:
 ### 8) Troubleshooting
 
 - “SSO button doesn’t appear”
-  - Check `AUTH_METHOD`. Must be `oidc` or `both`.
+  - Check `AUTH_METHOD`. Must be `oidc`, `both`, or `all` (SSO is not shown for `local`, `ldap`, or `none`).
 
 - “Redirect URI mismatch”
   - The `OIDC_REDIRECT_URI` must exactly match the value registered at your IdP.
@@ -218,25 +230,24 @@ services:
 
 ### 10) Database Changes
 
-The app includes a migration that adds the following to `users`:
+Relevant columns on `users` for SSO and account linking include:
 
 - `email` (nullable)
-- `oidc_issuer` (nullable)
+- `oidc_issuer`, `oidc_sub` (nullable), with a unique constraint on `(oidc_issuer, oidc_sub)` where applicable
+- `auth_provider` (`local`, `oidc`, or `ldap`) — set automatically from the login path; used to avoid local password login for LDAP-managed users when `AUTH_METHOD=all`
 
-### Advanced Configuration: DNS Resolution
+If your DB was not migrated automatically, run your usual migration flow (e.g. `flask db upgrade` / Alembic).
 
-If you're experiencing DNS resolution issues (especially in Docker environments), TimeTracker includes enhanced DNS resolution features:
+#### Advanced: DNS resolution (OIDC metadata)
 
-- **Multiple DNS Strategies**: Automatically tries different DNS resolution methods
-- **IP Address Caching**: Caches resolved IPs to reduce lookup overhead
-- **Docker Network Detection**: Automatically tries Docker internal service names
-- **Background Refresh**: Periodically refreshes metadata to keep it current
+If you're experiencing DNS resolution issues (especially in Docker environments), TimeTracker includes enhanced DNS resolution for OIDC metadata:
 
-See [TROUBLESHOOTING_OIDC_DNS.md](../../TROUBLESHOOTING_OIDC_DNS.md) for detailed information and troubleshooting steps.
-- `oidc_sub` (nullable)
-- Unique constraint on `(oidc_issuer, oidc_sub)`
+- **Multiple DNS strategies**: Automatically tries different resolution methods
+- **IP address caching**: Reduces lookup overhead
+- **Docker network detection**: Tries internal service names when external DNS fails
+- **Background refresh**: Keeps metadata current
 
-If your DB wasn’t migrated automatically, run your usual migration flow.
+See [TROUBLESHOOTING_OIDC_DNS.md](../../TROUBLESHOOTING_OIDC_DNS.md) for detailed steps.
 
 ### 11) Support
 

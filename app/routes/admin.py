@@ -44,11 +44,51 @@ from app.utils.db import safe_commit
 from app.utils.error_handling import safe_file_remove, safe_log
 from app.utils.installation import get_installation_config
 from app.utils.invoice_numbering import sanitize_invoice_pattern, sanitize_invoice_prefix, validate_invoice_pattern
+from app.utils.auth_method import auth_includes_oidc, normalize_auth_method
 from app.utils.permissions import admin_or_permission_required
 from app.utils.telemetry import get_telemetry_fingerprint, is_telemetry_enabled
 from app.utils.timezone import get_available_timezones
 
 admin_bp = Blueprint("admin", __name__)
+
+
+def _ldap_admin_display():
+    """Read-only LDAP config summary for admin settings (from env / app config)."""
+    try:
+        cfg = current_app.config
+        ag = (cfg.get("LDAP_ADMIN_GROUP") or "").strip()
+        rg = (cfg.get("LDAP_REQUIRED_GROUP") or "").strip()
+        return {
+            "enabled": bool(cfg.get("LDAP_ENABLED")),
+            "host": cfg.get("LDAP_HOST") or "",
+            "port": int(cfg.get("LDAP_PORT") or 389),
+            "use_ssl": bool(cfg.get("LDAP_USE_SSL")),
+            "use_tls": bool(cfg.get("LDAP_USE_TLS")),
+            "base_dn": cfg.get("LDAP_BASE_DN") or "",
+            "user_dn": cfg.get("LDAP_USER_DN") or "",
+            "login_attr": cfg.get("LDAP_USER_LOGIN_ATTR") or "",
+            "admin_group": ag or "—",
+            "required_group": rg or "—",
+        }
+    except Exception:
+        return {
+            "enabled": False,
+            "host": "",
+            "port": 389,
+            "use_ssl": False,
+            "use_tls": False,
+            "base_dn": "",
+            "user_dn": "",
+            "login_attr": "",
+            "admin_group": "—",
+            "required_group": "—",
+        }
+
+
+@admin_bp.context_processor
+def _inject_ldap_admin_display():
+    return {"ldap_settings": _ldap_admin_display()}
+
 
 # In-memory restore progress tracking (simple, per-process)
 RESTORE_PROGRESS = {}
@@ -619,8 +659,8 @@ def admin_dashboard():
     )
 
     # Get OIDC status
-    auth_method = (getattr(Config, "AUTH_METHOD", "local") or "local").strip().lower()
-    oidc_enabled = auth_method in ("oidc", "both")
+    auth_method = normalize_auth_method(getattr(Config, "AUTH_METHOD", "local"))
+    oidc_enabled = auth_includes_oidc(auth_method)
     oidc_issuer = getattr(Config, "OIDC_ISSUER", None)
     oidc_configured = (
         oidc_enabled
@@ -1558,6 +1598,17 @@ def settings():
         ai_config=ai_config,
         system_instance_id=system_instance_id,
     )
+
+
+@admin_bp.route("/admin/ldap/test", methods=["POST"])
+@limiter.limit("10 per minute")
+@login_required
+@admin_or_permission_required("manage_settings")
+def admin_ldap_test():
+    """Test LDAP connectivity (service bind + user subtree count). Returns JSON only."""
+    from app.services.ldap_service import LDAPService
+
+    return jsonify(LDAPService.test_connection())
 
 
 @admin_bp.route("/admin/settings/verify-donate-hide-code", methods=["POST"])
@@ -4246,8 +4297,8 @@ def oidc_debug():
     }
 
     # Check if OIDC is enabled
-    auth_method = (oidc_config["auth_method"] or "local").strip().lower()
-    oidc_config["enabled"] = auth_method in ("oidc", "both")
+    auth_method = normalize_auth_method(oidc_config["auth_method"] or "local")
+    oidc_config["enabled"] = auth_includes_oidc(auth_method)
 
     # Try to get OIDC client metadata
     metadata = None
@@ -4306,9 +4357,9 @@ def oidc_test():
         test_dns_resolution,
     )
 
-    auth_method = (getattr(Config, "AUTH_METHOD", "local") or "local").strip().lower()
-    if auth_method not in ("oidc", "both"):
-        flash(_('OIDC is not enabled. Set AUTH_METHOD to "oidc" or "both".'), "warning")
+    auth_method = normalize_auth_method(getattr(Config, "AUTH_METHOD", "local"))
+    if not auth_includes_oidc(auth_method):
+        flash(_('OIDC is not enabled. Set AUTH_METHOD to "oidc", "both", or "all".'), "warning")
         return redirect(url_for("admin.oidc_debug"))
 
     issuer = getattr(Config, "OIDC_ISSUER", None)
@@ -4633,9 +4684,9 @@ def oidc_wizard_validate_config():
         errors.append({"field": "client_secret", "message": "Client Secret is required"})
 
     # Validate auth method
-    auth_method = data.get("auth_method", "").strip().lower()
-    if auth_method not in ("oidc", "both"):
-        errors.append({"field": "auth_method", "message": "Auth method must be 'oidc' or 'both'"})
+    auth_method = normalize_auth_method(data.get("auth_method", ""))
+    if not auth_includes_oidc(auth_method):
+        errors.append({"field": "auth_method", "message": "Auth method must be 'oidc', 'both', or 'all'"})
 
     # Validate redirect URI if provided
     redirect_uri = data.get("redirect_uri", "").strip()

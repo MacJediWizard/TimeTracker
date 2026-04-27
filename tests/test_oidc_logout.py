@@ -268,7 +268,7 @@ def test_logout_configuration_keys_valid(app):
 
         # These should be accessible without errors
         auth_method = getattr(Config, "AUTH_METHOD", None)
-        assert auth_method in ["local", "oidc", "both", None]
+        assert auth_method in ["local", "oidc", "both", "all", None]
 
         # OIDC_POST_LOGOUT_REDIRECT_URI should be optional
         post_logout = getattr(Config, "OIDC_POST_LOGOUT_REDIRECT_URI", None)

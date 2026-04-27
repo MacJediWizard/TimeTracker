@@ -94,9 +94,11 @@ All environment variables can be provided via `.env` and are consumed by the `ap
   - `none`: No password authentication (username only). Use only in trusted environments.
   - `local`: Password authentication required (default). Users must set and use passwords.
   - `oidc`: OIDC/Single Sign-On only. Local login form is hidden.
-  - `both`: OIDC + local password authentication. Users can choose either method.
+  - `ldap`: LDAP directory authentication only (username/password against LDAP).
+  - `both`: OIDC + local password (no LDAP). Users can choose SSO or local login.
+  - `all`: Local + OIDC + LDAP combined (see [OIDC Setup](OIDC_SETUP.md) and [LDAP Setup](LDAP_SETUP.md)).
   
-  Default: `local`. See [OIDC Setup Guide](OIDC_SETUP.md) for detailed explanations.
+  Default: `local`. See [OIDC Setup Guide](OIDC_SETUP.md) and [LDAP Setup](LDAP_SETUP.md) for details.
 - OIDC_ISSUER: OIDC provider issuer URL.
 - OIDC_CLIENT_ID: OIDC client id.
 - OIDC_CLIENT_SECRET: OIDC client secret.

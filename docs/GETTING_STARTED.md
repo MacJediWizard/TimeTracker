@@ -101,6 +101,8 @@ python app.py
    - **No authentication (`AUTH_METHOD=none`)**: Enter username only (no password)
    - **OIDC (`AUTH_METHOD=oidc`)**: Click "Sign in with SSO" button
    - **Both (`AUTH_METHOD=both`)**: Choose either SSO or local username/password
+   - **LDAP (`AUTH_METHOD=ldap`)**: Sign in with directory username and password (no SSO button)
+   - **All methods (`AUTH_METHOD=all`)**: SSO button plus username/password (local and/or LDAP, depending on account)
 
 3. **Admin users are configured in the environment**
    - Set via `ADMIN_USERNAMES` environment variable (default: `admin`)
@@ -114,9 +116,11 @@ python app.py
 > - `none`: Username only (for trusted internal networks)
 > - `local`: Username + password (default, recommended)
 > - `oidc`: Single Sign-On only
-> - `both`: Both OIDC and local password authentication
+> - `ldap`: LDAP directory only
+> - `both`: OIDC and local password (no LDAP)
+> - `all`: Local + OIDC + LDAP
 > 
-> See [OIDC Setup Guide](OIDC_SETUP.md#5-authentication-methods) for detailed explanations of all authentication modes.
+> See [OIDC Setup Guide](admin/configuration/OIDC_SETUP.md#5-authentication-methods) and [LDAP Setup](admin/configuration/LDAP_SETUP.md) for details.
 
 ---
 

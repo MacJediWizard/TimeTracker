@@ -44,7 +44,7 @@ from app.utils.db import safe_commit
 from app.utils.error_handling import safe_file_remove, safe_log
 from app.utils.installation import get_installation_config
 from app.utils.invoice_numbering import sanitize_invoice_pattern, sanitize_invoice_prefix, validate_invoice_pattern
-from app.utils.auth_method import auth_includes_oidc, normalize_auth_method
+from app.utils.auth_method import auth_includes_ldap, auth_includes_oidc, normalize_auth_method
 from app.utils.permissions import admin_or_permission_required
 from app.utils.telemetry import get_telemetry_fingerprint, is_telemetry_enabled
 from app.utils.timezone import get_available_timezones
@@ -4780,6 +4780,248 @@ def oidc_wizard_generate_config():
                 "env_content": env_content,
                 "docker_compose_content": docker_compose_content,
                 "redirect_uri": redirect_uri,
+            }
+        ),
+        200,
+    )
+
+
+# ==================== LDAP Setup Wizard ====================
+
+
+def _ldap_wizard_truthy(val) -> bool:
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return bool(val)
+    s = str(val or "").strip().lower()
+    return s in ("1", "true", "yes", "y", "on")
+
+
+def _ldap_wizard_int(val, default: int, *, lo: int | None = None, hi: int | None = None) -> int:
+    try:
+        n = int(val)
+    except (TypeError, ValueError):
+        n = default
+    if lo is not None:
+        n = max(lo, n)
+    if hi is not None:
+        n = min(hi, n)
+    return n
+
+
+def _ldap_wizard_cfg_from_json(data: dict) -> dict[str, object]:
+    """Map wizard JSON (LDAP_* keys) to a config-like dict for LDAPService.test_connection."""
+    return {
+        "LDAP_HOST": (data.get("LDAP_HOST") or "").strip() or "localhost",
+        "LDAP_PORT": _ldap_wizard_int(data.get("LDAP_PORT"), 389, lo=1, hi=65535),
+        "LDAP_USE_SSL": _ldap_wizard_truthy(data.get("LDAP_USE_SSL")),
+        "LDAP_USE_TLS": _ldap_wizard_truthy(data.get("LDAP_USE_TLS")),
+        "LDAP_BIND_DN": (data.get("LDAP_BIND_DN") or "").strip(),
+        "LDAP_BIND_PASSWORD": data.get("LDAP_BIND_PASSWORD") or "",
+        "LDAP_BASE_DN": (data.get("LDAP_BASE_DN") or "").strip(),
+        "LDAP_USER_DN": (data.get("LDAP_USER_DN") or "").strip(),
+        "LDAP_USER_OBJECT_CLASS": (data.get("LDAP_USER_OBJECT_CLASS") or "inetOrgPerson").strip() or "inetOrgPerson",
+        "LDAP_USER_LOGIN_ATTR": (data.get("LDAP_USER_LOGIN_ATTR") or "uid").strip() or "uid",
+        "LDAP_USER_EMAIL_ATTR": (data.get("LDAP_USER_EMAIL_ATTR") or "mail").strip() or "mail",
+        "LDAP_USER_FNAME_ATTR": (data.get("LDAP_USER_FNAME_ATTR") or "givenName").strip() or "givenName",
+        "LDAP_USER_LNAME_ATTR": (data.get("LDAP_USER_LNAME_ATTR") or "sn").strip() or "sn",
+        "LDAP_GROUP_DN": (data.get("LDAP_GROUP_DN") or "").strip(),
+        "LDAP_GROUP_OBJECT_CLASS": (data.get("LDAP_GROUP_OBJECT_CLASS") or "groupOfNames").strip() or "groupOfNames",
+        "LDAP_ADMIN_GROUP": (data.get("LDAP_ADMIN_GROUP") or "").strip(),
+        "LDAP_REQUIRED_GROUP": (data.get("LDAP_REQUIRED_GROUP") or "").strip(),
+        "LDAP_TLS_CA_CERT_FILE": (data.get("LDAP_TLS_CA_CERT_FILE") or "").strip(),
+        "LDAP_TIMEOUT": _ldap_wizard_int(data.get("LDAP_TIMEOUT"), 10, lo=1, hi=120),
+    }
+
+
+def _ldap_wizard_escape_env_value(value: object) -> str:
+    s = "" if value is None else str(value)
+    if " " in s or "#" in s or "$" in s or "\n" in s:
+        escaped = s.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+    return s
+
+
+@admin_bp.route("/admin/ldap/setup-wizard")
+@login_required
+@admin_or_permission_required("manage_settings")
+def ldap_setup_wizard():
+    """Guided LDAP setup wizard (env-based configuration)."""
+    from app.config import Config
+
+    auth_method = getattr(Config, "AUTH_METHOD", "local")
+    bind_secret = getattr(Config, "LDAP_BIND_PASSWORD", None) or ""
+    current_config = {
+        "auth_method": auth_method,
+        "LDAP_HOST": getattr(Config, "LDAP_HOST", "") or "",
+        "LDAP_PORT": getattr(Config, "LDAP_PORT", 389),
+        "LDAP_USE_SSL": bool(getattr(Config, "LDAP_USE_SSL", False)),
+        "LDAP_USE_TLS": bool(getattr(Config, "LDAP_USE_TLS", False)),
+        "LDAP_BIND_DN": getattr(Config, "LDAP_BIND_DN", "") or "",
+        "bind_password_set": bool(bind_secret),
+        "LDAP_BASE_DN": getattr(Config, "LDAP_BASE_DN", "") or "",
+        "LDAP_USER_DN": getattr(Config, "LDAP_USER_DN", "") or "",
+        "LDAP_USER_OBJECT_CLASS": getattr(Config, "LDAP_USER_OBJECT_CLASS", "") or "inetOrgPerson",
+        "LDAP_USER_LOGIN_ATTR": getattr(Config, "LDAP_USER_LOGIN_ATTR", "") or "uid",
+        "LDAP_USER_EMAIL_ATTR": getattr(Config, "LDAP_USER_EMAIL_ATTR", "") or "mail",
+        "LDAP_USER_FNAME_ATTR": getattr(Config, "LDAP_USER_FNAME_ATTR", "") or "givenName",
+        "LDAP_USER_LNAME_ATTR": getattr(Config, "LDAP_USER_LNAME_ATTR", "") or "sn",
+        "LDAP_GROUP_DN": getattr(Config, "LDAP_GROUP_DN", "") or "",
+        "LDAP_GROUP_OBJECT_CLASS": getattr(Config, "LDAP_GROUP_OBJECT_CLASS", "") or "groupOfNames",
+        "LDAP_ADMIN_GROUP": getattr(Config, "LDAP_ADMIN_GROUP", "") or "",
+        "LDAP_REQUIRED_GROUP": getattr(Config, "LDAP_REQUIRED_GROUP", "") or "",
+        "LDAP_TLS_CA_CERT_FILE": getattr(Config, "LDAP_TLS_CA_CERT_FILE", "") or "",
+        "LDAP_TIMEOUT": getattr(Config, "LDAP_TIMEOUT", 10),
+    }
+    return render_template("admin/ldap_setup_wizard.html", current_config=current_config)
+
+
+@admin_bp.route("/admin/ldap/setup-wizard/test-connection", methods=["POST"])
+@limiter.limit("10 per minute")
+@login_required
+@admin_or_permission_required("manage_settings")
+def ldap_wizard_test_connection():
+    """Test LDAP bind and user subtree using wizard-submitted values."""
+    from app.services.ldap_service import LDAPService
+
+    data = request.get_json() or {}
+    cfg = _ldap_wizard_cfg_from_json(data)
+    result = LDAPService.test_connection(cfg)
+    return jsonify(result), 200
+
+
+@admin_bp.route("/admin/ldap/setup-wizard/validate-config", methods=["POST"])
+@limiter.limit("20 per minute")
+@login_required
+@admin_or_permission_required("manage_settings")
+def ldap_wizard_validate_config():
+    """Validate LDAP wizard fields before generating env output."""
+    data = request.get_json() or {}
+    errors = []
+
+    host = (data.get("LDAP_HOST") or "").strip()
+    if not host:
+        errors.append({"field": "LDAP_HOST", "message": "LDAP host is required"})
+
+    bind_dn = (data.get("LDAP_BIND_DN") or "").strip()
+    if not bind_dn:
+        errors.append({"field": "LDAP_BIND_DN", "message": "Bind DN is required"})
+
+    bind_pw = data.get("LDAP_BIND_PASSWORD")
+    if bind_pw is None or str(bind_pw).strip() == "":
+        errors.append({"field": "LDAP_BIND_PASSWORD", "message": "Bind password is required"})
+
+    base_dn = (data.get("LDAP_BASE_DN") or "").strip()
+    if not base_dn:
+        errors.append({"field": "LDAP_BASE_DN", "message": "Base DN is required"})
+
+    login_attr = (data.get("LDAP_USER_LOGIN_ATTR") or "").strip()
+    if not login_attr:
+        errors.append({"field": "LDAP_USER_LOGIN_ATTR", "message": "Login attribute is required"})
+
+    auth_method = normalize_auth_method(data.get("AUTH_METHOD", ""))
+    if not auth_includes_ldap(auth_method):
+        errors.append(
+            {
+                "field": "AUTH_METHOD",
+                "message": "Authentication method must be 'ldap' or 'all'",
+            }
+        )
+
+    port_raw = data.get("LDAP_PORT")
+    if port_raw not in (None, ""):
+        try:
+            p = int(port_raw)
+            if p < 1 or p > 65535:
+                errors.append({"field": "LDAP_PORT", "message": "Port must be between 1 and 65535"})
+        except (TypeError, ValueError):
+            errors.append({"field": "LDAP_PORT", "message": "Port must be a number"})
+
+    timeout_raw = data.get("LDAP_TIMEOUT")
+    if timeout_raw not in (None, ""):
+        try:
+            t = int(timeout_raw)
+            if t < 1 or t > 120:
+                errors.append({"field": "LDAP_TIMEOUT", "message": "Timeout must be between 1 and 120 seconds"})
+        except (TypeError, ValueError):
+            errors.append({"field": "LDAP_TIMEOUT", "message": "Timeout must be a number"})
+
+    if errors:
+        return jsonify({"valid": False, "errors": errors}), 200
+
+    return jsonify({"valid": True, "errors": []}), 200
+
+
+@admin_bp.route("/admin/ldap/setup-wizard/generate-config", methods=["POST"])
+@limiter.limit("10 per minute")
+@login_required
+@admin_or_permission_required("manage_settings")
+def ldap_wizard_generate_config():
+    """Generate .env and docker-compose style lines from wizard data."""
+    data = request.get_json() or {}
+
+    auth_method = normalize_auth_method(data.get("AUTH_METHOD", "ldap"))
+    if not auth_includes_ldap(auth_method):
+        return jsonify({"success": False, "error": "AUTH_METHOD must be 'ldap' or 'all'"}), 400
+
+    env_vars: dict[str, str] = {
+        "AUTH_METHOD": auth_method,
+        "LDAP_HOST": (data.get("LDAP_HOST") or "").strip(),
+        "LDAP_PORT": str(_ldap_wizard_int(data.get("LDAP_PORT"), 389, lo=1, hi=65535)),
+        "LDAP_USE_SSL": "true" if _ldap_wizard_truthy(data.get("LDAP_USE_SSL")) else "false",
+        "LDAP_USE_TLS": "true" if _ldap_wizard_truthy(data.get("LDAP_USE_TLS")) else "false",
+        "LDAP_BIND_DN": (data.get("LDAP_BIND_DN") or "").strip(),
+        "LDAP_BIND_PASSWORD": str(data.get("LDAP_BIND_PASSWORD") or ""),
+        "LDAP_BASE_DN": (data.get("LDAP_BASE_DN") or "").strip(),
+        "LDAP_USER_DN": (data.get("LDAP_USER_DN") or "").strip(),
+        "LDAP_USER_OBJECT_CLASS": (data.get("LDAP_USER_OBJECT_CLASS") or "inetOrgPerson").strip() or "inetOrgPerson",
+        "LDAP_USER_LOGIN_ATTR": (data.get("LDAP_USER_LOGIN_ATTR") or "uid").strip() or "uid",
+        "LDAP_USER_EMAIL_ATTR": (data.get("LDAP_USER_EMAIL_ATTR") or "mail").strip() or "mail",
+        "LDAP_USER_FNAME_ATTR": (data.get("LDAP_USER_FNAME_ATTR") or "givenName").strip() or "givenName",
+        "LDAP_USER_LNAME_ATTR": (data.get("LDAP_USER_LNAME_ATTR") or "sn").strip() or "sn",
+        "LDAP_GROUP_DN": (data.get("LDAP_GROUP_DN") or "").strip(),
+        "LDAP_GROUP_OBJECT_CLASS": (data.get("LDAP_GROUP_OBJECT_CLASS") or "groupOfNames").strip() or "groupOfNames",
+        "LDAP_ADMIN_GROUP": (data.get("LDAP_ADMIN_GROUP") or "").strip(),
+        "LDAP_REQUIRED_GROUP": (data.get("LDAP_REQUIRED_GROUP") or "").strip(),
+        "LDAP_TLS_CA_CERT_FILE": (data.get("LDAP_TLS_CA_CERT_FILE") or "").strip(),
+        "LDAP_TIMEOUT": str(_ldap_wizard_int(data.get("LDAP_TIMEOUT"), 10, lo=1, hi=120)),
+    }
+
+    for req_key in ("LDAP_HOST", "LDAP_BIND_DN", "LDAP_BIND_PASSWORD", "LDAP_BASE_DN"):
+        if not env_vars.get(req_key, "").strip():
+            return jsonify({"success": False, "error": f"{req_key} is required"}), 400
+
+    optional_skip_if_empty = frozenset(
+        {"LDAP_ADMIN_GROUP", "LDAP_REQUIRED_GROUP", "LDAP_TLS_CA_CERT_FILE", "LDAP_USER_DN"}
+    )
+
+    env_lines = []
+    for key, value in env_vars.items():
+        v = str(value)
+        if not v.strip() and key in optional_skip_if_empty:
+            continue
+        escaped = _ldap_wizard_escape_env_value(v)
+        env_lines.append(f"{key}={escaped}")
+
+    env_content = "\n".join(env_lines)
+
+    docker_compose_lines = ["      # LDAP configuration"]
+    for key, value in env_vars.items():
+        v = str(value)
+        if not v.strip() and key in optional_skip_if_empty:
+            continue
+        dv = _ldap_wizard_escape_env_value(v)
+        docker_compose_lines.append(f"      - {key}={dv}")
+
+    docker_compose_content = "\n".join(docker_compose_lines)
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "env_content": env_content,
+                "docker_compose_content": docker_compose_content,
             }
         ),
         200,

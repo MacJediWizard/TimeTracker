@@ -340,9 +340,12 @@ class LDAPService:
         return User.query.filter_by(email=email).first() or user
 
     @staticmethod
-    def test_connection() -> dict[str, Any]:
+    def test_connection(cfg: Mapping[str, Any] | None = None) -> dict[str, Any]:
         """
         Verify service bind and count users under the user subtree.
+
+        If ``cfg`` is None, uses ``current_app.config`` (e.g. admin settings test).
+        If ``cfg`` is a mapping, uses only those keys (e.g. setup wizard draft).
 
         Returns dict: success (bool), message (str), user_count (int|None).
         Never raises.
@@ -350,9 +353,9 @@ class LDAPService:
         if Connection is None:
             return {"success": False, "message": "ldap3 is not installed", "user_count": None}
         conn = None
-        cfg = _config()
+        effective_cfg: Mapping[str, Any] = cfg if cfg is not None else _config()
         try:
-            conn = _service_connection(cfg)
+            conn = _service_connection(effective_cfg)
             if not conn:
                 return {"success": False, "message": "Could not create LDAP connection", "user_count": None}
         except LDAPException as e:
@@ -361,8 +364,8 @@ class LDAPService:
             return {"success": False, "message": f"Error: {type(e).__name__}", "user_count": None}
 
         try:
-            user_base = _user_search_base(cfg)
-            user_oc = escape_filter_chars((cfg.get("LDAP_USER_OBJECT_CLASS") or "inetOrgPerson").strip())
+            user_base = _user_search_base(effective_cfg)
+            user_oc = escape_filter_chars((effective_cfg.get("LDAP_USER_OBJECT_CLASS") or "inetOrgPerson").strip())
             filt = f"(objectClass={user_oc})"
             conn.search(
                 search_base=user_base,

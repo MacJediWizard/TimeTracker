@@ -206,6 +206,39 @@ curl -X POST https://your-domain.com/api/v1/clients \
 
 ---
 
+### Invoices
+
+#### `read:invoices`
+**Grants**: List and view invoices via the versioned API  
+**Endpoints** (non-exhaustive; see OpenAPI at `/api/docs` when enabled):
+- `GET /api/v1/invoices` — List invoices
+- `GET /api/v1/invoices/{id}` — Get invoice by id
+
+**Use Cases**:
+- Billing dashboards and exports
+- Integrations that sync invoice status
+
+#### `write:invoices`
+**Grants**: Create and update invoices via the versioned API  
+**Endpoints** (non-exhaustive):
+- `POST /api/v1/invoices` — Create invoice (JSON body)
+- `PUT` / `PATCH /api/v1/invoices/{id}` — Update invoice
+- `DELETE /api/v1/invoices/{id}` — Cancel invoice
+- `POST /api/v1/clients/{client_id}/invoice-unbilled` — Create a **draft** invoice from all **unbilled** billable time for that client (line items grouped by project). Requires `write:invoices` when using an API token; the browser UI uses a logged-in session with **Create invoices** permission instead. Successful response JSON: `invoice_id`, `invoice_number`, `total`, `item_count`. Returns **400** when there is no unbilled time, or when any unbilled entry has no `project_id` (assign entries to a project first).
+
+**Use Cases**:
+- Automated billing from integrations
+- One-shot “invoice everything open” for a client (API or client detail page)
+
+**Example** (API token):
+```bash
+curl -X POST "https://your-domain.com/api/v1/clients/42/invoice-unbilled" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Accept: application/json"
+```
+
+---
+
 ### Reports
 
 #### `read:reports`
@@ -433,8 +466,8 @@ write:time_entries
 
 ### Invoice Generator
 
-**Requirements**: Read time entries and generate invoices  
-**Scopes**:
+**Requirements**: Read time entries and generate invoices (read-only reporting), or call the **invoice unbilled** API (writes a draft invoice)  
+**Scopes** (read-only path):
 ```
 read:projects
 read:clients
@@ -447,6 +480,8 @@ read:reports
 - `read:clients` - Get client billing information
 - `read:time_entries` - Get billable hours
 - `read:reports` - Generate summaries
+
+**To create a draft invoice from all unbilled time for one client** via `POST /api/v1/clients/{client_id}/invoice-unbilled`, add **`write:invoices`** (and keep `read:clients` / `read:projects` as needed for your workflow). The Clients and Invoices modules must be enabled for the token’s user.
 
 ### Project Management Sync
 

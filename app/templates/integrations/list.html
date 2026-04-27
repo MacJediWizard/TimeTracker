@@ -41,7 +41,7 @@
         
         <div class="flex items-center gap-2 mb-4">
             {% set auth_method = config.get('AUTH_METHOD', 'local') or 'local' %}
-            {% set oidc_enabled = auth_method.lower() in ['oidc', 'both'] %}
+            {% set oidc_enabled = auth_method.lower() in ['oidc', 'both', 'all'] %}
             {% if oidc_enabled %}
             <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 font-medium">
                 <i class="fas fa-check-circle mr-1"></i>{{ _('Enabled') }}
@@ -54,6 +54,46 @@
         </div>
         
         <a href="{{ url_for('admin.oidc_setup_wizard') }}" 
+           class="block w-full bg-primary hover:bg-primary/90 text-white px-4 py-2.5 min-h-[44px] rounded-lg transition-colors text-center font-medium inline-flex items-center justify-center">
+            <i class="fas fa-magic mr-2"></i>{{ _('Setup Wizard') }}
+        </a>
+    </div>
+</div>
+{% endif %}
+
+{% if current_user.is_admin or current_user.has_permission('manage_settings') %}
+<!-- LDAP authentication setup -->
+<div class="bg-card-light dark:bg-card-dark rounded-xl border border-border-light dark:border-border-dark shadow-sm hover:shadow-lg transition-shadow overflow-hidden mb-6 border-2 border-primary/20">
+    <div class="p-6">
+        <div class="flex flex-col sm:flex-row items-start justify-between gap-3 mb-4">
+            <div class="flex items-center gap-3">
+                <div class="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-address-book text-primary text-xl"></i>
+                </div>
+                <div class="min-w-0 flex-1">
+                    <h3 class="text-lg font-semibold text-text-light dark:text-text-dark">{{ _('LDAP') }}</h3>
+                    <p class="text-sm text-text-muted-light dark:text-text-muted-dark mt-1">
+                        {{ _('Configure directory authentication via environment variables; use the wizard to build a working .env snippet and test connectivity.') }}
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2 mb-4">
+            {% set auth_method_ldap = config.get('AUTH_METHOD', 'local') or 'local' %}
+            {% set ldap_auth_enabled = auth_method_ldap.lower() in ['ldap', 'all'] %}
+            {% if ldap_auth_enabled %}
+            <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 font-medium">
+                <i class="fas fa-check-circle mr-1"></i>{{ _('Enabled') }}
+            </span>
+            {% else %}
+            <span class="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200 font-medium">
+                <i class="fas fa-circle mr-1"></i>{{ _('Not configured') }}
+            </span>
+            {% endif %}
+        </div>
+
+        <a href="{{ url_for('admin.ldap_setup_wizard') }}"
            class="block w-full bg-primary hover:bg-primary/90 text-white px-4 py-2.5 min-h-[44px] rounded-lg transition-colors text-center font-medium inline-flex items-center justify-center">
             <i class="fas fa-magic mr-2"></i>{{ _('Setup Wizard') }}
         </a>

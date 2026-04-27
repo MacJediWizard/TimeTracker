@@ -83,6 +83,16 @@
     </form>
 </div>
 
+<div class="bg-card-light dark:bg-card-dark p-4 sm:p-6 rounded-xl border border-border-light dark:border-border-dark shadow-sm max-w-2xl mx-auto mt-6">
+    <h2 class="text-lg font-semibold mb-2">{{ _('Security') }}</h2>
+    <p class="text-sm text-text-muted-light dark:text-text-muted-dark mb-4">
+        {{ _('Manage two-factor authentication for your account.') }}
+    </p>
+    <a href="{{ url_for('auth.two_factor_setup') }}" class="btn btn-secondary">
+        <i class="fas fa-shield-alt mr-2"></i>{{ _('Two-factor authentication') }}
+    </a>
+</div>
+
 <script>
 function previewAvatar(input) {
     const preview = document.getElementById('avatar-preview');

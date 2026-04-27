@@ -50,6 +50,19 @@ Use the `page_header` macro from `app/templates/components/ui.html` on every mai
 - **Components:** Use `modal` and `confirm_dialog` from `components/ui.html`. Ensure focus is trapped inside when open and restored on close.
 - **Start Timer modal:** Same pattern; single primary “Start” action; progressive disclosure (project/client → task → notes/tags) where possible.
 
+### Floating hub (authenticated layout)
+
+- **Where:** Authenticated layout in `app/templates/base.html`: `#fabDock` is a single `position: fixed` column (`flex-direction: column-reverse`) at the bottom-right, with shared CSS variables (`--fab-size`, `--fab-gap`, `--fab-edge`, `--fab-menu-gap`) for spacing. RTL mirrors to the bottom-left.
+- **Controls:** (1) **Actions** — `#unifiedActionsRoot` / `#unifiedActionsFab` opens `#unifiedActionsMenu` above the button; URLs come from `data-*` attributes on `#fabDock`. (2) **Team chat** (when `team_chat` is enabled) — `#persistentChatWidget` / `#chatWidgetToggle`; `#chatWidgetPanel` is a **fixed** overlay (`z-index: 85`) aligned to the viewport edge so dock items cannot stack on top of it. (3) **AI Helper** — `#aiHelperRoot` / `#aiHelperFab` (circular FAB, same footprint as chat/actions) opens the existing drawer/backdrop (`ai-helper.js`).
+- **Behavior:** `app/static/floating-actions.js` toggles the actions menu, handles outside click and Escape, and runs Start Timer (same `#openStartTimer` / dashboard `#start-timer` fallback as before), Log Time, New Task, New Project, New Client, and Reports. While the menu is open, `#fabDock` gets `fab-dock--menu-open` so other dock children fade and ignore pointer events.
+- **Admin:** `#fabDock` can use `fab-dock--admin` to lift above the admin version banner; `body.fab-dock-admin` adjusts the chat panel bottom offset the same way.
+- **Legacy scripts:** `app/static/global-fab.js` and `app/static/quick-actions.js` are no longer included from `base.html`; the web hub is implemented in markup plus `floating-actions.js`.
+
+### Time entries table (inline edit)
+
+- **Where:** `app/templates/timer/_time_entries_list.html` (included from the time entries overview). Editable **Notes** and **Duration** for rows the user may change (permissions match server rules: own entry or admin; duration also requires schedule edit permission and a completed entry with `end_time`).
+- **Script:** `app/static/time-entries-inline-edit.js` (loaded from `time_entries_overview.html`). Saves with **`PUT` or `PATCH`** to **`/api/entry/<id>`** (session JSON, same-origin `fetch`). Success shows a short green check; errors use the toast manager and revert the cell.
+
 ### Notifications
 
 - Use the existing **toast** system for success, error, warning, and info. Support optional `actionLink` and `actionLabel` for follow-up (e.g. “View time entries” after stopping the timer).
@@ -60,6 +73,7 @@ Use the `page_header` macro from `app/templates/components/ui.html` on every mai
 - **Content width:** Main content is wrapped in a max-width container (`max-w-7xl`, 1280px) and centered (`mx-auto`) so lines don’t stretch on large screens. Applied in `base.html` to the main content area.
 - **Grid:** Use Tailwind grid for dashboards and two-column layouts: e.g. `grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3`; main content often `lg:col-span-2`, sidebar `lg:col-span-1`.
 - **Spacing:** Use the design tokens in `app/static/src/input.css` (`--spacing-xs` through `--spacing-3xl`). Prefer `gap-4` for card groups, `gap-6` for sections, `p-6` for card padding.
+- **Mobile navigation:** From the `md` breakpoint up, the primary nav is the **sidebar** (`hidden md:flex` on the sidebar aside). Below `md`, the sidebar is off-canvas (hamburger opens it with a backdrop). The **primary** small-screen shortcuts are the **bottom bar** in `partials/_bottom_nav.html` (`md:hidden`, `z-50`, top border, `pb-safe` for the iOS home indicator). Main shell `#mainContent` uses `pb-16 md:pb-0` so scrollable content clears the bar. The **More** tab opens a bottom sheet (backdrop + panel, `z-[55]` / `z-[60]`); open/close lives in `app/static/mobile.js` (`BottomNavMoreDrawer`). Active tab styling uses `text-primary` and `bg-primary/10` (and dark variants). Prefer **inline SVG** (Heroicons-style stroke paths) in that partial for bar icons to avoid an extra icon font dependency on the bar.
 
 ## Styling conventions
 
@@ -80,10 +94,13 @@ Use the `page_header` macro from `app/templates/components/ui.html` on every mai
 | Area | Files |
 |------|--------|
 | Base layout | `app/templates/base.html` |
+| Mobile bottom nav (partial) | `app/templates/partials/_bottom_nav.html` |
+| Mobile shell behavior | `app/static/mobile.js` |
 | Design tokens / Tailwind | `app/static/src/input.css`, `tailwind.config.js` |
 | Components | `app/templates/components/ui.html`, `app/templates/components/cards.html` |
-| Dashboard | `app/templates/main/dashboard.html` |
+| Dashboard | `app/templates/main/dashboard.html`, `app/static/dashboard-enhancements.js` (value dashboard, week comparison chart, …) |
 | Timer flow | `app/templates/timer/timer_page.html`, Start Timer modal (dashboard), `app/static/floating-timer-bar.js` |
-| Time entries | `app/templates/timer/time_entries_overview.html`, `app/templates/timer/_time_entries_list.html` |
+| Floating hub (actions, chat, AI) | `app/templates/base.html`, `app/templates/components/persistent_chat_widget.html`, `app/static/floating-actions.js`, `app/static/ai-helper.js` |
+| Time entries | `app/templates/timer/time_entries_overview.html`, `app/templates/timer/_time_entries_list.html`, `app/static/time-entries-inline-edit.js` |
 
 For accessibility and quality checks, see [FRONTEND_QUALITY_GATES.md](development/FRONTEND_QUALITY_GATES.md).

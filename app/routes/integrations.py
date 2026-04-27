@@ -58,6 +58,41 @@ def list_integrations():
     )
 
 
+@integrations_bp.route("/integrations/health")
+@login_required
+@module_enabled("integrations")
+def integrations_health():
+    """Admin dashboard for integration health and credentials status."""
+    if not current_user.is_admin:
+        flash(_("Permission denied."), "error")
+        return redirect(url_for("integrations.list_integrations"))
+
+    service = IntegrationService()
+    integrations = service.list_integrations(user_id=None)
+
+    # Batch-load credentials for token expiry visibility.
+    ids = [i.id for i in integrations]
+    creds_by_integration = {}
+    if ids:
+        creds = IntegrationCredential.query.filter(IntegrationCredential.integration_id.in_(ids)).all()
+        creds_by_integration = {c.integration_id: c for c in creds}
+
+    rows = []
+    for integ in integrations:
+        cred = creds_by_integration.get(integ.id)
+        rows.append(
+            {
+                "integration": integ,
+                "has_credentials": bool(cred and (cred.access_token or cred.refresh_token)),
+                "token_expires_at": getattr(cred, "expires_at", None) if cred else None,
+                "token_is_expired": bool(getattr(cred, "is_expired", False)) if cred else False,
+                "token_needs_refresh": bool(cred.needs_refresh()) if cred else False,
+            }
+        )
+
+    return render_template("integrations/health.html", rows=rows)
+
+
 @integrations_bp.route("/integrations/<provider>/connect", methods=["GET", "POST"])
 @login_required
 @module_enabled("integrations")
@@ -345,7 +380,7 @@ def manage_integration(provider):
                     return redirect(url_for("integrations.manage_integration", provider=provider))
 
                 # Check if we have existing credentials - if not, secret is required
-                existing_creds = settings.get_integration_credentials("trello")
+                existing_creds = settings.get_integration_credentials("trello", include_secrets=True)
                 if not existing_creds.get("api_secret") and not api_secret:
                     flash(_("Trello API Secret is required for new setup."), "error")
                     return redirect(url_for("integrations.manage_integration", provider=provider))
@@ -353,7 +388,7 @@ def manage_integration(provider):
                 if api_key:
                     settings.trello_api_key = api_key
                 if api_secret:
-                    settings.trello_api_secret = api_secret
+                    settings.set_secret("trello_api_secret", api_secret)
                 # Also save token if provided (for backward compatibility)
                 token = request.form.get("trello_token", "").strip()
                 if token and integration:
@@ -377,7 +412,7 @@ def manage_integration(provider):
                     return redirect(url_for("integrations.manage_integration", provider=provider))
 
                 # Check if we have existing credentials - if not, secret is required
-                existing_creds = settings.get_integration_credentials(provider)
+                existing_creds = settings.get_integration_credentials(provider, include_secrets=True)
                 if not existing_creds.get("client_secret") and not client_secret:
                     flash(_("OAuth Client Secret is required for new setup."), "error")
                     return redirect(url_for("integrations.manage_integration", provider=provider))
@@ -405,7 +440,7 @@ def manage_integration(provider):
                             logger.warning(f"Settings attribute {id_attr} does not exist, skipping")
                     if client_secret:
                         try:
-                            setattr(settings, secret_attr, client_secret)
+                            settings.set_secret(secret_attr, client_secret)
                         except AttributeError:
                             logger.warning(f"Settings attribute {secret_attr} does not exist, skipping")
                 else:
@@ -664,15 +699,30 @@ def manage_integration(provider):
             else:
                 flash(_("Failed to update configuration."), "error")
 
-    # Get current credentials for display (always get from Settings model, not .env)
-    # This ensures we're showing what's in the database - Settings model prioritizes DB over .env
+    # Get current credentials for display (UI-safe: never include secrets).
     current_creds = {}
+    secret_is_set = False
     if current_user.is_admin:
-        current_creds = settings.get_integration_credentials(provider)
-        # For Trello, ensure api_secret is included (it should already be in the dict)
-        if provider == "trello" and "api_secret" not in current_creds:
-            if hasattr(settings, "trello_api_secret"):
-                current_creds["api_secret"] = settings.trello_api_secret or ""
+        current_creds = settings.get_integration_credentials(provider, include_secrets=False)
+        secret_field_by_provider = {
+            "jira": "jira_client_secret",
+            "slack": "slack_client_secret",
+            "github": "github_client_secret",
+            "google_calendar": "google_calendar_client_secret",
+            "outlook_calendar": "outlook_calendar_client_secret",
+            "microsoft_teams": "microsoft_teams_client_secret",
+            "asana": "asana_client_secret",
+            "trello": "trello_api_secret",
+            "gitlab": "gitlab_client_secret",
+            "quickbooks": "quickbooks_client_secret",
+            "xero": "xero_client_secret",
+        }
+        secret_field = secret_field_by_provider.get(provider)
+        if secret_field:
+            try:
+                secret_is_set = bool(getattr(settings, secret_field, "") or "")
+            except Exception:
+                secret_is_set = False
 
     # Get user's existing integration for this provider (if per-user)
     user_integration = None
@@ -732,6 +782,7 @@ def manage_integration(provider):
         active_integration=active_integration,
         credentials=credentials,
         current_creds=current_creds,
+        secret_is_set=secret_is_set,
         display_name=display_name,
         description=description,
         is_global=is_global,

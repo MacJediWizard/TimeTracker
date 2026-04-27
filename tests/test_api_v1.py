@@ -93,7 +93,7 @@ def api_token(app, test_user):
         user_id=user_id,
         name="Test Token",
         description="For testing",
-        scopes="read:projects,write:projects,read:time_entries,write:time_entries,read:tasks,write:tasks,read:clients,write:clients,read:reports,read:users",
+        scopes="read:projects,write:projects,read:time_entries,write:time_entries,read:tasks,write:tasks,read:clients,write:clients,read:reports,read:users,read:ai,write:ai",
     )
     db.session.add(token)
     db.session.commit()
@@ -176,6 +176,28 @@ class TestAPIAuthentication:
         assert response.status_code == 403
         data = json.loads(response.data)
         assert "Insufficient permissions" in data["error"]
+
+
+class TestAIHelperAPI:
+    """Test shared AI helper API endpoints."""
+
+    def test_ai_context_preview_uses_token_auth(self, client, api_token, test_project):
+        headers = {"Authorization": f"Bearer {api_token}"}
+        response = client.get("/api/v1/ai/context-preview", headers=headers)
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["success"] is True
+        assert "context" in data
+        assert "provider" in data
+
+    def test_ai_chat_returns_disabled_error_when_not_enabled(self, client, api_token):
+        headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
+        response = client.post("/api/v1/ai/chat", json={"prompt": "What did I do today?"}, headers=headers)
+
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert data["error_code"] == "ai_disabled"
 
 
 class TestProjects:

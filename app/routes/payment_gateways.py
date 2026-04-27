@@ -2,7 +2,6 @@
 Routes for payment gateway management and payment processing.
 """
 
-import json
 import os
 from decimal import Decimal
 
@@ -10,6 +9,7 @@ from flask import Blueprint, current_app, flash, jsonify, redirect, render_templ
 from flask_babel import gettext as _
 from flask_login import current_user, login_required
 
+from app import db
 from app.models import Invoice, PaymentGateway, PaymentTransaction
 from app.services.payment_gateway_service import PaymentGatewayService
 from app.utils.module_helpers import module_enabled
@@ -137,13 +137,17 @@ def stripe_webhook():
 
     import json
 
-    config = json.loads(gateway.config) if isinstance(gateway.config, str) else gateway.config
-    webhook_secret = config.get("webhook_secret") or os.getenv("STRIPE_WEBHOOK_SECRET")
+    config = json.loads(gateway.config) if isinstance(gateway.config, str) else (gateway.config or {})
+    webhook_secret = (config.get("webhook_secret") or os.getenv("STRIPE_WEBHOOK_SECRET") or "").strip()
+    api_key = (config.get("api_key") or os.getenv("STRIPE_API_KEY") or "").strip()
 
     if not webhook_secret:
         return jsonify({"error": "Webhook secret not configured"}), 500
 
-    stripe_integration = StripeIntegration(gateway.config.get("api_key"))
+    if not api_key:
+        return jsonify({"error": "Stripe API key not configured"}), 500
+
+    stripe_integration = StripeIntegration(api_key)
     event = stripe_integration.verify_webhook(payload, sig_header, webhook_secret)
 
     if not event:
@@ -152,16 +156,62 @@ def stripe_webhook():
     # Handle event
     service = PaymentGatewayService()
 
-    if event["type"] == "payment_intent.succeeded":
-        payment_intent = event["data"]["object"]
-        transaction_id = payment_intent["id"]
-        invoice_id = int(payment_intent["metadata"].get("invoice_id", 0))
+    event_type = event.get("type")
+    data_obj = (event.get("data") or {}).get("object") or {}
 
-        if invoice_id:
-            amount = Decimal(str(payment_intent["amount"])) / 100
-            service.update_transaction_status(
-                transaction_id=transaction_id, status="completed", gateway_response=payment_intent
+    def _parse_invoice_id(obj) -> int:
+        try:
+            meta = obj.get("metadata") or {}
+            return int(meta.get("invoice_id") or 0)
+        except Exception:
+            return 0
+
+    def _get_or_create_transaction(transaction_id: str, invoice_id: int, amount: Decimal, currency: str, response):
+        tx = PaymentTransaction.query.filter_by(transaction_id=transaction_id).first()
+        if tx:
+            return tx
+        tx = PaymentTransaction(
+            invoice_id=invoice_id,
+            gateway_id=gateway.id,
+            transaction_id=transaction_id,
+            amount=amount,
+            currency=(currency or "EUR").upper(),
+            status="processing",
+            payment_method="card",
+            gateway_response=response,
+        )
+        return tx
+
+    if event_type in ("payment_intent.succeeded", "checkout.session.completed"):
+        invoice_id = _parse_invoice_id(data_obj)
+        transaction_id = (data_obj.get("payment_intent") if event_type == "checkout.session.completed" else data_obj.get("id")) or ""
+        if not invoice_id or not transaction_id:
+            return jsonify({"status": "ignored"}), 200
+
+        # Stripe amounts are in cents.
+        amount_cents = data_obj.get("amount_received") or data_obj.get("amount_total") or data_obj.get("amount") or 0
+        try:
+            amount = (Decimal(str(amount_cents)) / 100) if amount_cents else Decimal("0")
+        except Exception:
+            amount = Decimal("0")
+        currency = (data_obj.get("currency") or "EUR").upper()
+
+        tx = PaymentTransaction.query.filter_by(transaction_id=transaction_id).first()
+        if not tx:
+            tx = PaymentTransaction(
+                invoice_id=invoice_id,
+                gateway_id=gateway.id,
+                transaction_id=transaction_id,
+                amount=amount,
+                currency=currency,
+                status="processing",
+                payment_method="card",
+                gateway_response=data_obj,
             )
+            db.session.add(tx)
+
+        # Update status idempotently (service only applies invoice changes on first completion).
+        service.update_transaction_status(transaction_id=transaction_id, status="completed", gateway_response=data_obj)
 
     return jsonify({"status": "success"})
 

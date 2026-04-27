@@ -36,7 +36,9 @@
         <a href="#section-invoices" class="px-3 py-1.5 text-xs font-medium rounded-full bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark whitespace-nowrap">Invoices</a>
         <a href="#section-peppol" class="px-3 py-1.5 text-xs font-medium rounded-full bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark whitespace-nowrap">Peppol</a>
         <a href="#section-backup" class="px-3 py-1.5 text-xs font-medium rounded-full bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark whitespace-nowrap">Backup</a>
+        <a href="#section-ldap" class="px-3 py-1.5 text-xs font-medium rounded-full bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark whitespace-nowrap">LDAP</a>
         <a href="#section-kiosk" class="px-3 py-1.5 text-xs font-medium rounded-full bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark whitespace-nowrap">Kiosk</a>
+        <a href="#section-ai" class="px-3 py-1.5 text-xs font-medium rounded-full bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark whitespace-nowrap">AI Helper</a>
         <a href="#section-analytics" class="px-3 py-1.5 text-xs font-medium rounded-full bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark whitespace-nowrap">Analytics</a>
     </nav>
 </div>
@@ -399,6 +401,55 @@
                 </div>
             </div>
 
+            <!-- LDAP (read-only; configured via environment) -->
+            <div id="section-ldap" class="border-b border-border-light dark:border-border-dark pb-6">
+                <h2 class="text-lg font-semibold mb-4">{{ _('LDAP') }}</h2>
+                <p class="text-sm text-text-muted-light dark:text-text-muted-dark mb-4">
+                    {{ _('LDAP authentication is configured with environment variables. Values below are read-only.') }}
+                </p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+                    <div>
+                        <span class="form-label text-text-muted-light dark:text-text-muted-dark">{{ _('Enabled for auth') }}</span>
+                        <p class="mt-1 font-medium">{{ _('Yes') if ldap_settings.enabled else _('No') }}</p>
+                    </div>
+                    <div>
+                        <span class="form-label text-text-muted-light dark:text-text-muted-dark">{{ _('Host') }} / {{ _('Port') }}</span>
+                        <p class="mt-1 font-mono text-xs break-all">{{ ldap_settings.host }}:{{ ldap_settings.port }}</p>
+                    </div>
+                    <div>
+                        <span class="form-label text-text-muted-light dark:text-text-muted-dark">{{ _('SSL') }} / {{ _('TLS') }}</span>
+                        <p class="mt-1">{{ _('SSL') }}: {% if ldap_settings.use_ssl %}{{ _('on') }}{% else %}{{ _('off') }}{% endif %},
+                            {{ _('TLS') }}: {% if ldap_settings.use_tls %}{{ _('on') }}{% else %}{{ _('off') }}{% endif %}</p>
+                    </div>
+                    <div>
+                        <span class="form-label text-text-muted-light dark:text-text-muted-dark">{{ _('Base DN') }}</span>
+                        <p class="mt-1 font-mono text-xs break-all">{{ ldap_settings.base_dn }}</p>
+                    </div>
+                    <div>
+                        <span class="form-label text-text-muted-light dark:text-text-muted-dark">{{ _('User DN') }}</span>
+                        <p class="mt-1 font-mono text-xs break-all">{{ ldap_settings.user_dn }}</p>
+                    </div>
+                    <div>
+                        <span class="form-label text-text-muted-light dark:text-text-muted-dark">{{ _('User login attribute') }}</span>
+                        <p class="mt-1 font-mono text-xs">{{ ldap_settings.login_attr }}</p>
+                    </div>
+                    <div>
+                        <span class="form-label text-text-muted-light dark:text-text-muted-dark">{{ _('Admin group (CN)') }}</span>
+                        <p class="mt-1 font-mono text-xs break-all">{{ ldap_settings.admin_group }}</p>
+                    </div>
+                    <div>
+                        <span class="form-label text-text-muted-light dark:text-text-muted-dark">{{ _('Required group (CN)') }}</span>
+                        <p class="mt-1 font-mono text-xs break-all">{{ ldap_settings.required_group }}</p>
+                    </div>
+                </div>
+                <div class="mt-4 flex flex-wrap items-center gap-3">
+                    <button type="button" id="ldapTestConnectionBtn" class="btn btn-secondary">
+                        {{ _('Test LDAP Connection') }}
+                    </button>
+                    <span id="ldapTestConnectionResult" class="text-sm text-text-muted-light dark:text-text-muted-dark"></span>
+                </div>
+            </div>
+
             <!-- Export Settings -->
             <div class="border-b border-border-light dark:border-border-dark pb-6">
                 <h2 class="text-lg font-semibold mb-4">{{ _('Export Settings') }}</h2>
@@ -457,6 +508,70 @@
                         </div>
                     </div>
                     {% endif %}
+                </div>
+            </div>
+
+            <!-- AI Helper Settings -->
+            <div id="section-ai" class="border-b border-border-light dark:border-border-dark pb-6">
+                <h2 class="text-lg font-semibold mb-4">{{ _('AI Helper') }}</h2>
+                <p class="text-sm text-text-muted-light dark:text-text-muted-dark mb-4">
+                    {{ _('Configure the shared server-side AI helper for the web app, desktop app, and API clients. Hosted provider keys stay on the server.') }}
+                </p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label for="ai_enabled_mode" class="form-label">{{ _('Availability') }}</label>
+                        <select name="ai_enabled_mode" id="ai_enabled_mode" class="form-input">
+                            <option value="env" {% if settings.ai_enabled is none %}selected{% endif %}>{{ _('Use environment default') }} ({{ _('currently') }} {{ 'on' if ai_config.enabled else 'off' }})</option>
+                            <option value="true" {% if settings.ai_enabled is sameas true %}selected{% endif %}>{{ _('Enabled') }}</option>
+                            <option value="false" {% if settings.ai_enabled is sameas false %}selected{% endif %}>{{ _('Disabled') }}</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="ai_provider" class="form-label">{{ _('Provider') }}</label>
+                        <select name="ai_provider" id="ai_provider" class="form-input">
+                            <option value="ollama" {% if ai_config.provider == 'ollama' %}selected{% endif %}>Ollama / local OpenAI-compatible</option>
+                            <option value="openai_compatible" {% if ai_config.provider == 'openai_compatible' %}selected{% endif %}>Hosted OpenAI-compatible</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="ai_base_url" class="form-label">{{ _('Base URL') }}</label>
+                        <input type="url" name="ai_base_url" id="ai_base_url" value="{{ settings.ai_base_url or ai_config.base_url }}" placeholder="http://127.0.0.1:11434" class="form-input">
+                        <p class="mt-1 text-xs text-text-muted-light dark:text-text-muted-dark">{{ _('For Ollama, this is the URL from the Flask server to Ollama.') }}</p>
+                    </div>
+                    <div>
+                        <label for="ai_model" class="form-label">{{ _('Model') }}</label>
+                        <input type="text" name="ai_model" id="ai_model" value="{{ settings.ai_model or ai_config.model }}" placeholder="llama3.1" class="form-input">
+                    </div>
+                    <div>
+                        <label for="ai_api_key" class="form-label">{{ _('Hosted API key') }}</label>
+                        <input type="password" name="ai_api_key" id="ai_api_key" value="" placeholder="{% if ai_config.api_key_set %}{{ _('Stored; leave blank to keep') }}{% else %}{{ _('Only required for hosted providers') }}{% endif %}" class="form-input" autocomplete="new-password">
+                        {% if ai_config.api_key_set %}
+                        <label class="mt-2 flex items-center gap-2 text-sm text-text-muted-light dark:text-text-muted-dark">
+                            <input type="checkbox" name="ai_clear_api_key" class="h-4 w-4 rounded border-gray-300 text-indigo-600">
+                            {{ _('Clear stored API key') }}
+                        </label>
+                        {% endif %}
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label for="ai_timeout_seconds" class="form-label">{{ _('Timeout seconds') }}</label>
+                            <input type="number" name="ai_timeout_seconds" id="ai_timeout_seconds" value="{{ settings.ai_timeout_seconds or ai_config.timeout_seconds }}" min="1" max="300" class="form-input">
+                        </div>
+                        <div>
+                            <label for="ai_context_limit" class="form-label">{{ _('Context limit') }}</label>
+                            <input type="number" name="ai_context_limit" id="ai_context_limit" value="{{ settings.ai_context_limit or ai_config.context_limit }}" min="5" max="200" class="form-input">
+                        </div>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label for="ai_system_prompt" class="form-label">{{ _('System prompt') }}</label>
+                        <textarea name="ai_system_prompt" id="ai_system_prompt" rows="3" class="form-input">{{ settings.ai_system_prompt or ai_config.system_prompt }}</textarea>
+                    </div>
+                    <div class="md:col-span-2 flex flex-wrap items-center gap-3">
+                        <button type="button" id="aiTestConnectionBtn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition">
+                            {{ _('Test AI connection') }}
+                        </button>
+                        <span id="aiTestConnectionResult" class="text-sm text-text-muted-light dark:text-text-muted-dark"></span>
+                    </div>
                 </div>
             </div>
 
@@ -690,6 +805,70 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         transportMode.addEventListener('change', togglePeppolTransport);
         togglePeppolTransport();
+    }
+
+    const ldapTestBtn = document.getElementById('ldapTestConnectionBtn');
+    const ldapTestResult = document.getElementById('ldapTestConnectionResult');
+    if (ldapTestBtn && ldapTestResult) {
+        ldapTestBtn.addEventListener('click', async function() {
+            ldapTestBtn.disabled = true;
+            ldapTestResult.textContent = '{{ _("Testing connection...") }}';
+            ldapTestResult.className = 'text-sm text-text-muted-light dark:text-text-muted-dark';
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+            try {
+                const response = await fetch('{{ url_for("admin.admin_ldap_test") }}', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                    body: JSON.stringify({})
+                });
+                const data = await response.json().catch(function() { return {}; });
+                if (data.success) {
+                    const cnt = data.user_count != null ? ' (' + data.user_count + ' {{ _("users") }})' : '';
+                    ldapTestResult.textContent = (data.message || '{{ _("OK") }}') + cnt;
+                    ldapTestResult.className = 'text-sm text-green-600 dark:text-green-400';
+                } else {
+                    ldapTestResult.textContent = data.message || '{{ _("Connection failed.") }}';
+                    ldapTestResult.className = 'text-sm text-red-600 dark:text-red-400';
+                }
+            } catch (err) {
+                ldapTestResult.textContent = '{{ _("Request failed.") }}';
+                ldapTestResult.className = 'text-sm text-red-600 dark:text-red-400';
+            } finally {
+                ldapTestBtn.disabled = false;
+            }
+        });
+    }
+
+    const aiTestBtn = document.getElementById('aiTestConnectionBtn');
+    const aiTestResult = document.getElementById('aiTestConnectionResult');
+    if (aiTestBtn && aiTestResult) {
+        aiTestBtn.addEventListener('click', async function() {
+            aiTestBtn.disabled = true;
+            aiTestResult.textContent = '{{ _("Testing connection...") }}';
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+            try {
+                const response = await fetch('/api/ai/test', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                    body: JSON.stringify({})
+                });
+                const data = await response.json().catch(function() { return {}; });
+                if (response.ok && data.ok) {
+                    aiTestResult.textContent = data.reply || '{{ _("AI connection succeeded.") }}';
+                    aiTestResult.className = 'text-sm text-green-600 dark:text-green-400';
+                } else {
+                    aiTestResult.textContent = data.error || '{{ _("AI connection failed.") }}';
+                    aiTestResult.className = 'text-sm text-red-600 dark:text-red-400';
+                }
+            } catch (err) {
+                aiTestResult.textContent = '{{ _("AI connection failed.") }}';
+                aiTestResult.className = 'text-sm text-red-600 dark:text-red-400';
+            } finally {
+                aiTestBtn.disabled = false;
+            }
+        });
     }
 });
 </script>

@@ -22,7 +22,7 @@
 - 40+ pre-configured shortcuts
 - Context-aware shortcuts (global, table, modal, editing)
 - Sequential key combinations (`g d`, `c p`, etc.)
-- Shortcuts help panel (press `?`)
+- Shortcuts help panel (Shift+? / Shift+/)
 - Customization support
 - LocalStorage persistence
 
@@ -75,6 +75,8 @@ window.shortcutManager.register('Ctrl+Q', () => {
 ### 2. ✓ **Quick Actions Floating Menu**
 
 **Status**: 🟢 **PRODUCTION READY**
+
+> **Web UI update:** Authenticated pages use the unified dock in `base.html` and `app/static/floating-actions.js` instead of loading `quick-actions.js` from the base template. See [UI_GUIDELINES.md](../UI_GUIDELINES.md#floating-hub-authenticated-layout).
 
 **File Created**: `app/static/quick-actions.js` (300 lines)
 
@@ -352,11 +354,12 @@ All remaining features have complete implementation specifications including:
 
 ## 📦 Files Created
 
-### JavaScript Files (4)
+### JavaScript Files (5)
 1. `app/static/keyboard-shortcuts-advanced.js` - 650 lines
-2. `app/static/quick-actions.js` - 300 lines
+2. `app/static/quick-actions.js` - 300 lines (legacy / optional; web hub uses `floating-actions.js`)
 3. `app/static/smart-notifications.js` - 600 lines
 4. `app/static/dashboard-widgets.js` - 450 lines
+5. `app/static/floating-actions.js` - unified Actions menu for `#fabDock` (web layout)
 
 **Total**: 2,000 lines of production JavaScript
 

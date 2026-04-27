@@ -60,6 +60,8 @@ window.shortcutManager.register('Ctrl+Q', () => {
 
 ### 2. Quick Actions Menu ✓
 
+> **Web UI update:** The separate bottom-right “bolt” quick-actions FAB is no longer mounted from `base.html`. Quick actions for the web app live in the unified **Floating hub** in `app/templates/base.html` (`#fabDock`, `#unifiedActionsMenu`) and are driven by `app/static/floating-actions.js`. The file `app/static/quick-actions.js` remains in the tree for reference or tooling but is not the active entry point for the main layout.
+
 **Files Created:**
 - `app/static/quick-actions.js` (300 lines)
 

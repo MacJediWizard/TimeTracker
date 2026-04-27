@@ -9,6 +9,9 @@ Flask-SocketIO==5.3.6
 Authlib==1.3.1
 PyJWT==2.8.0
 
+# LDAP (directory authentication)
+ldap3==2.9.1
+
 # Database
 SQLAlchemy==2.0.23
 alembic==1.13.1
@@ -54,6 +57,7 @@ Babel==2.14.0
 cryptography==45.0.6
 markdown==3.6
 bleach==6.1.0
+pyotp==2.9.0
 
 # Analytics and Monitoring
 python-json-logger==2.0.7

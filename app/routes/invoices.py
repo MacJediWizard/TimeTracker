@@ -620,8 +620,31 @@ def update_invoice_status(invoice_id):
 
     previous_status = invoice.status
     new_status = request.form.get("new_status")
-    if new_status not in ["draft", "sent", "paid", "cancelled"]:
+    if new_status not in ["draft", "issued", "sent", "paid", "overdue", "cancelled", "void"]:
         return jsonify({"error": "Invalid status"}), 400
+
+    # Normalize legacy naming: treat "void" and "cancelled" as the same terminal state.
+    if new_status == "void":
+        new_status = "cancelled"
+
+    # State machine enforcement (production-grade invariants)
+    allowed = {
+        "draft": {"issued", "sent", "cancelled"},
+        "issued": {"sent", "cancelled"},
+        "sent": {"paid", "overdue", "cancelled"},
+        "overdue": {"paid", "cancelled"},
+        "paid": set(),
+        "cancelled": set(),
+    }
+    prev = previous_status or "draft"
+    if new_status == prev:
+        return jsonify({"success": True, "status": new_status})
+    if new_status not in allowed.get(prev, set()):
+        return jsonify({"error": "Invalid status transition"}), 400
+
+    # Once sent/paid/cancelled, the invoice should be treated as immutable (no reverting).
+    if prev in {"sent", "paid", "overdue", "cancelled"} and new_status in {"draft", "issued"}:
+        return jsonify({"error": "Cannot revert finalized invoice"}), 400
 
     invoice.status = new_status
 
@@ -697,6 +720,17 @@ def update_invoice_status(invoice_id):
     if not safe_commit("update_invoice_status", {"invoice_id": invoice.id, "status": new_status}):
         return jsonify({"error": "Database error while updating status"}), 500
 
+    try:
+        log_event(
+            "invoice.status_changed",
+            user_id=current_user.id,
+            invoice_id=invoice.id,
+            previous_status=previous_status,
+            new_status=new_status,
+        )
+    except Exception:
+        pass
+
     return jsonify({"success": True, "status": new_status})
 
 
@@ -710,6 +744,10 @@ def delete_invoice(invoice_id):
     if not current_user.is_admin and invoice.created_by != current_user.id:
         flash(_("You do not have permission to delete this invoice"), "error")
         return redirect(url_for("invoices.list_invoices"))
+
+    if invoice.status != "draft":
+        flash(_("Only draft invoices can be deleted."), "error")
+        return redirect(url_for("invoices.edit_invoice", invoice_id=invoice.id))
 
     invoice_number = invoice.invoice_number
     db.session.delete(invoice)
@@ -747,6 +785,11 @@ def bulk_delete_invoices():
             if not current_user.is_admin and invoice.created_by != current_user.id:
                 skipped_count += 1
                 errors.append(f"'{invoice.invoice_number}': No permission")
+                continue
+
+            if invoice.status != "draft":
+                skipped_count += 1
+                errors.append(f"'{invoice.invoice_number}': Not a draft")
                 continue
 
             invoice_number = invoice.invoice_number

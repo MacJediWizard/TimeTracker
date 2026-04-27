@@ -185,6 +185,7 @@ If the issue persists, check:
    - Use the first username from `ADMIN_USERNAMES` (default: "admin")
    - If using `AUTH_METHOD=local`, the default admin has no password initially. On first login, enter the username and choose any password (minimum 8 characters)—it will be set and you will be logged in. There is no default password; you define it yourself on first use.
    - If using `AUTH_METHOD=none`, you can login immediately (no password required)
+   - If using `AUTH_METHOD=ldap` or `all`, configure all required `LDAP_*` variables (see `env.example` and [LDAP Setup](LDAP_SETUP.md)); the first admin may still be created locally depending on your process
 
 2. **Create additional admin users**:
 

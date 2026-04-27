@@ -1,13 +1,14 @@
 /**
  * Quick Actions Floating Menu
- * Floating action button with quick access to common actions
+ * Mounts inside #fabBoltMount (see base.html #fabDock) so alignment matches other FABs.
  */
-
 class QuickActionsMenu {
     constructor() {
         this.isOpen = false;
         this.button = null;
         this.menu = null;
+        this.mount = null;
+        this.wrap = null;
         this.actions = this.defineActions();
         this.init();
     }
@@ -15,11 +16,8 @@ class QuickActionsMenu {
     init() {
         this.createButton();
         this.createMenu();
-        this.attachEventListeners();
-        
-        // Show/hide based on scroll
-        this.handleScroll();
-        window.addEventListener('scroll', () => this.handleScroll());
+        this.attachGlobalListeners();
+        this.attachButtonListener();
     }
 
     defineActions() {
@@ -37,7 +35,7 @@ class QuickActionsMenu {
                 icon: 'fas fa-clock',
                 label: 'Log Time',
                 color: 'bg-blue-500 hover:bg-blue-600',
-                action: () => window.location.href = '/timer/manual_entry',
+                action: () => { window.location.href = '/timer/manual_entry'; },
                 shortcut: 't l'
             },
             {
@@ -45,7 +43,7 @@ class QuickActionsMenu {
                 icon: 'fas fa-folder-plus',
                 label: 'New Project',
                 color: 'bg-purple-500 hover:bg-purple-600',
-                action: () => window.location.href = '/projects/create',
+                action: () => { window.location.href = '/projects/create'; },
                 shortcut: 'c p'
             },
             {
@@ -53,7 +51,7 @@ class QuickActionsMenu {
                 icon: 'fas fa-tasks',
                 label: 'New Task',
                 color: 'bg-orange-500 hover:bg-orange-600',
-                action: () => window.location.href = '/tasks/create',
+                action: () => { window.location.href = '/tasks/create'; },
                 shortcut: 'c t'
             },
             {
@@ -61,7 +59,7 @@ class QuickActionsMenu {
                 icon: 'fas fa-user-plus',
                 label: 'New Client',
                 color: 'bg-indigo-500 hover:bg-indigo-600',
-                action: () => window.location.href = '/clients/create',
+                action: () => { window.location.href = '/clients/create'; },
                 shortcut: 'c c'
             },
             {
@@ -69,30 +67,63 @@ class QuickActionsMenu {
                 icon: 'fas fa-chart-line',
                 label: 'Quick Report',
                 color: 'bg-pink-500 hover:bg-pink-600',
-                action: () => window.location.href = '/reports/',
+                action: () => { window.location.href = '/reports/'; },
                 shortcut: 'g r'
             }
         ];
     }
 
     createButton() {
+        const mount = document.getElementById('fabBoltMount');
+        this.mount = mount;
+        this.wrap = document.createElement('div');
+        this.wrap.className = 'relative flex shrink-0 flex-col items-end';
+        Object.assign(this.wrap.style, {
+            position: 'relative',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-end',
+            flexShrink: '0'
+        });
         this.button = document.createElement('button');
         this.button.id = 'quickActionsButton';
-        this.button.className = 'fixed bottom-6 right-6 z-40 w-14 h-14 bg-primary text-white rounded-full shadow-lg hover:shadow-xl hover:scale-110 transition-all duration-200 flex items-center justify-center group';
+        this.button.className =
+            'flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-lg transition-all duration-200 hover:shadow-xl hover:scale-110 group';
         this.button.setAttribute('aria-label', 'Quick actions');
-        this.button.innerHTML = `
-            <i class="fas fa-bolt text-xl transition-transform duration-200 group-hover:rotate-12"></i>
-        `;
-        document.body.appendChild(this.button);
+        this.button.innerHTML =
+            '<i class="fas fa-bolt text-xl transition-transform duration-200 group-hover:rotate-12"></i>';
+        if (mount) {
+            mount.appendChild(this.wrap);
+        } else {
+            Object.assign(this.wrap.style, {
+                position: 'fixed',
+                right: '1.5rem',
+                bottom: '1.5rem',
+                zIndex: '40'
+            });
+            document.body.appendChild(this.wrap);
+        }
+        this.wrap.appendChild(this.button);
     }
 
     createMenu() {
+        if (!this.wrap || !this.button) return;
         this.menu = document.createElement('div');
         this.menu.id = 'quickActionsMenu';
-        this.menu.className = 'fixed bottom-24 right-6 z-40 hidden';
-        
-        let menuHTML = '<div class="flex flex-col gap-2">';
-        
+        this.menu.className =
+            'fab-bolt-menu absolute bottom-full right-0 mb-2 flex min-w-[200px] flex-col gap-2';
+        Object.assign(this.menu.style, {
+            position: 'absolute',
+            right: '0',
+            bottom: 'calc(100% + var(--fab-menu-gap, 0.625rem))',
+            display: 'none',
+            flexDirection: 'column',
+            gap: 'var(--fab-menu-gap, 0.625rem)',
+            marginBottom: '0',
+            minWidth: '200px',
+            zIndex: '101'
+        });
+        let menuHTML = '';
         this.actions.forEach((action, index) => {
             menuHTML += `
                 <button
@@ -107,69 +138,66 @@ class QuickActionsMenu {
                 </button>
             `;
         });
-        
-        menuHTML += '</div>';
         this.menu.innerHTML = menuHTML;
-        document.body.appendChild(this.menu);
+        this.wrap.insertBefore(this.menu, this.button);
+        this.attachMenuActionListeners();
 
-        // Add CSS animation
-        const style = document.createElement('style');
-        style.textContent = `
+        if (!document.getElementById('quickActionsKeyframes')) {
+            const style = document.createElement('style');
+            style.id = 'quickActionsKeyframes';
+            style.textContent = `
             @keyframes slideInRight {
-                from {
-                    opacity: 0;
-                    transform: translateX(20px);
-                }
-                to {
-                    opacity: 1;
-                    transform: translateX(0);
-                }
+                from { opacity: 0; transform: translateX(20px); }
+                to { opacity: 1; transform: translateX(0); }
             }
-            
             #quickActionsButton.open i {
                 transform: rotate(45deg);
             }
-            
             @media (max-width: 768px) {
-                #quickActionsMenu {
-                    right: 1rem;
-                    bottom: 5.5rem;
-                }
                 #quickActionsMenu button {
                     min-width: calc(100vw - 2rem);
                 }
             }
         `;
-        document.head.appendChild(style);
+            document.head.appendChild(style);
+        }
     }
 
-    attachEventListeners() {
-        // Toggle menu
+    attachButtonListener() {
+        if (!this.button || this._buttonBound) return;
+        this._buttonBound = true;
         this.button.addEventListener('click', (e) => {
             e.stopPropagation();
             this.toggle();
         });
+    }
 
-        // Action buttons
-        this.menu.querySelectorAll('[data-action]').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const actionId = e.currentTarget.dataset.action;
-                const action = this.actions.find(a => a.id === actionId);
+    attachMenuActionListeners() {
+        if (!this.menu) return;
+        this.menu.querySelectorAll('[data-action]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const actionId = btn.dataset.action;
+                const action = this.actions.find((a) => a.id === actionId);
                 if (action) {
                     action.action();
                     this.close();
                 }
             });
         });
+    }
 
-        // Close on outside click
+    attachGlobalListeners() {
+        if (this._globalsBound) return;
+        this._globalsBound = true;
         document.addEventListener('click', (e) => {
-            if (this.isOpen && !this.menu.contains(e.target) && e.target !== this.button) {
+            if (
+                this.isOpen &&
+                this.wrap &&
+                !this.wrap.contains(e.target)
+            ) {
                 this.close();
             }
         });
-
-        // Close on escape
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && this.isOpen) {
                 this.close();
@@ -187,38 +215,24 @@ class QuickActionsMenu {
 
     open() {
         this.isOpen = true;
-        this.menu.classList.remove('hidden');
+        if (this.menu) this.menu.style.display = 'flex';
+        if (this.wrap) this.wrap.classList.add('is-open');
+        if (this.mount) this.mount.classList.add('is-open');
         this.button.classList.add('open');
-        
-        // Animate button
-        this.button.style.transform = 'rotate(45deg)';
     }
 
     close() {
         this.isOpen = false;
-        this.menu.classList.add('hidden');
+        if (this.menu) this.menu.style.display = 'none';
+        if (this.wrap) this.wrap.classList.remove('is-open');
+        if (this.mount) this.mount.classList.remove('is-open');
         this.button.classList.remove('open');
-        
-        // Reset button
-        this.button.style.transform = 'rotate(0deg)';
-    }
-
-    handleScroll() {
-        const scrollY = window.scrollY;
-        
-        // Hide when scrolling down, show when scrolling up
-        if (scrollY > this.lastScrollY && scrollY > 200) {
-            this.button.style.transform = 'translateY(100px)';
-        } else {
-            this.button.style.transform = this.isOpen ? 'rotate(45deg)' : 'translateY(0)';
-        }
-        
-        this.lastScrollY = scrollY;
     }
 
     startTimer() {
-        // Try to find and click start timer button
-        const startBtn = document.querySelector('#openStartTimer, button[onclick*="startTimer"]');
+        const startBtn = document.querySelector(
+            '#openStartTimer, button[onclick*="startTimer"]'
+        );
         if (startBtn) {
             startBtn.click();
         } else {
@@ -226,27 +240,25 @@ class QuickActionsMenu {
         }
     }
 
-    // Add custom action
     addAction(action) {
         this.actions.push(action);
         this.recreateMenu();
     }
 
-    // Remove action
     removeAction(actionId) {
-        this.actions = this.actions.filter(a => a.id !== actionId);
+        this.actions = this.actions.filter((a) => a.id !== actionId);
         this.recreateMenu();
     }
 
     recreateMenu() {
-        this.menu.remove();
+        if (this.menu) {
+            this.menu.remove();
+            this.menu = null;
+        }
         this.createMenu();
-        this.attachEventListeners();
     }
 }
 
-// Initialize
 window.addEventListener('DOMContentLoaded', () => {
     window.quickActionsMenu = new QuickActionsMenu();
 });
-

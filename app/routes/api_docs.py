@@ -96,6 +96,8 @@ API tokens are assigned specific scopes that define what resources they can acce
 - **write:clients** - Create and update clients
 - **read:reports** - View reports and analytics
 - **read:users** - View user information
+- **read:ai** - Preview AI helper context
+- **write:ai** - Chat with the AI helper and confirm proposed actions
 - **admin:all** - Full administrative access
 
 ## Rate Limiting
@@ -290,6 +292,7 @@ Example: `2024-01-15T14:30:00Z`
             {"name": "Users", "description": "User management operations"},
             {"name": "Invoices", "description": "Invoice operations"},
             {"name": "Expenses", "description": "Expense operations"},
+            {"name": "AI Helper", "description": "Server-side AI helper for chat, context preview, and confirmed actions"},
         ],
         "paths": {
             "/info": {
@@ -325,6 +328,57 @@ Example: `2024-01-15T14:30:00Z`
                     "description": "Check if the API is healthy and operational",
                     "security": [],
                     "responses": {"200": {"description": "API is healthy"}},
+                }
+            },
+            "/ai/context-preview": {
+                "get": {
+                    "tags": ["AI Helper"],
+                    "summary": "Preview AI context",
+                    "description": "Return the compact TimeTracker context that would be sent to the AI helper.",
+                    "responses": {"200": {"description": "Context preview"}, "401": {"description": "Unauthorized"}},
+                }
+            },
+            "/ai/chat": {
+                "post": {
+                    "tags": ["AI Helper"],
+                    "summary": "Chat with AI helper",
+                    "description": "Send a prompt to the server-side AI helper. Requires the write:ai scope.",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["prompt"],
+                                    "properties": {
+                                        "prompt": {"type": "string"},
+                                        "history": {"type": "array", "items": {"type": "object"}},
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {"200": {"description": "AI response"}, "400": {"description": "AI disabled or invalid input"}},
+                }
+            },
+            "/ai/actions/confirm": {
+                "post": {
+                    "tags": ["AI Helper"],
+                    "summary": "Confirm AI action",
+                    "description": "Execute a user-confirmed action proposed by the AI helper.",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["action"],
+                                    "properties": {"action": {"type": "object"}},
+                                }
+                            }
+                        },
+                    },
+                    "responses": {"200": {"description": "Action completed"}, "400": {"description": "Unsupported action"}},
                 }
             },
             "/projects": {

@@ -3,10 +3,29 @@
 
 {% block content %}
 {% set actions %}
-{% if current_user.is_admin or has_any_permission('edit_clients', 'delete_clients') %}
+{% if current_user.is_admin or has_any_permission('edit_clients', 'delete_clients') or can_invoice_unbilled_time|default(false) %}
 <div class="flex flex-wrap gap-2">
     {% if current_user.is_admin or has_permission('edit_clients') %}
     <a href="{{ url_for('clients.edit_client', client_id=client.id) }}" class="btn btn-primary">{{ _('Edit Client') }}</a>
+    {% endif %}
+    {% if can_invoice_unbilled_time|default(false) and unbilled_invoice_preview is defined and unbilled_invoice_preview %}
+    {% set up = unbilled_invoice_preview %}
+    {% set no_unbilled = (up.entry_count == 0) and (not up.blocked_reason) %}
+    {% set blocked = up.blocked_reason == 'no_project' %}
+    <button type="button" id="client-invoice-unbilled-btn"
+            class="btn btn-primary {% if no_unbilled or blocked %}opacity-60 cursor-not-allowed{% endif %}"
+            {% if no_unbilled or blocked %}disabled aria-disabled="true"{% endif %}
+            data-api-url="{{ url_for('api_v1_clients.post_client_invoice_unbilled', client_id=client.id) }}"
+            data-entries="{{ up.entry_count }}"
+            data-hours="{{ '%.2f'|format(up.total_hours) }}"
+            data-estimate="{{ '%.2f'|format(up.estimated_total) }}"
+            data-currency="{{ up.currency }}"
+            data-redirect-template="{{ url_for('invoices.view_invoice', invoice_id=client.id) }}"
+            {% if blocked %}title="{{ _('Assign a project to direct time entries before invoicing.') }}"{% elif no_unbilled %}title="{{ _('No billable unbilled time for this client.') }}"{% endif %}>
+        {% if no_unbilled %}{{ _('No unbilled time') }}{% else %}{{ _('Invoice unbilled time') }}{% endif %}
+    </button>
+    {% endif %}
+    {% if current_user.is_admin or has_permission('edit_clients') %}
     {% if client.status == 'active' %}
     <form method="POST" action="{{ url_for('clients.archive_client', client_id=client.id) }}" onsubmit="event.preventDefault(); window.showConfirm('{{ _('Mark client as Inactive?')|e }}', { title: '{{ _('Change Client Status')|e }}', confirmText: '{{ _('Change')|e }}' }).then(ok=>{ if(ok) this.submit(); });" class="inline">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -551,6 +570,60 @@ function toggleImportant(noteId, setImportant) {
         alert('{{ _('Error updating note') }}');
     });
 }
+
+{% if can_invoice_unbilled_time|default(false) and unbilled_invoice_preview is defined and unbilled_invoice_preview %}
+<script>
+(function () {
+  const btn = document.getElementById('client-invoice-unbilled-btn');
+  if (!btn || btn.disabled) return;
+  btn.addEventListener('click', async function () {
+    const entries = btn.dataset.entries;
+    const hours = btn.dataset.hours;
+    const est = btn.dataset.estimate;
+    const cur = btn.dataset.currency;
+    const tpl = btn.dataset.redirectTemplate;
+    const msg =
+      '{{ _("Entries") }}: ' +
+      entries +
+      ', {{ _("Total hours") }}: ' +
+      hours +
+      ' h, {{ _("Estimated total") }}: ' +
+      cur +
+      ' ' +
+      est +
+      '. {{ _("Create a draft invoice?") }}';
+    const ok = await window.showConfirm(msg, {
+      title: '{{ _("Invoice unbilled time") }}',
+      confirmText: '{{ _("Create invoice") }}',
+      cancelText: '{{ _("Cancel") }}',
+      variant: 'primary',
+    });
+    if (!ok) return;
+    btn.disabled = true;
+    try {
+      const r = await fetch(btn.dataset.apiUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      });
+      let data = {};
+      try {
+        data = await r.json();
+      } catch (_) {}
+      if (!r.ok) {
+        btn.disabled = false;
+        window.showAlert((data && data.message) || '{{ _("Could not create invoice.") }}');
+        return;
+      }
+      window.location.href = tpl.replace(/[^/]+$/, String(data.invoice_id));
+    } catch (e) {
+      btn.disabled = false;
+      window.showAlert('{{ _("Could not create invoice.") }}');
+    }
+  });
+})();
+</script>
+{% endif %}
 
 async function confirmDeleteNote(noteId) {
     const confirmed = await showConfirm(

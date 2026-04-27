@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% from "components/ui.html" import page_header %}
+
+{% block title %}{{ _('Integration Health') }}{% endblock %}
+
+{% block content %}
+{{ page_header(
+    icon_class='fas fa-heartbeat',
+    title_text='Integration Health',
+    subtitle_text='Overview of integration status, last sync results, and credentials expiry.',
+    breadcrumbs=[
+        {'text': 'Integrations', 'url': url_for('integrations.list_integrations')},
+        {'text': 'Health'}
+    ]
+) }}
+
+<div class="bg-card-light dark:bg-card-dark p-6 rounded-xl border border-border-light dark:border-border-dark shadow-sm">
+    <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+            <thead>
+                <tr class="text-left text-text-muted-light dark:text-text-muted-dark">
+                    <th class="py-2 pr-4">{{ _('Provider') }}</th>
+                    <th class="py-2 pr-4">{{ _('Scope') }}</th>
+                    <th class="py-2 pr-4">{{ _('Active') }}</th>
+                    <th class="py-2 pr-4">{{ _('Last sync') }}</th>
+                    <th class="py-2 pr-4">{{ _('Last status') }}</th>
+                    <th class="py-2 pr-4">{{ _('Credentials') }}</th>
+                    <th class="py-2 pr-4">{{ _('Last error') }}</th>
+                    <th class="py-2">{{ _('Actions') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in (rows or []) %}
+                    {% set integ = r.integration %}
+                    <tr class="border-t border-gray-100 dark:border-gray-800">
+                        <td class="py-2 pr-4 font-medium">{{ integ.name }}</td>
+                        <td class="py-2 pr-4">
+                            {% if integ.is_global %}
+                                <span class="px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-xs">{{ _('Global') }}</span>
+                            {% else %}
+                                <span class="px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-xs">{{ _('User') }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-2 pr-4">
+                            {% if integ.is_active %}
+                                <span class="text-green-600 dark:text-green-400 font-semibold">{{ _('Yes') }}</span>
+                            {% else %}
+                                <span class="text-text-muted-light dark:text-text-muted-dark">{{ _('No') }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-2 pr-4">
+                            {% if integ.last_sync_at %}
+                                {{ integ.last_sync_at.strftime('%Y-%m-%d %H:%M') }}
+                            {% else %}
+                                <span class="text-text-muted-light dark:text-text-muted-dark">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-2 pr-4">
+                            {% if integ.last_sync_status == 'success' %}
+                                <span class="text-green-600 dark:text-green-400 font-semibold">{{ _('Success') }}</span>
+                            {% elif integ.last_sync_status == 'partial' %}
+                                <span class="text-yellow-600 dark:text-yellow-400 font-semibold">{{ _('Partial') }}</span>
+                            {% elif integ.last_sync_status == 'error' %}
+                                <span class="text-red-600 dark:text-red-400 font-semibold">{{ _('Error') }}</span>
+                            {% elif integ.last_sync_status %}
+                                <span class="text-text-muted-light dark:text-text-muted-dark">{{ integ.last_sync_status }}</span>
+                            {% else %}
+                                <span class="text-text-muted-light dark:text-text-muted-dark">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-2 pr-4">
+                            {% if r.has_credentials %}
+                                {% if r.token_is_expired %}
+                                    <span class="text-red-600 dark:text-red-400 font-semibold">{{ _('Expired') }}</span>
+                                {% elif r.token_needs_refresh %}
+                                    <span class="text-yellow-600 dark:text-yellow-400 font-semibold">{{ _('Needs refresh') }}</span>
+                                {% else %}
+                                    <span class="text-green-600 dark:text-green-400 font-semibold">{{ _('OK') }}</span>
+                                {% endif %}
+                                {% if r.token_expires_at %}
+                                    <div class="text-xs text-text-muted-light dark:text-text-muted-dark">
+                                        {{ _('Expires') }}: {{ r.token_expires_at.strftime('%Y-%m-%d %H:%M') }}
+                                    </div>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-text-muted-light dark:text-text-muted-dark">{{ _('Not configured') }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-2 pr-4 max-w-[420px]">
+                            {% if integ.last_error %}
+                                <div class="text-xs text-red-600 dark:text-red-400 break-words">{{ integ.last_error }}</div>
+                            {% else %}
+                                <span class="text-text-muted-light dark:text-text-muted-dark">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-2">
+                            <div class="flex flex-wrap gap-2">
+                                <a class="btn btn-secondary btn-sm" href="{{ url_for('integrations.view_integration', integration_id=integ.id) }}">
+                                    {{ _('View') }}
+                                </a>
+                                <form method="POST" action="{{ url_for('integrations.test_integration', integration_id=integ.id) }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="btn btn-primary btn-sm">{{ _('Test') }}</button>
+                                </form>
+                                <form method="POST" action="{{ url_for('integrations.reset_integration', integration_id=integ.id) }}" onsubmit="return confirm('{{ _('Reset this integration? This removes stored OAuth tokens.') }}');">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="btn btn-danger btn-sm">{{ _('Reset') }}</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+

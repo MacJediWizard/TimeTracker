@@ -536,6 +536,22 @@ def view_client(client_id):
         current_app.logger.warning(f"Could not load attachments for client {client_id}: {e}")
         attachments = []
 
+    can_invoice_unbilled_time = False
+    unbilled_invoice_preview = None
+    try:
+        settings_for_mod = Settings.get_settings()
+        if (
+            ModuleRegistry.is_enabled("clients", settings_for_mod, current_user)
+            and ModuleRegistry.is_enabled("invoices", settings_for_mod, current_user)
+            and (current_user.is_admin or current_user.has_permission("create_invoices"))
+        ):
+            can_invoice_unbilled_time = True
+            from app.services import InvoiceService
+
+            unbilled_invoice_preview = InvoiceService().get_client_unbilled_invoice_preview(client_id)
+    except Exception as e:
+        current_app.logger.warning("Could not load unbilled invoice preview for client %s: %s", client_id, e)
+
     return render_template(
         "clients/view.html",
         client=client,
@@ -547,6 +563,8 @@ def view_client(client_id):
         recent_time_entries=recent_time_entries,
         link_templates_by_field=link_templates_by_field,
         custom_field_definitions_by_key=custom_field_definitions_by_key,
+        can_invoice_unbilled_time=can_invoice_unbilled_time,
+        unbilled_invoice_preview=unbilled_invoice_preview,
     )
 
 

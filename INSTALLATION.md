@@ -31,13 +31,17 @@ Install Docker for your platform: [Docker Installation Guide](https://docs.docke
      ```bash
      python -c "import secrets; print(secrets.token_hex(32))"
      ```
+   - **SETTINGS_ENCRYPTION_KEY** — Recommended to encrypt stored secrets (SMTP password, OAuth client secrets, Peppol token, AI key, and 2FA secrets). Generate one:
+     ```bash
+     python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+     ```
    - **TZ** — Your timezone (e.g. `America/New_York`, `Europe/Brussels`).
    - **CURRENCY** — Default currency (e.g. `USD`, `EUR`).
 
 4. Start the stack:
 
    ```bash
-   docker-compose up -d
+   docker compose up -d
    ```
 
 5. Open **https://localhost** in your browser. The first run may show a self-signed certificate warning; proceed to continue.
@@ -69,6 +73,8 @@ For production:
 - Use a strong **SECRET_KEY** and keep `.env` out of version control.
 - Prefer **PostgreSQL** (included in the default Docker Compose setup).
 - Put the app behind HTTPS (reverse proxy or Docker with HTTPS compose).
+
+> Note: The default `docker-compose.yml` requires `SECRET_KEY` to be set (32+ chars). If it is missing, `docker compose` will error during interpolation.
 
 Detailed steps and options:
 

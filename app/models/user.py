@@ -5,6 +5,7 @@ from flask_login import UserMixin
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from app import db
+from app.utils.secret_crypto import decrypt_if_needed, encrypt_if_possible, is_configured as secrets_encryption_configured
 
 
 class User(UserMixin, db.Model):
@@ -27,11 +28,18 @@ class User(UserMixin, db.Model):
     dismissed_release_version = db.Column(db.String(64), nullable=True)
     oidc_sub = db.Column(db.String(255), nullable=True)
     oidc_issuer = db.Column(db.String(255), nullable=True)
+    # Authentication source: local password, OIDC, or LDAP (synced on login where applicable)
+    auth_provider = db.Column(db.String(20), nullable=False, default="local", server_default="local")
     avatar_filename = db.Column(db.String(255), nullable=True)
     password_hash = db.Column(db.String(255), nullable=True)
     password_change_required = db.Column(
         db.Boolean, default=False, nullable=False
     )  # Force password change on first login
+
+    # Two-factor authentication (TOTP)
+    two_factor_enabled = db.Column(db.Boolean, default=False, nullable=False)
+    two_factor_secret = db.Column(db.String(255), nullable=True)  # encrypted-at-rest when key configured
+    two_factor_confirmed_at = db.Column(db.DateTime, nullable=True)
 
     # User preferences and settings
     email_notifications = db.Column(db.Boolean, default=True, nullable=False)  # Enable/disable email notifications
@@ -208,6 +216,19 @@ class User(UserMixin, db.Model):
     def has_password(self):
         """Check if user has a password set"""
         return bool(self.password_hash)
+
+    def set_two_factor_secret(self, secret: str) -> None:
+        secret = (secret or "").strip()
+        if not secret:
+            self.two_factor_secret = None
+            return
+        if secrets_encryption_configured():
+            self.two_factor_secret = encrypt_if_possible(secret)
+        else:
+            self.two_factor_secret = secret
+
+    def get_two_factor_secret(self) -> str:
+        return decrypt_if_needed(self.two_factor_secret or "")
 
     @property
     def is_admin(self):

@@ -3,7 +3,7 @@
 
 const MobileUtils = {
     TOUCH_TARGET_MIN: 44,
-    MOBILE_BREAKPOINT: 1024,
+    MOBILE_BREAKPOINT: 768,
     SMALL_MOBILE_BREAKPOINT: 480,
 
     isMobile() {
@@ -206,6 +206,95 @@ class MobilePerformance {
     }
 }
 
+/** Slide-up "More" drawer for mobile bottom navigation (see partials/_bottom_nav.html). */
+class BottomNavMoreDrawer {
+    constructor() {
+        this.btn = document.getElementById('bottomNavMoreBtn');
+        this.backdrop = document.getElementById('bottomNavMoreBackdrop');
+        this.panel = document.getElementById('bottomNavMorePanel');
+        this.closeBtn = document.getElementById('bottomNavMoreClose');
+        if (!this.btn || !this.backdrop || !this.panel) return;
+        this._onDocKeydown = this._onDocKeydown.bind(this);
+        this.init();
+    }
+
+    isOpen() {
+        return !this.backdrop.classList.contains('hidden');
+    }
+
+    open() {
+        if (!MobileUtils.isMobile()) return;
+        this.backdrop.classList.remove('hidden');
+        requestAnimationFrame(() => {
+            this.panel.classList.remove('pointer-events-none', 'translate-y-full');
+            this.panel.setAttribute('aria-hidden', 'false');
+            this.btn.setAttribute('aria-expanded', 'true');
+            document.body.classList.add('overflow-hidden');
+        });
+    }
+
+    close() {
+        this.panel.classList.add('translate-y-full', 'pointer-events-none');
+        this.panel.setAttribute('aria-hidden', 'true');
+        this.btn.setAttribute('aria-expanded', 'false');
+        document.body.classList.remove('overflow-hidden');
+
+        const hideBackdrop = () => {
+            this.backdrop.classList.add('hidden');
+        };
+
+        const reduced =
+            typeof window.matchMedia === 'function' &&
+            window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        if (reduced) {
+            hideBackdrop();
+            return;
+        }
+
+        let finished = false;
+        const finish = () => {
+            if (finished) return;
+            finished = true;
+            hideBackdrop();
+        };
+
+        const onEnd = (e) => {
+            if (e.target !== this.panel || e.propertyName !== 'transform') return;
+            this.panel.removeEventListener('transitionend', onEnd);
+            clearTimeout(fallbackTimer);
+            finish();
+        };
+        this.panel.addEventListener('transitionend', onEnd);
+        const fallbackTimer = window.setTimeout(() => {
+            this.panel.removeEventListener('transitionend', onEnd);
+            finish();
+        }, 400);
+    }
+
+    _onDocKeydown(e) {
+        if (e.key === 'Escape' && this.isOpen()) {
+            this.close();
+        }
+    }
+
+    init() {
+        this.btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (this.isOpen()) this.close();
+            else this.open();
+        });
+        this.backdrop.addEventListener('click', () => this.close());
+        if (this.closeBtn) {
+            this.closeBtn.addEventListener('click', () => this.close());
+        }
+        document.addEventListener('keydown', this._onDocKeydown);
+        this.panel.querySelectorAll('a.bottom-nav-more-link').forEach((a) => {
+            a.addEventListener('click', () => this.close());
+        });
+    }
+}
+
 class MobileOffline {
     constructor() {
         this.offlineToastId = null;
@@ -241,6 +330,7 @@ document.addEventListener('DOMContentLoaded', function() {
     new MobileViewport();
     new MobilePerformance();
     new MobileOffline();
+    new BottomNavMoreDrawer();
 });
 
 window.MobileUtils = MobileUtils;

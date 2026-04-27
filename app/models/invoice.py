@@ -26,7 +26,7 @@ class Invoice(db.Model):
     due_date = db.Column(db.Date, nullable=False)
     status = db.Column(
         db.String(20), default="draft", nullable=False
-    )  # 'draft', 'sent', 'paid', 'overdue', 'cancelled'
+    )  # 'draft', 'issued', 'sent', 'paid', 'overdue', 'cancelled'(void)
 
     # Billing information
     subtotal = db.Column(db.Numeric(10, 2), nullable=False, default=0)

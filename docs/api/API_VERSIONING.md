@@ -33,7 +33,7 @@ These **`/api/*`** routes have v1 successors. They remain for the web UI but may
 
 ### Internal / UI-only (no v1 equivalent yet)
 
-Examples: `GET /api/notifications`, dashboard stats (`/api/dashboard/*`, `/api/stats*`), editor uploads, smart notifications dismiss, many calendar helpers. Treat as **internal** to the web app unless documented otherwise.
+Examples: `GET /api/notifications`, dashboard stats (`/api/dashboard/*`, `/api/stats*`, `/api/reports/week-comparison`), editor uploads, smart notifications dismiss, many calendar helpers. Treat as **internal** to the web app unless documented otherwise.
 
 ## Versioning Policy
 

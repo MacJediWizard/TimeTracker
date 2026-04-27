@@ -142,7 +142,7 @@ class PeppolService:
                 ).strip()
                 ap_token_raw = getattr(settings, "peppol_access_point_token", None)
                 ap_token = (
-                    (ap_token_raw or "").strip()
+                    (settings.get_secret("peppol_access_point_token") or "").strip()
                     if ap_token_raw is not None
                     else (os.getenv("PEPPOL_ACCESS_POINT_TOKEN") or "").strip()
                 )

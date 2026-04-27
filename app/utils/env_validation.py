@@ -107,6 +107,14 @@ def validate_production_config() -> Tuple[bool, List[str]]:
         if not session_secure:
             issues.append("SESSION_COOKIE_SECURE should be true in production")
 
+    # LDAP required vars when LDAP authentication is enabled
+    auth_method = (os.getenv("AUTH_METHOD", "local") or "local").strip().lower()
+    if auth_method in ("ldap", "all"):
+        for var in ("LDAP_HOST", "LDAP_BASE_DN", "LDAP_BIND_DN", "LDAP_BIND_PASSWORD"):
+            val = (os.getenv(var) or "").strip()
+            if not val:
+                issues.append(f"{var} must be set when AUTH_METHOD enables LDAP ({auth_method})")
+
     return len(issues) == 0, issues
 
 
@@ -117,12 +125,15 @@ def validate_optional_env_vars() -> Dict[str, bool]:
     Returns:
         Dict mapping env var names to their validation status
     """
+    auth_m = (os.getenv("AUTH_METHOD", "") or "").strip().lower()
+    oidc_required = auth_m in ("oidc", "both", "all")
+
     optional_vars = {
         "TZ": lambda v: bool(v),
         "CURRENCY": lambda v: bool(v),
-        "OIDC_ISSUER": lambda v: bool(v) if os.getenv("AUTH_METHOD", "").lower() in ("oidc", "both") else True,
-        "OIDC_CLIENT_ID": lambda v: bool(v) if os.getenv("AUTH_METHOD", "").lower() in ("oidc", "both") else True,
-        "OIDC_CLIENT_SECRET": lambda v: bool(v) if os.getenv("AUTH_METHOD", "").lower() in ("oidc", "both") else True,
+        "OIDC_ISSUER": lambda v: bool(v) if oidc_required else True,
+        "OIDC_CLIENT_ID": lambda v: bool(v) if oidc_required else True,
+        "OIDC_CLIENT_SECRET": lambda v: bool(v) if oidc_required else True,
     }
 
     results = {}

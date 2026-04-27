@@ -99,7 +99,7 @@ def initial_setup():
         if google_client_id:
             settings.google_calendar_client_id = google_client_id
         if google_client_secret:
-            settings.google_calendar_client_secret = google_client_secret
+            settings.set_secret("google_calendar_client_secret", google_client_secret)
 
         if settings not in db.session:
             db.session.add(settings)

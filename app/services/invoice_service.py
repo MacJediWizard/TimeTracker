@@ -3,7 +3,7 @@ Service for invoice business logic.
 """
 
 import time
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
@@ -619,4 +619,281 @@ class InvoiceService:
             "prepaid_plan_hours": prepaid_plan_hours,
             "currency": currency,
             "prepaid_reset_day": invoice.client.prepaid_reset_day if invoice.client else None,
+        }
+
+    def _time_entry_hours_decimal(self, entry: TimeEntry) -> Decimal:
+        if not entry.duration_seconds:
+            return Decimal("0")
+        return Decimal(str(entry.duration_seconds)) / Decimal("3600")
+
+    def _billed_time_entry_ids_for_client(self, client_id: int) -> set:
+        """IDs of time entries already linked to any invoice line for this client."""
+        from app.models import InvoiceItem
+
+        billed: set = set()
+        rows = (
+            db.session.query(InvoiceItem.time_entry_ids)
+            .join(Invoice, Invoice.id == InvoiceItem.invoice_id)
+            .filter(Invoice.client_id == client_id, InvoiceItem.time_entry_ids.isnot(None))
+            .all()
+        )
+        for (tids,) in rows:
+            if not tids:
+                continue
+            for part in tids.split(","):
+                p = part.strip()
+                if p.isdigit():
+                    billed.add(int(p))
+        return billed
+
+    def _client_unbilled_invoice_state(self, client_id: int) -> Dict[str, Any]:
+        """
+        Shared logic for preview and create: candidate entries, unbilled subset, grouping.
+
+        Returns keys: ok (bool), error (optional str), blocked_reason (optional str),
+        unbilled_entries (list), groups (dict project_id -> entries), projects_by_id, currency.
+        """
+        from sqlalchemy import or_
+
+        from app.models import Client, Project, Settings
+
+        client = Client.query.get(client_id)
+        if not client:
+            return {"ok": False, "error": "not_found"}
+
+        projects = Project.query.filter_by(client_id=client_id).all()
+        projects_by_id = {p.id: p for p in projects}
+        project_ids = list(projects_by_id.keys())
+
+        conditions = [TimeEntry.client_id == client_id]
+        if project_ids:
+            conditions.append(TimeEntry.project_id.in_(project_ids))
+
+        candidates = (
+            TimeEntry.query.filter(
+                or_(*conditions),
+                TimeEntry.end_time.isnot(None),
+                TimeEntry.billable == True,
+            )
+            .order_by(TimeEntry.start_time.asc())
+            .all()
+        )
+
+        billed_ids = self._billed_time_entry_ids_for_client(client_id)
+        unbilled = [e for e in candidates if e.id not in billed_ids]
+
+        orphans = [e for e in unbilled if e.project_id is None]
+        if orphans:
+            return {
+                "ok": False,
+                "error": "no_project_entries",
+                "message": "Unbilled time without a project cannot be invoiced; assign a project first.",
+                "unbilled_entries": [],
+                "groups": {},
+                "projects_by_id": projects_by_id,
+                "currency": (Settings.get_settings().currency if Settings.get_settings() else "EUR"),
+            }
+
+        invoicable = [e for e in unbilled if e.project_id is not None]
+        if not invoicable:
+            settings = Settings.get_settings()
+            return {
+                "ok": False,
+                "error": "no_unbilled_entries",
+                "message": "No unbilled time entries for this client.",
+                "unbilled_entries": [],
+                "groups": {},
+                "projects_by_id": projects_by_id,
+                "currency": settings.currency if settings else "EUR",
+            }
+
+        groups: Dict[int, List[TimeEntry]] = {}
+        for entry in invoicable:
+            pid = entry.project_id
+            groups.setdefault(pid, []).append(entry)
+
+        settings = Settings.get_settings()
+        currency = settings.currency if settings else "EUR"
+
+        return {
+            "ok": True,
+            "unbilled_entries": invoicable,
+            "groups": groups,
+            "projects_by_id": projects_by_id,
+            "currency": currency,
+        }
+
+    def get_client_unbilled_invoice_preview(self, client_id: int) -> Dict[str, Any]:
+        """Summarize unbilled time for one client (matches create eligibility)."""
+        state = self._client_unbilled_invoice_state(client_id)
+        currency = state.get("currency") or "EUR"
+
+        if state.get("error") == "not_found":
+            return {
+                "entry_count": 0,
+                "total_hours": 0.0,
+                "estimated_total": 0.0,
+                "currency": currency,
+                "blocked_reason": None,
+            }
+
+        if not state.get("ok"):
+            br = "no_project" if state.get("error") == "no_project_entries" else None
+            return {
+                "entry_count": 0,
+                "total_hours": 0.0,
+                "estimated_total": 0.0,
+                "currency": currency,
+                "blocked_reason": br,
+            }
+
+        from app.models import RateOverride
+
+        entries: List[TimeEntry] = state["unbilled_entries"]
+        groups: Dict[int, List[TimeEntry]] = state["groups"]
+        projects_by_id = state["projects_by_id"]
+
+        total_hours = sum(self._time_entry_hours_decimal(e) for e in entries)
+        estimated = Decimal("0")
+        for pid, elist in groups.items():
+            proj = projects_by_id.get(pid)
+            if not proj:
+                continue
+            hrs = sum(self._time_entry_hours_decimal(e) for e in elist)
+            rate = RateOverride.resolve_rate(proj)
+            estimated += hrs * rate
+
+        return {
+            "entry_count": len(entries),
+            "total_hours": float(total_hours),
+            "estimated_total": float(estimated.quantize(Decimal("0.01"))),
+            "currency": currency,
+            "blocked_reason": None,
+        }
+
+    def create_client_unbilled_invoice(self, client_id: int, acting_user_id: int) -> Dict[str, Any]:
+        """
+        Create one draft invoice for all unbilled billable time for a client, grouped by project.
+
+        Returns:
+            success + invoice_id, invoice_number, total, item_count; or success False + error/message.
+        """
+        from app.models import Client, RateOverride, Settings
+
+        state = self._client_unbilled_invoice_state(client_id)
+        if state.get("error") == "not_found":
+            return {"success": False, "error": "not_found", "message": "Client not found"}
+
+        if not state.get("ok"):
+            err = state.get("error", "unknown")
+            return {
+                "success": False,
+                "error": err,
+                "message": state.get("message", "Cannot create invoice."),
+            }
+
+        groups: Dict[int, List[TimeEntry]] = state["groups"]
+        projects_by_id = state["projects_by_id"]
+        settings = Settings.get_settings()
+        currency = state.get("currency") or (settings.currency if settings else "EUR")
+
+        # Invoice.project_id: project with largest unbilled hours (tie: lowest id)
+        best_pid = None
+        best_hours = Decimal("-1")
+        for pid, elist in groups.items():
+            hrs = sum(self._time_entry_hours_decimal(e) for e in elist)
+            if hrs > best_hours or (hrs == best_hours and (best_pid is None or pid < best_pid)):
+                best_hours = hrs
+                best_pid = pid
+
+        if best_pid is None:
+            return {"success": False, "error": "no_unbilled_entries", "message": "No unbilled time entries for this client."}
+
+        client = Client.query.get(client_id)
+        issue_date = date.today()
+        due_date = issue_date + timedelta(days=30)
+        invoice_number = self.invoice_repo.generate_invoice_number()
+
+        client_name = client.name
+        client_email = getattr(client, "email", None) or None
+        client_address = getattr(client, "address", None) or None
+        try:
+            from app.models import Contact
+
+            primary = Contact.get_primary_contact(client_id)
+            if primary and primary.email:
+                client_email = primary.email
+        except Exception:
+            pass
+
+        tax_rate = Decimal("0")
+        notes = settings.invoice_notes if settings and settings.invoice_notes else None
+        terms = settings.invoice_terms if settings and settings.invoice_terms else None
+        template_id = getattr(settings, "default_invoice_template_id", None) if settings else None
+
+        invoice = Invoice(
+            invoice_number=invoice_number,
+            project_id=best_pid,
+            client_name=client_name,
+            due_date=due_date,
+            created_by=acting_user_id,
+            client_id=client_id,
+            client_email=client_email,
+            client_address=client_address,
+            issue_date=issue_date,
+            status=InvoiceStatus.DRAFT.value,
+            tax_rate=tax_rate,
+            currency_code=currency,
+            notes=notes,
+            terms=terms,
+        )
+        if template_id:
+            invoice.template_id = template_id
+
+        db.session.add(invoice)
+        db.session.flush()
+
+        item_count = 0
+        for pid in sorted(groups.keys()):
+            elist = groups[pid]
+            proj = projects_by_id.get(pid)
+            if not proj:
+                continue
+            total_h = sum(self._time_entry_hours_decimal(e) for e in elist)
+            if total_h <= 0:
+                continue
+            rate = RateOverride.resolve_rate(proj)
+            desc = f"Project: {proj.name}"
+            tids = ",".join(str(e.id) for e in elist)
+            item = InvoiceItem(
+                invoice_id=invoice.id,
+                description=desc,
+                quantity=total_h,
+                unit_price=rate,
+                time_entry_ids=tids,
+            )
+            db.session.add(item)
+            item_count += 1
+
+        invoice.calculate_totals()
+
+        if not safe_commit("create_client_unbilled_invoice", {"client_id": client_id, "acting_user_id": acting_user_id}):
+            return {
+                "success": False,
+                "error": "database_error",
+                "message": "Could not create invoice due to a database error.",
+            }
+
+        emit_event(
+            WebhookEvent.INVOICE_CREATED.value,
+            {"invoice_id": invoice.id, "project_id": best_pid, "client_id": client_id, "source": "client_unbilled"},
+        )
+
+        return {
+            "success": True,
+            "invoice_id": invoice.id,
+            "invoice_number": invoice.invoice_number,
+            "total": float(invoice.total_amount),
+            "item_count": item_count,
+            "invoice": invoice,
         }

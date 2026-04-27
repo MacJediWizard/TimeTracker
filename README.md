@@ -76,7 +76,9 @@ TimeTracker is built with modern, reliable technologies:
 
 ## 🖥️ UI overview
 
-The web app uses a **single main layout** with a sidebar and top header. Content is centered with a max width for readability. **Getting around:** **Dashboard** — overview, today’s stats, and the main **Timer** widget (start/stop, quick start, repeat last). **Timer** and **Time entries** are first-class in the sidebar for fast access. **Time entries** is the place to filter, review, and export all logged time. **Reports** (time, project, finance) are available from the sidebar (top-level **Reports** link or **Finance & Expenses → Reports** for Report Builder, Saved Views, Scheduled Reports), and from the bottom bar on mobile. **Projects**, **Finance**, and **Settings** are available from the sidebar and navigation. For design and component conventions, see [UI Guidelines](docs/UI_GUIDELINES.md).
+The web app uses a **single main layout** with a sidebar and top header. Content is centered with a max width for readability. **Getting around:** **Dashboard** — overview, today’s stats, and the main **Timer** widget (start/stop, quick start, repeat last). **Timer** and **Time entries** are first-class in the sidebar for fast access. **Time entries** is the place to filter, review, and export all logged time. **Reports** (time, project, finance) are available from the sidebar (top-level **Reports** link or **Finance & Expenses → Reports** for Report Builder, Saved Views, Scheduled Reports). **Projects**, **Finance**, and **Settings** are available from the sidebar and navigation.
+
+On **narrow viewports** (below the `md` breakpoint), the sidebar is hidden in favor of a **fixed bottom navigation bar** (inline Heroicons): Dashboard, Timer, Time entries, Projects, and **More** (slide-up sheet for Invoices, Clients, Reports, and user Settings when those modules or routes apply). The hamburger control still opens the full sidebar overlay if you need every menu item. For design and component conventions, see [UI Guidelines](docs/UI_GUIDELINES.md).
 
 ---
 
@@ -139,7 +141,7 @@ See [CHANGELOG.md](CHANGELOG.md) for all release notes and version history.
 - **Audit Logs** — Track all system activity and user actions
 
 #### ⌨️ **Productivity Power-Ups**
-- **Command Palette** — Keyboard-driven navigation (press `?` to open)
+- **Command Palette** — Keyboard-driven navigation (Ctrl+K / Cmd+K)
 - **Keyboard Shortcuts** — 50+ shortcuts for lightning-fast navigation
 - **Quick Search** — Fast search across projects, tasks, clients, and more (Ctrl+K)
 - **Saved Filters** — Save frequently used report filters for instant access
@@ -270,10 +272,10 @@ TimeTracker includes **130+ features** across 13 major categories. See the [Comp
 - **Audit Logs** — Track all system activity and user actions
 
 ### ⌨️ **Productivity Features**
-- **Command Palette** — Keyboard-driven navigation with shortcuts (press `?`) ([Guide](docs/COMMAND_PALETTE_USAGE.md))
+- **Command Palette** — Keyboard-driven navigation with shortcuts (Ctrl+K / Cmd+K) ([Guide](docs/COMMAND_PALETTE_USAGE.md))
 - **Keyboard Shortcuts** — 50+ shortcuts for lightning-fast navigation and actions
 - **Quick Search** — Enhanced instant search with autocomplete and categorized results (Ctrl+K)
-- **Quick Actions Menu** — Floating action button with 6 quick actions (bottom-right)
+- **Floating quick hub** — Bottom-right dock: unified Actions menu (timer, log time, new task/project/client, reports), optional team chat toggle with a fixed viewport panel, and AI Helper; see [UI guidelines](docs/UI_GUIDELINES.md#floating-hub-authenticated-layout)
 - **Enhanced Data Tables** — Sortable, filterable, inline-editable tables with bulk operations
 - **Email Notifications** — Configurable email alerts for tasks, invoices, and more
 - **Toast Notifications** — Beautiful in-app notifications; **post-timer toast** shows "Logged Xh on Project" with link to time entries
@@ -702,6 +704,37 @@ docker-compose -f docker/docker-compose.remote.yml up -d
 
 > **⚠️ Security Note:** Always set a unique `SECRET_KEY` in production! See [CSRF Configuration](docs/admin/security/CSRF_CONFIGURATION.md) for details.
 
+## AI Helper (Ollama or hosted)
+
+TimeTracker includes an optional **server-side AI helper** for the web app and API clients.
+
+- **Enable**: set `AI_ENABLED=true`
+- **Ollama (default)**: set `AI_PROVIDER=ollama`, `AI_MODEL=...`, and `AI_BASE_URL` to `http://ollama:11434` when using the bundled stack in `docker-compose.yml`, or `http://127.0.0.1:11434` when Ollama runs on the host outside Docker.
+- **Hosted OpenAI-compatible**: set `AI_PROVIDER=openai_compatible` and `AI_API_KEY=...`
+
+The AI helper is exposed as:
+
+- Session web UI JSON: `POST /api/ai/chat` (same-origin, login required)
+- REST API v1: `POST /api/v1/ai/chat` (API token required, scopes `read:ai`/`write:ai`)
+
+### Bundled Ollama service (Docker Compose)
+
+`docker-compose.yml` ships a CPU-only `ollama` service plus a one-shot `ollama-init` sidecar that pulls the model defined by `AI_MODEL` (default `llama3.1`, ~4.7 GB) on first boot. The `app` service waits for the pull to finish before starting.
+
+- The app reaches it at `http://ollama:11434` over the Docker network — no host ports need to be opened.
+- Change the model by setting `AI_MODEL` in `.env` (e.g. `AI_MODEL=qwen2.5:3b` for lighter hardware) and re-running `docker compose up -d`; the init sidecar will pull the new model.
+- Pulled models are cached in the `ollama_data` named volume, so subsequent boots are instant.
+- Verify in the UI: **Admin → System Settings → AI helper**, then click *Test connection*.
+- To pull additional models manually: `docker compose exec ollama ollama pull <model>`.
+- To use a hosted provider instead, set `AI_PROVIDER=openai_compatible`, `AI_BASE_URL=https://api.your-provider.example/`, `AI_API_KEY=…` in `.env`; the in-cluster Ollama can stay running or be removed.
+
+### Encrypting stored secrets (recommended)
+
+To store sensitive settings (OAuth secrets, mail password, AI API key, Peppol token, 2FA secret) encrypted at rest, set:
+
+- `SETTINGS_ENCRYPTION_KEY` (Fernet key), or
+- `SETTINGS_ENCRYPTION_KEY_FILE` (file path with the key on the first line)
+
 ### Raspberry Pi Deployment
 TimeTracker runs perfectly on Raspberry Pi 4 (2GB+ RAM):
 ```bash
@@ -909,7 +942,7 @@ This starts:
 - ✅ **Audit Logs** — Complete system activity and user action tracking
 
 #### ⌨️ Productivity Features
-- ✅ **Command Palette** — Keyboard-driven navigation (press `?` to open)
+- ✅ **Command Palette** — Keyboard-driven navigation (Ctrl+K / Cmd+K)
 - ✅ **Keyboard Shortcuts** — 50+ shortcuts for power users
 - ✅ **Quick Search** — Fast search across all entities (Ctrl+K)
 - ✅ **Saved Filters** — Save frequently used report filters for quick access

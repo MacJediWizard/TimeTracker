@@ -296,6 +296,41 @@ Returns productivity aggregates for the **current user** only (completed time en
 - **`last_7_days`:** seven objects in chronological order for the last seven **local** calendar days (app timezone), including days with **0** hours.
 - **`estimated_value_tracked`:** `null` when the estimated billable total is zero or no rate applies; otherwise `hours ×` resolved rate using **`COALESCE(project.hourly_rate, entry client default, project client default)`** (see server implementation in `StatsService`). **`estimated_value_currency`** comes from **Settings → currency** with application default fallback.
 
+#### This week vs last week (hours by day)
+
+```
+GET /api/reports/week-comparison
+```
+
+Returns a **partial calendar week** (Monday 00:00 local time through **now**) compared with the **same weekdays** in the previous week, for the **current user** only. Completed entries only (`end_time` is set). The week definition matches the main dashboard “Week’s hours” aggregate (`AnalyticsService.get_dashboard_stats`).
+
+**Response (200):**
+
+```json
+{
+  "current_week": {
+    "total_hours": 18.5,
+    "by_day": [
+      { "day": "2026-04-20", "hours": 6.0 },
+      { "day": "2026-04-21", "hours": 4.25 }
+    ]
+  },
+  "last_week": {
+    "total_hours": 22.0,
+    "by_day": [
+      { "day": "2026-04-13", "hours": 5.0 },
+      { "day": "2026-04-14", "hours": 7.5 }
+    ]
+  },
+  "change_percent": -15.9
+}
+```
+
+- **`by_day`:** dense list from week Monday through the comparison end date (this week through today; last week through the parallel weekday). Each **`day`** is an ISO date `YYYY-MM-DD`; **`hours`** is a float (including `0.0` for days with no entries).
+- **`change_percent`:** percent change of **`current_week.total_hours`** vs **`last_week.total_hours`**, rounded to one decimal. **`null`** when last week’s total is zero (avoid division by zero).
+
+The main dashboard renders this as a grouped bar chart (Chart.js) with a short summary line; data is loaded by `app/static/dashboard-enhancements.js` on dashboard refresh.
+
 ### Search
 
 #### Global Search
@@ -584,6 +619,13 @@ POST /api/v1/timer/start
   "task_id": 5
 }
 ```
+
+**Responses:**
+- **`201 Created`** — Timer started; JSON includes `message` and `timer` (time entry fields).
+- **`409 Conflict`** — **Allow only one active timer per user** is enabled in **System Settings** (`single_active_timer`) and the user already has a running timer. Response uses the standard error shape with `error_code` set to `timer_already_running`.
+- **`400 Bad Request`** — Validation or other errors (e.g. invalid project, inactive project).
+
+Enforcement uses the persisted **Settings** row, not the `SINGLE_ACTIVE_TIMER` env var alone (the env var seeds the setting on first install).
 
 #### Stop Timer
 ```

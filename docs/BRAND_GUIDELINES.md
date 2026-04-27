@@ -68,81 +68,80 @@ The primary TimeTracker logo features a rounded square with a gradient backgroun
 
 ### Primary Colors
 
-**Primary Blue**
-- Hex: `#4A90E2`
-- RGB: `74, 144, 226`
-- Usage: Primary actions, links, highlights
-- WCAG AA compliant on white backgrounds
+**Primary Indigo (Brand)**
+- Hex: `#4F46E5`
+- RGB: `79, 70, 229`
+- Usage: Primary actions, links, focus rings, highlights
+- Notes: Designed to work with slate-based neutrals in light/dark mode
 
-**Secondary Cyan**
+**Secondary Cyan (Accent)**
 - Hex: `#50E3C2`
 - RGB: `80, 227, 194`
-- Usage: Secondary actions, accents, gradients
-- WCAG AA compliant on dark backgrounds
+- Usage: Secondary accents, gradients, non-critical highlights
 
-**Theme Blue**
+**Info Blue**
 - Hex: `#3b82f6`
 - RGB: `59, 130, 246`
-- Usage: PWA theme color, browser chrome
+- Usage: Informational states and highlights (not the primary brand color)
 
 ### Gradient
 
-The brand uses a gradient from Primary Blue to Secondary Cyan:
-- Start: `#4A90E2` (Primary Blue)
+The brand uses a gradient from Primary Indigo to Secondary Cyan:
+- Start: `#4F46E5` (Primary Indigo)
 - End: `#50E3C2` (Secondary Cyan)
 - Direction: Diagonal (135deg) or horizontal as needed
 
 ### Status Colors
 
 **Success (Green)**
-- Hex: `#4CAF50`
+- Hex: `#10b981`
 - Usage: Success messages, positive indicators
 
-**Warning (Orange)**
-- Hex: `#FF9800`
+**Warning (Amber)**
+- Hex: `#f59e0b`
 - Usage: Warnings, caution messages
 
-**Error (Red)**
-- Hex: `#E53935`
+**Error / Danger (Red)**
+- Hex: `#ef4444`
 - Usage: Error messages, destructive actions
 
 ### Background Colors
 
-**Light Mode:**
-- Background: `#F7F9FB`
-- Card: `#FFFFFF`
-- Secondary: `#f5f5f5`
+**Light Mode (Slate):**
+- Background: `#f8fafc`
+- Card: `#ffffff`
+- Border: `#e2e8f0`
 
-**Dark Mode:**
-- Background: `#1A202C`
-- Card: `#2D3748`
-- Secondary: `#4A5568`
+**Dark Mode (Slate):**
+- Background: `#0b1220`
+- Card: `#0f172a`
+- Border: `#334155`
 
 ### Text Colors
 
-**Light Mode:**
-- Primary Text: `#2D3748`
-- Secondary Text: `#A0AEC0`
-- Muted Text: `#718096`
+**Light Mode (Slate):**
+- Primary Text: `#0f172a`
+- Secondary Text: `#64748b`
+- Muted Text: `#94a3b8`
 
-**Dark Mode:**
-- Primary Text: `#E2E8F0`
-- Secondary Text: `#718096`
-- Muted Text: `#A0AEC0`
+**Dark Mode (Slate):**
+- Primary Text: `#e2e8f0`
+- Secondary Text: `#94a3b8`
+- Muted Text: `#64748b`
 
 ## Typography
 
 ### Font Families
 
-**Primary (System Fonts):**
+**Primary (Inter):**
 ```css
-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Ubuntu, 'Helvetica Neue', Arial, sans-serif;
 ```
 
 **Usage:**
 - Body text
 - UI elements
-- Default text throughout application
+- Headings and navigation
 
 ### Font Weights
 

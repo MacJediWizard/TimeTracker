@@ -6,7 +6,7 @@
     <title>{% block title %}{{ app_name }}{% endblock %}</title>
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <meta name="description" content="Professional time tracking and project management">
-    <meta name="theme-color" content="#4A90E2">
+    <meta name="theme-color" content="#4F46E5">
     
     <!-- Open Graph / Social Media -->
     <meta property="og:type" content="website">
@@ -42,12 +42,10 @@
     
     Telemetry instrumentation should avoid these elements by design.
     -->
-    <link rel="manifest" href="{{ url_for('main.manifest') }}">
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
     <meta name="vapid-public-key" content="{{ config.get('VAPID_PUBLIC_KEY', '') }}">
     <script src="{{ url_for('static', filename='pwa-enhancements.js') }}"></script>
-    <!-- Inter font (Bunny Fonts, GDPR-friendly) -->
-    <link rel="preconnect" href="https://fonts.bunny.net" crossorigin>
-    <link href="https://fonts.bunny.net/css?family=Inter:400,500,600,700&display=swap" rel="stylesheet">
+    <!-- Inter font is loaded via CSS @import in app/static/src/input.css -->
     <link rel="stylesheet" href="{{ url_for('static', filename='dist/output.css') }}?v={{ app_version }}-toastfix1">
     <!-- Font Awesome -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
@@ -67,7 +65,7 @@
         html[dir="rtl"] .text-right { text-align: left; }
         html[dir="rtl"] #sidebar { left: auto; right: 0; }
         html[dir="rtl"] #mainContent { margin-left: 0; margin-right: 16rem; }
-        @media (max-width: 1024px) {
+        @media (max-width: 767px) {
             html[dir="rtl"] #mainContent { margin-right: 0; }
         }
         
@@ -200,7 +198,8 @@
                 white-space: nowrap;
                 border-width: 0;
             }
-            .mobile-bottom-nav a.relative {
+            .mobile-bottom-nav a.relative,
+            .mobile-bottom-nav button.relative {
                 padding-top: 0.25rem;
                 padding-bottom: 0.25rem;
             }
@@ -235,6 +234,121 @@
         }
         .dark #sidebar::-webkit-scrollbar-thumb:hover {
             background-color: rgba(156, 163, 175, 0.5);
+        }
+        /* Bottom-right floating hub: one deterministic dock, one actions menu. */
+        #fabDock {
+            --fab-size: 3.5rem;
+            --fab-gap: 0.75rem;
+            --fab-edge: 1.25rem;
+            --fab-menu-gap: 0.75rem;
+            position: fixed;
+            right: var(--fab-edge);
+            bottom: var(--fab-edge);
+            z-index: 65;
+            display: flex;
+            flex-direction: column-reverse;
+            align-items: flex-end;
+            gap: var(--fab-gap);
+            pointer-events: none;
+            padding-bottom: env(safe-area-inset-bottom, 0px);
+        }
+        #fabDock.fab-dock--admin {
+            bottom: 8rem;
+        }
+        #fabDock > * {
+            pointer-events: auto;
+        }
+        #fabDock.fab-dock--menu-open > :not(#unifiedActionsRoot) {
+            opacity: 0.35;
+            pointer-events: none;
+            transition: opacity 120ms ease;
+        }
+        #unifiedActionsRoot,
+        #persistentChatWidget,
+        #aiHelperRoot {
+            margin: 0;
+            flex-shrink: 0;
+            align-self: flex-end;
+            width: var(--fab-size);
+            min-height: var(--fab-size);
+        }
+        html[dir="rtl"] #unifiedActionsRoot,
+        html[dir="rtl"] #persistentChatWidget,
+        html[dir="rtl"] #aiHelperRoot {
+            align-self: flex-start;
+        }
+        #unifiedActionsFab,
+        #chatWidgetToggle,
+        #aiHelperFab {
+            width: var(--fab-size);
+            height: var(--fab-size);
+        }
+        #unifiedActionsRoot {
+            position: relative;
+            z-index: 80;
+        }
+        #unifiedActionsRoot.is-open {
+            z-index: 100;
+        }
+        #unifiedActionsMenu {
+            position: absolute;
+            right: 0;
+            bottom: calc(100% + var(--fab-menu-gap));
+            min-width: 14rem;
+            z-index: 101;
+            transform-origin: bottom right;
+        }
+        html[dir="rtl"] #unifiedActionsMenu {
+            right: auto;
+            left: 0;
+            transform-origin: bottom left;
+        }
+        #persistentChatWidget {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+        }
+        #chatWidgetPanel {
+            position: fixed;
+            right: var(--fab-edge);
+            bottom: var(--fab-edge);
+            width: min(24rem, calc(100vw - (var(--fab-edge) * 2)));
+            height: min(600px, calc(100vh - var(--fab-edge) - 2rem));
+            z-index: 85;
+        }
+        body.fab-dock-admin #chatWidgetPanel {
+            bottom: 8rem;
+        }
+        html[dir="rtl"] #persistentChatWidget {
+            align-items: flex-start;
+        }
+        html[dir="rtl"] #chatWidgetPanel {
+            right: auto;
+            left: var(--fab-edge);
+        }
+        html[dir="rtl"] #fabDock {
+            right: auto;
+            left: var(--fab-edge);
+            align-items: flex-start;
+        }
+        @media (max-width: 767px) {
+            #fabDock {
+                --fab-edge: 1rem;
+                bottom: 5rem;
+            }
+            #fabDock.fab-dock--admin {
+                bottom: 11rem;
+            }
+            #unifiedActionsMenu {
+                min-width: min(14rem, calc(100vw - 2rem));
+            }
+            #chatWidgetPanel {
+                bottom: 5rem;
+            }
+            body.fab-dock-admin #chatWidgetPanel {
+                bottom: 11rem;
+            }
         }
     </style>
     <script>
@@ -355,7 +469,7 @@
     
     {% block extra_css %}{% endblock %}
 </head>
-<body class="font-sans antialiased bg-background-light dark:bg-background-dark text-text-light dark:text-text-dark">
+<body class="font-sans antialiased bg-background-light dark:bg-background-dark text-text-light dark:text-text-dark{% if is_admin_user %} fab-dock-admin{% endif %}">
     <script>
         // Sidebar collapsed ASAP
         (function(){ try { if (localStorage.getItem('sidebar-collapsed') === 'true') { document.documentElement.classList.add('sidebar-collapsed'); } } catch(_) {} })();
@@ -363,7 +477,7 @@
     <a href="#mainContentAnchor" class="sr-only focus:not-sr-only focus-ring absolute left-2 top-2 z-[1000] px-3 py-2 bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark rounded">{{ _('Skip to content') }}</a>
     <div id="appShell" class="flex min-h-screen">
         <!-- Sidebar -->
-        <aside id="sidebar" class="sidebar-scrollbar-hover w-64 bg-card-light dark:bg-card-dark text-text-light dark:text-text-dark p-4 flex-col hidden lg:flex transition-all duration-200 ease-in-out fixed top-0 left-0 h-screen overflow-y-auto z-10" aria-label="{{ _('Main navigation') }}">
+        <aside id="sidebar" class="sidebar-scrollbar-hover w-64 bg-card-light dark:bg-card-dark text-text-light dark:text-text-dark p-4 flex-col hidden md:flex transition-all duration-200 ease-in-out fixed top-0 left-0 h-screen overflow-y-auto z-10" aria-label="{{ _('Main navigation') }}">
             <div class="flex items-center mb-8">
                 <img src="{{ url_for('static', filename='images/timetracker-logo.svg') }}" alt="Logo" class="h-10 w-10 mr-2">
                 <h1 class="text-2xl font-bold text-primary sidebar-header-title"><a href="{{ url_for('main.dashboard') }}" class="no-underline">TimeTracker</a></h1>
@@ -386,6 +500,22 @@
                 {% set pdf_open = ep == 'admin.pdf_layout' or ep == 'admin.quote_pdf_layout' %}
                 <div class="flex items-center justify-between mb-3">
                     <span class="text-xs font-medium text-text-muted-light dark:text-text-muted-dark uppercase tracking-wider sidebar-label">{{ _('Navigation') }}</span>
+                    <button
+                        type="button"
+                        class="p-1.5 rounded hover:bg-background-light dark:hover:bg-background-dark"
+                        onclick="window.openCommandPalette?.()"
+                        aria-label="{{ _('Open command palette') }}"
+                        title="{{ _('Open command palette') }}"
+                    >
+                        <span class="inline-flex items-center gap-1.5 text-xs text-text-muted-light dark:text-text-muted-dark">
+                            <i class="fas fa-terminal"></i>
+                            <span class="hidden sidebar-label sm:inline">{{ _('Commands') }}</span>
+                            <span class="inline-flex items-center gap-1">
+                                <kbd class="px-1.5 py-0.5 bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded text-[11px]">Ctrl</kbd>
+                                <kbd class="px-1.5 py-0.5 bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded text-[11px]">K</kbd>
+                            </span>
+                        </span>
+                    </button>
                     <button id="sidebarCollapseBtn" class="p-1.5 rounded hover:bg-background-light dark:hover:bg-background-dark" aria-label="{{ _('Toggle sidebar') }}" title="{{ _('Toggle sidebar') }}">
                         <i id="sidebarCollapseIcon" class="fas fa-angles-left"></i>
                     </button>
@@ -1074,11 +1204,11 @@
         </aside>
 
         <!-- Main content: pb for mobile bottom nav + safe-area -->
-        <div id="mainContent" class="flex-1 flex flex-col min-h-screen min-w-0 transition-all duration-200 ease-in-out lg:ml-64 lg:pb-0 pb-[calc(5rem+env(safe-area-inset-bottom,0px))]">
+        <div id="mainContent" class="flex-1 flex flex-col min-h-screen min-w-0 transition-all duration-200 ease-in-out md:ml-64 md:pb-0 pb-16">
             <!-- Header -->
             <header class="bg-card-light dark:bg-card-dark p-3 sm:p-4 border-b border-border-light dark:border-border-dark flex items-center gap-2 min-w-0 shadow-sm">
                 <!-- Mobile menu button -->
-                <button id="mobileSidebarBtn" class="lg:hidden shrink-0 flex items-center justify-center w-10 h-10 rounded-lg text-text-light dark:text-text-dark hover:bg-background-light dark:hover:bg-background-dark" aria-label="{{ _('Open sidebar') }}" type="button">
+                <button id="mobileSidebarBtn" class="md:hidden shrink-0 flex items-center justify-center w-10 h-10 rounded-lg text-text-light dark:text-text-dark hover:bg-background-light dark:hover:bg-background-dark" aria-label="{{ _('Open sidebar') }}" type="button">
                     <i class="fas fa-bars text-lg"></i>
                 </button>
 
@@ -1125,6 +1255,11 @@
                         <a href="{{ url_for('main.help') }}" class="flex items-center justify-center w-9 h-9 rounded-lg text-text-light dark:text-text-dark hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/50" aria-label="{{ _('Help') }}" title="{{ _('Help') }}">
                             <i class="fas fa-life-ring"></i>
                         </a>
+                        {% if current_user.is_authenticated %}
+                        <button type="button" data-ai-helper-open class="flex items-center justify-center w-9 h-9 rounded-lg text-text-light dark:text-text-dark hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/50" aria-label="{{ _('AI Helper') }}" title="{{ _('AI Helper') }}">
+                            <i class="fas fa-wand-magic-sparkles"></i>
+                        </button>
+                        {% endif %}
                         {% if current_user.is_authenticated %}
                         <button type="button" id="headerSupportBtn" class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium text-amber-800 dark:text-amber-200 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 dark:border-amber-500/40 focus:outline-none focus:ring-2 focus:ring-amber-500/40" title="{{ _('Support TimeTracker') }}">
                             <i class="fas fa-heart text-amber-600 dark:text-amber-300" aria-hidden="true"></i>
@@ -1202,10 +1337,9 @@
             <!-- Offline Indicator -->
             {% include 'components/offline_indicator.html' %}
 
-            <!-- Chat User Selector -->
+            <!-- Chat User Selector (widget shell lives in #fabDock below) -->
             {% if is_module_enabled('team_chat') %}
             {% include 'components/chat_user_selector.html' %}
-            {% include 'components/persistent_chat_widget.html' %}
             {% endif %}
 
             <!-- Flash Messages (hidden, converted to toasts by toast-notifications.js) -->
@@ -1279,34 +1413,6 @@
         <meta name="idle-timeout-minutes" content="{{ settings.idle_timeout_minutes if settings else 30 }}">
         {% endif %}
 
-        <!-- Mobile Bottom Navigation -->
-        {% set _nav_ep = request.endpoint or '' %}
-        <nav class="mobile-bottom-nav lg:hidden fixed bottom-0 inset-x-0 z-40 bg-card-light dark:bg-card-dark border-t border-border-light dark:border-border-dark flex justify-around items-stretch min-h-[52px] pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_10px_rgba(0,0,0,0.06)] dark:shadow-[0_-2px_10px_rgba(0,0,0,0.2)]" role="navigation" aria-label="{{ _('Main') }}">
-            <a href="{{ url_for('main.dashboard') }}" class="relative flex flex-col items-center justify-center min-h-[44px] flex-1 min-w-0 py-1.5 rounded-t-lg transition-colors {% if _nav_ep == 'main.dashboard' %}text-primary bg-primary/10 dark:bg-primary/20 font-medium{% else %}text-text-light dark:text-text-dark hover:bg-background-light dark:hover:bg-background-dark{% endif %}" aria-label="{{ _('Dashboard') }}" aria-current="{% if _nav_ep == 'main.dashboard' %}page{% endif %}">
-                <i class="fas fa-tachometer-alt text-lg shrink-0" aria-hidden="true"></i>
-                <span class="bottom-nav-text text-xs mt-0.5 leading-tight text-center truncate w-full px-0.5">{{ _('Dashboard') }}</span>
-            </a>
-            <a href="{{ url_for('projects.list_projects') }}" class="relative flex flex-col items-center justify-center min-h-[44px] flex-1 min-w-0 py-1.5 rounded-t-lg transition-colors {% if _nav_ep and _nav_ep.startswith('projects.') %}text-primary bg-primary/10 dark:bg-primary/20 font-medium{% else %}text-text-light dark:text-text-dark hover:bg-background-light dark:hover:bg-background-dark{% endif %}" aria-label="{{ _('Projects') }}" aria-current="{% if _nav_ep and _nav_ep.startswith('projects.') %}page{% endif %}">
-                <i class="fas fa-briefcase text-lg shrink-0" aria-hidden="true"></i>
-                <span class="bottom-nav-text text-xs mt-0.5 leading-tight text-center truncate w-full px-0.5">{{ _('Projects') }}</span>
-            </a>
-            <a href="{{ url_for('timer.time_entries_overview') }}" class="relative flex flex-col items-center justify-center min-h-[44px] flex-1 min-w-0 py-1.5 rounded-t-lg transition-colors {% if _nav_ep == 'timer.time_entries_overview' %}text-primary bg-primary/10 dark:bg-primary/20 font-medium{% else %}text-text-light dark:text-text-dark hover:bg-background-light dark:hover:bg-background-dark{% endif %}" aria-label="{{ _('Time entries') }}" aria-current="{% if _nav_ep == 'timer.time_entries_overview' %}page{% endif %}">
-                <i class="fas fa-list-alt text-lg shrink-0" aria-hidden="true"></i>
-                <span class="bottom-nav-text text-xs mt-0.5 leading-tight text-center truncate w-full px-0.5">{{ _('Time entries') }}</span>
-            </a>
-            <a href="{{ url_for('timer.manual_entry') }}" class="flex items-center justify-center flex-shrink-0 w-14 h-14 -mt-5 rounded-full bg-primary text-white hover:bg-primary-dark shadow-lg active:scale-95 transition-all border-4 border-card-light dark:border-card-dark" aria-label="{{ _('New time entry') }}">
-                <i class="fas fa-plus text-xl" aria-hidden="true"></i>
-            </a>
-            <a href="{{ url_for('reports.reports') }}" class="relative flex flex-col items-center justify-center min-h-[44px] flex-1 min-w-0 py-1.5 rounded-t-lg transition-colors {% if _nav_ep and _nav_ep.startswith('reports.') %}text-primary bg-primary/10 dark:bg-primary/20 font-medium{% else %}text-text-light dark:text-text-dark hover:bg-background-light dark:hover:bg-background-dark{% endif %}" aria-label="{{ _('Reports') }}" aria-current="{% if _nav_ep and _nav_ep.startswith('reports.') %}page{% endif %}">
-                <i class="fas fa-chart-line text-lg shrink-0" aria-hidden="true"></i>
-                <span class="bottom-nav-text text-xs mt-0.5 leading-tight text-center truncate w-full px-0.5">{{ _('Reports') }}</span>
-            </a>
-            <a href="{{ url_for('auth.profile') }}" class="relative flex flex-col items-center justify-center min-h-[44px] flex-1 min-w-0 py-1.5 rounded-t-lg transition-colors {% if _nav_ep and _nav_ep.startswith('auth.profile') %}text-primary bg-primary/10 dark:bg-primary/20 font-medium{% else %}text-text-light dark:text-text-dark hover:bg-background-light dark:hover:bg-background-dark{% endif %}" aria-label="{{ _('Profile') }}" aria-current="{% if _nav_ep and _nav_ep.startswith('auth.profile') %}page{% endif %}">
-                <i class="fas fa-user-circle text-lg shrink-0" aria-hidden="true"></i>
-                <span class="bottom-nav-text text-xs mt-0.5 leading-tight text-center truncate w-full px-0.5">{{ _('Profile') }}</span>
-            </a>
-        </nav>
-
         {% if is_admin_user %}
         <div id="adminVersionUpdateRoot" class="hidden fixed bottom-20 right-4 z-[60] max-w-sm w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-border-light dark:border-border-dark bg-card-light dark:bg-card-dark shadow-xl" role="region" aria-label="{{ _('Software update') }}">
             <div class="p-4 sm:p-5">
@@ -1334,6 +1440,87 @@
         {% include 'components/support_modal.html' %}
         {% endif %}
 
+        {% if current_user.is_authenticated %}
+        {# Floating hub: Actions, Chat, AI. Admin: whole dock lifted to clear #adminVersionUpdateRoot. #}
+        <div id="fabDock"
+             class="{% if is_admin_user %}fab-dock--admin{% endif %}"
+             aria-label="{{ _('Quick actions dock') }}"
+             data-dashboard-url="{{ url_for('main.dashboard') }}"
+             data-manual-entry-url="{{ url_for('timer.manual_entry') }}"
+             data-new-task-url="{{ url_for('tasks.create_task') }}"
+             data-new-project-url="/projects/create"
+             data-new-client-url="/clients/create"
+             data-reports-url="/reports/">
+            <div id="unifiedActionsRoot" role="group" aria-label="{{ _('Actions') }}">
+                <div id="unifiedActionsMenu" class="hidden rounded-xl border border-border-light dark:border-border-dark bg-card-light dark:bg-card-dark shadow-2xl py-1 text-left" role="menu" aria-hidden="true">
+                    <button type="button" class="unified-actions__item flex w-full items-center gap-3 px-3 py-2.5 text-sm text-text-light dark:text-text-dark hover:bg-background-light dark:hover:bg-background-dark text-left" data-action="start" role="menuitem">
+                        <span class="w-5 text-center text-primary" aria-hidden="true"><i class="fas fa-play text-xs"></i></span>
+                        <span>{{ _('Start Timer') }}</span>
+                    </button>
+                    <button type="button" class="unified-actions__item flex w-full items-center gap-3 px-3 py-2.5 text-sm text-text-light dark:text-text-dark hover:bg-background-light dark:hover:bg-background-dark text-left" data-action="log" role="menuitem">
+                        <span class="w-5 text-center" aria-hidden="true"><i class="fas fa-clock text-xs"></i></span>
+                        <span>{{ _('Log Time') }}</span>
+                    </button>
+                    <button type="button" class="unified-actions__item flex w-full items-center gap-3 px-3 py-2.5 text-sm text-text-light dark:text-text-dark hover:bg-background-light dark:hover:bg-background-dark text-left" data-action="task" role="menuitem">
+                        <span class="w-5 text-center" aria-hidden="true"><i class="fas fa-tasks text-xs"></i></span>
+                        <span>{{ _('New Task') }}</span>
+                    </button>
+                    <div class="my-1 border-t border-border-light dark:border-border-dark"></div>
+                    <button type="button" class="unified-actions__item flex w-full items-center gap-3 px-3 py-2.5 text-sm text-text-light dark:text-text-dark hover:bg-background-light dark:hover:bg-background-dark text-left" data-action="project" role="menuitem">
+                        <span class="w-5 text-center" aria-hidden="true"><i class="fas fa-folder-plus text-xs"></i></span>
+                        <span>{{ _('New Project') }}</span>
+                    </button>
+                    <button type="button" class="unified-actions__item flex w-full items-center gap-3 px-3 py-2.5 text-sm text-text-light dark:text-text-dark hover:bg-background-light dark:hover:bg-background-dark text-left" data-action="client" role="menuitem">
+                        <span class="w-5 text-center" aria-hidden="true"><i class="fas fa-user-plus text-xs"></i></span>
+                        <span>{{ _('New Client') }}</span>
+                    </button>
+                    <button type="button" class="unified-actions__item flex w-full items-center gap-3 px-3 py-2.5 text-sm text-text-light dark:text-text-dark hover:bg-background-light dark:hover:bg-background-dark text-left" data-action="reports" role="menuitem">
+                        <span class="w-5 text-center" aria-hidden="true"><i class="fas fa-chart-line text-xs"></i></span>
+                        <span>{{ _('Reports') }}</span>
+                    </button>
+                </div>
+                <button type="button" id="unifiedActionsFab" class="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-lg hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-primary/50" aria-expanded="false" aria-haspopup="true" aria-controls="unifiedActionsMenu" title="{{ _('Actions') }}">
+                    <i class="fas fa-bolt text-xl" aria-hidden="true"></i>
+                    <span class="sr-only">{{ _('Actions') }}</span>
+                </button>
+            </div>
+            {% if is_module_enabled('team_chat') %}
+            {% include 'components/persistent_chat_widget.html' %}
+            {% endif %}
+            <div id="aiHelperRoot" class="shrink-0 relative z-[70]">
+                <button type="button" id="aiHelperFab" data-ai-helper-open class="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-lg hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-primary/50" aria-label="{{ _('Open AI Helper') }}" title="{{ _('AI Helper') }}">
+                    <i class="fas fa-wand-magic-sparkles text-xl" aria-hidden="true"></i>
+                    <span class="sr-only">{{ _('AI Helper') }}</span>
+                </button>
+            </div>
+        </div>
+        <div id="aiHelperBackdrop" class="hidden fixed inset-0 z-[80] bg-black/30" data-ai-helper-close></div>
+        <section id="aiHelperDrawer" class="hidden fixed inset-y-0 right-0 z-[90] w-full max-w-xl bg-card-light dark:bg-card-dark border-l border-border-light dark:border-border-dark shadow-2xl flex flex-col" aria-label="{{ _('AI Helper') }}" role="dialog" aria-modal="true">
+            <header class="p-4 border-b border-border-light dark:border-border-dark flex items-start justify-between gap-4">
+                <div>
+                    <h2 class="text-lg font-semibold text-text-light dark:text-text-dark">{{ _('AI Helper') }}</h2>
+                    <p id="aiHelperProvider" class="text-xs text-text-muted-light dark:text-text-muted-dark">{{ _('Ask about your tracked work, summaries, gaps, and next actions.') }}</p>
+                </div>
+                <button type="button" data-ai-helper-close class="p-2 rounded-lg hover:bg-background-light dark:hover:bg-background-dark" aria-label="{{ _('Close') }}">&times;</button>
+            </header>
+            <div class="p-4 border-b border-border-light dark:border-border-dark">
+                <details class="text-sm">
+                    <summary class="cursor-pointer font-medium text-text-light dark:text-text-dark">{{ _('Context included') }}</summary>
+                    <pre id="aiHelperContext" class="mt-2 max-h-44 overflow-auto whitespace-pre-wrap rounded-lg bg-background-light dark:bg-background-dark p-3 text-xs text-text-muted-light dark:text-text-muted-dark">{{ _('Loading context preview...') }}</pre>
+                </details>
+            </div>
+            <div id="aiHelperMessages" class="flex-1 overflow-y-auto p-4 space-y-3"></div>
+            <div id="aiHelperActions" class="hidden border-t border-border-light dark:border-border-dark p-4 space-y-2"></div>
+            <form id="aiHelperForm" class="border-t border-border-light dark:border-border-dark p-4 space-y-3">
+                <textarea id="aiHelperPrompt" rows="3" class="form-input w-full" placeholder="{{ _('Ask: What did I work on this week? Draft a time entry from these notes...') }}"></textarea>
+                <div class="flex items-center justify-between gap-3">
+                    <p id="aiHelperStatus" class="text-xs text-text-muted-light dark:text-text-muted-dark"></p>
+                    <button type="submit" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark">{{ _('Send') }}</button>
+                </div>
+            </form>
+        </section>
+        {% endif %}
+
     </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/js/all.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
@@ -1352,15 +1539,17 @@
     <script src="{{ url_for('static', filename='mentions.js') }}"></script>
     <!-- Floating timer bar -->
     {% if current_user.is_authenticated %}
+    <script src="{{ url_for('static', filename='floating-actions.js') }}?v={{ app_version }}"></script>
     <script src="{{ url_for('static', filename='floating-timer-bar.js') }}"></script>
     <script src="{{ url_for('static', filename='idle.js') }}"></script>
+    <script src="{{ url_for('static', filename='ai-helper.js') }}?v={{ app_version }}-ai1"></script>
     {% endif %}
     {% if is_admin_user %}
     <script src="{{ url_for('static', filename='admin-version-update.js') }}?v={{ app_version }}"></script>
     {% endif %}
-    <!-- Old command palette and keyboard navigation (restored) -->
-    <script src="{{ url_for('static', filename='commands.js') }}?v=2.0"></script>
-    <script>window.__BASE_INIT__={timerStatus:"{{ url_for('timer.timer_status') }}",stopTimer:"{{ url_for('timer.stop_timer') }}",dashboard:"{{ url_for('main.dashboard') }}",manualEntry:"{{ url_for('timer.manual_entry') }}"};</script>
+    <!-- Global Command Palette -->
+    <script type="module" src="{{ url_for('static', filename='js/command-palette.js') }}?v={{ app_version }}"></script>
+    <script>window.__BASE_INIT__={timerStatus:"{{ url_for('timer.timer_status') }}",stopTimer:"{{ url_for('timer.stop_timer') }}",dashboard:"{{ url_for('main.dashboard') }}",manualEntry:"{{ url_for('timer.manual_entry') }}",newTask:"{{ url_for('tasks.create_task') }}"};</script>
     <script src="{{ url_for('static', filename='base-init.js') }}"></script>
     <script src="{{ url_for('static', filename='mobile.js') }}"></script>
     <script>
@@ -1382,8 +1571,8 @@
                     sidebar.classList.add('w-16');
                     sidebar.classList.remove('w-64');
                     // Adjust main content margin for collapsed sidebar
-                    main.classList.remove('lg:ml-64');
-                    main.classList.add('lg:ml-16');
+                    main.classList.remove('md:ml-64');
+                    main.classList.add('md:ml-16');
                     icon && icon.classList.remove('fa-angles-left');
                     icon && icon.classList.add('fa-angles-right');
                 } else {
@@ -1392,8 +1581,8 @@
                     sidebar.classList.remove('w-16');
                     sidebar.classList.add('w-64');
                     // Adjust main content margin for expanded sidebar
-                    main.classList.remove('lg:ml-16');
-                    main.classList.add('lg:ml-64');
+                    main.classList.remove('md:ml-16');
+                    main.classList.add('md:ml-64');
                     icon && icon.classList.remove('fa-angles-right');
                     icon && icon.classList.add('fa-angles-left');
                 }
@@ -1419,7 +1608,7 @@
                 if (!backdrop) {
                     backdrop = document.createElement('div');
                     backdrop.id = 'sidebarBackdrop';
-                    backdrop.className = 'fixed inset-0 bg-black/50 z-40 lg:hidden';
+                    backdrop.className = 'fixed inset-0 bg-black/50 z-40 md:hidden';
                     backdrop.style.display = 'none';
                     document.body.appendChild(backdrop);
                     
@@ -1430,7 +1619,7 @@
             }
             
             function openMobileSidebar() {
-                const isSmallScreen = window.innerWidth < 1024; // lg breakpoint
+                const isSmallScreen = window.innerWidth < 768; // md breakpoint
                 if (!isSmallScreen) return;
                 
                 sidebar.classList.remove('hidden');
@@ -1450,7 +1639,7 @@
             }
             
             function isSmallScreen() {
-                return window.innerWidth < 1024; // lg breakpoint
+                return window.innerWidth < 768; // md breakpoint
             }
             
             // Mobile toggle button
@@ -1752,50 +1941,11 @@
             });
         })();
     </script>
-    <!-- Command Palette Modal (restored, Tailwind-styled, no Bootstrap required) -->
     <!-- Keyboard Shortcuts Help Modal -->
     {% include 'components/keyboard_shortcuts_help.html' %}
 
-    <div id="commandPaletteModal" class="fixed inset-0 z-50 hidden">
-        <div class="absolute inset-0 bg-black/50" onclick="document.getElementById('commandPaletteModal').classList.add('hidden')"></div>
-        <div class="relative max-w-2xl mx-auto mt-24 bg-card-light dark:bg-card-dark text-text-light dark:text-text-dark rounded-lg shadow-xl">
-            <div class="p-3 sm:p-4 border-b border-border-light dark:border-border-dark flex items-center justify-between">
-                <div id="commandPaletteHelp" class="text-xs text-text-muted-light dark:text-text-muted-dark">
-                    Press <kbd class="px-1 py-0.5 bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded text-xs">Esc</kbd> to close, <kbd class="px-1 py-0.5 bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded text-xs">Shift+?</kbd> for all shortcuts
-                </div>
-                <button id="commandPaletteClose" class="px-2 py-1 text-sm hover:bg-background-light dark:hover:bg-background-dark rounded">Close</button>
-            </div>
-            <div class="p-3 sm:p-4">
-                <div class="flex items-center gap-2 mb-3">
-                    <i class="fas fa-terminal text-text-muted-light dark:text-text-muted-dark"></i>
-                    <input id="commandPaletteInput" type="text" class="w-full bg-background-light dark:bg-gray-700 border border-border-light dark:border-border-dark rounded-lg py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary" placeholder="{{ _('Type a command or search...') }}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
-                </div>
-                <div id="commandPaletteList" class="flex flex-col max-h-96 overflow-y-auto divide-y divide-border-light dark:divide-border-dark"></div>
-            </div>
-        </div>
-    </div>
-    <script>
-        // Command Palette close handlers
-        (function() {
-            const modal = document.getElementById('commandPaletteModal');
-            const closeBtn = document.getElementById('commandPaletteClose');
-            const input = document.getElementById('commandPaletteInput');
-            
-            if (closeBtn) {
-                closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
-            }
-            
-            // Close on Escape key
-            if (input) {
-                input.addEventListener('keydown', (e) => {
-                    if (e.key === 'Escape') {
-                        e.preventDefault();
-                        modal.classList.add('hidden');
-                    }
-                });
-            }
-        })();
-    </script>
+    <!-- Global Command Palette Modal -->
+    {% include 'partials/_command_palette.html' %}
     <script>
         var themeToggleDarkIcon = document.getElementById('theme-toggle-dark-icon');
         var themeToggleLightIcon = document.getElementById('theme-toggle-light-icon');
@@ -2088,7 +2238,6 @@
     {% endif %}
     <!-- Advanced Features -->
     <script src="{{ url_for('static', filename='keyboard-shortcuts-advanced.js') }}?v=2.2"></script>
-    <script src="{{ url_for('static', filename='quick-actions.js') }}"></script>
     <script src="{{ url_for('static', filename='smart-notifications.js') }}"></script>
     <script src="{{ url_for('static', filename='dashboard-widgets.js') }}"></script>
     <script src="{{ url_for('static', filename='dashboard-enhancements.js') }}"></script>
@@ -2387,6 +2536,12 @@ function trackBannerImpression(source) {
     </script>
     
     {% block scripts_extra %}{% endblock %}
+    {% include 'partials/_bottom_nav.html' %}
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('{{ url_for("main.service_worker") }}', { updateViaCache: 'none' }).catch(function () {});
+        }
+    </script>
 </body>
 </html>
 

@@ -1,6 +1,6 @@
 {# Persistent Chat Widget - Always Available #}
 {% if is_module_enabled('team_chat') %}
-<div id="persistentChatWidget" class="fixed bottom-20 right-4 z-[60]">
+<div id="persistentChatWidget" class="relative z-[60] flex shrink-0 flex-col items-end">
     <!-- Minimized State - Chat Button -->
     <button 
         id="chatWidgetToggle"
@@ -13,7 +13,7 @@
     </button>
 
     <!-- Expanded State - Chat Panel -->
-    <div id="chatWidgetPanel" class="hidden w-96 h-[600px] bg-card-light dark:bg-card-dark rounded-lg shadow-2xl border border-border-light dark:border-border-dark flex flex-col">
+    <div id="chatWidgetPanel" class="hidden bg-card-light dark:bg-card-dark rounded-lg shadow-2xl border border-border-light dark:border-border-dark flex flex-col">
         <!-- Header -->
         <div class="p-4 border-b border-border-light dark:border-border-dark flex items-center justify-between bg-gradient-to-r from-primary/10 to-primary/5">
             <div class="flex items-center gap-2">

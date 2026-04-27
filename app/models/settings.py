@@ -5,6 +5,7 @@ from datetime import datetime
 from app import db
 from app.config import Config
 from app.utils.invoice_numbering import DEFAULT_INVOICE_PATTERN
+from app.utils.secret_crypto import decrypt_if_needed, encrypt_if_possible, is_configured as secrets_encryption_configured
 
 # Re-entrancy guard: avoid add+commit when get_settings is called from inside a flush/commit
 _creating_settings = threading.local()
@@ -124,6 +125,16 @@ class Settings(db.Model):
     time_entry_require_task = db.Column(db.Boolean, default=False, nullable=False)
     time_entry_require_description = db.Column(db.Boolean, default=False, nullable=False)
     time_entry_description_min_length = db.Column(db.Integer, default=20, nullable=False)
+
+    # AI helper provider configuration. API keys stay server-side and are never serialized.
+    ai_enabled = db.Column(db.Boolean, default=None, nullable=True)
+    ai_provider = db.Column(db.String(50), default="", nullable=True)
+    ai_base_url = db.Column(db.String(500), default="", nullable=True)
+    ai_model = db.Column(db.String(120), default="", nullable=True)
+    ai_api_key = db.Column(db.String(500), default="", nullable=True)
+    ai_timeout_seconds = db.Column(db.Integer, default=None, nullable=True)
+    ai_context_limit = db.Column(db.Integer, default=None, nullable=True)
+    ai_system_prompt = db.Column(db.Text, default="", nullable=True)
 
     # Overtime / time tracking: default daily working hours for new users (e.g. 8.0)
     default_daily_working_hours = db.Column(db.Float, default=8.0, nullable=False)
@@ -265,6 +276,16 @@ class Settings(db.Model):
         self.mail_default_sender = kwargs.get("mail_default_sender", "")
         self.mail_test_recipient = kwargs.get("mail_test_recipient", "")
 
+        # AI helper defaults. None/empty values fall back to environment/app config.
+        self.ai_enabled = kwargs.get("ai_enabled", None)
+        self.ai_provider = kwargs.get("ai_provider", "")
+        self.ai_base_url = kwargs.get("ai_base_url", "")
+        self.ai_model = kwargs.get("ai_model", "")
+        self.ai_api_key = kwargs.get("ai_api_key", "")
+        self.ai_timeout_seconds = kwargs.get("ai_timeout_seconds", None)
+        self.ai_context_limit = kwargs.get("ai_context_limit", None)
+        self.ai_system_prompt = kwargs.get("ai_system_prompt", "")
+
         # Integration OAuth credentials defaults
         self.jira_client_id = kwargs.get("jira_client_id", "")
         self.jira_client_secret = kwargs.get("jira_client_secret", "")
@@ -333,12 +354,58 @@ class Settings(db.Model):
                 "MAIL_USE_TLS": self.mail_use_tls if self.mail_use_tls is not None else True,
                 "MAIL_USE_SSL": self.mail_use_ssl if self.mail_use_ssl is not None else False,
                 "MAIL_USERNAME": self.mail_username or None,
-                "MAIL_PASSWORD": self.mail_password or None,
+                "MAIL_PASSWORD": (decrypt_if_needed(self.mail_password) or None),
                 "MAIL_DEFAULT_SENDER": self.mail_default_sender or "noreply@timetracker.local",
             }
         return None
 
-    def get_integration_credentials(self, provider: str) -> dict:
+    def get_ai_config(self, *, include_secrets: bool = False) -> dict:
+        """Get AI helper configuration, preferring database settings over environment/app config.
+
+        By default, secrets are not returned (UI-safe). Use include_secrets=True for server runtime calls.
+        """
+        from flask import current_app
+
+        def cfg(name, default=None):
+            try:
+                return current_app.config.get(name, default)
+            except RuntimeError:
+                return getattr(Config, name, default)
+
+        provider = (getattr(self, "ai_provider", "") or cfg("AI_PROVIDER", "ollama") or "ollama").strip().lower()
+        base_url = (getattr(self, "ai_base_url", "") or cfg("AI_BASE_URL", "http://127.0.0.1:11434") or "").strip()
+        model = (getattr(self, "ai_model", "") or cfg("AI_MODEL", "llama3.1") or "").strip()
+        timeout = getattr(self, "ai_timeout_seconds", None) or cfg("AI_TIMEOUT_SECONDS", 30)
+        context_limit = getattr(self, "ai_context_limit", None) or cfg("AI_CONTEXT_LIMIT", 40)
+        system_prompt = (getattr(self, "ai_system_prompt", "") or cfg("AI_SYSTEM_PROMPT", "") or "").strip()
+        api_key_raw = (getattr(self, "ai_api_key", "") or cfg("AI_API_KEY", "") or "").strip()
+        api_key = decrypt_if_needed(api_key_raw) if api_key_raw else ""
+        enabled = getattr(self, "ai_enabled", None)
+        if enabled is None:
+            enabled = bool(cfg("AI_ENABLED", False))
+
+        try:
+            timeout = max(1, int(timeout))
+        except (TypeError, ValueError):
+            timeout = 30
+        try:
+            context_limit = max(5, int(context_limit))
+        except (TypeError, ValueError):
+            context_limit = 40
+
+        return {
+            "enabled": bool(enabled),
+            "provider": provider if provider in {"ollama", "openai_compatible"} else "ollama",
+            "base_url": base_url.rstrip("/"),
+            "model": model,
+            "api_key": api_key if include_secrets else "",
+            "api_key_set": bool(api_key_raw),
+            "timeout_seconds": timeout,
+            "context_limit": context_limit,
+            "system_prompt": system_prompt,
+        }
+
+    def get_integration_credentials(self, provider: str, *, include_secrets: bool = True) -> dict:
         """Get integration OAuth credentials, preferring database settings over environment variables.
 
         Args:
@@ -356,66 +423,77 @@ class Settings(db.Model):
 
         if provider == "jira":
             client_id = self.jira_client_id or os.getenv("JIRA_CLIENT_ID", "")
-            client_secret = self.jira_client_secret or os.getenv("JIRA_CLIENT_SECRET", "")
+            client_secret_raw = self.jira_client_secret or os.getenv("JIRA_CLIENT_SECRET", "")
+            client_secret = decrypt_if_needed(client_secret_raw) if include_secrets else ""
             return {"client_id": client_id, "client_secret": client_secret}
 
         elif provider == "slack":
             client_id = self.slack_client_id or os.getenv("SLACK_CLIENT_ID", "")
-            client_secret = self.slack_client_secret or os.getenv("SLACK_CLIENT_SECRET", "")
+            client_secret_raw = self.slack_client_secret or os.getenv("SLACK_CLIENT_SECRET", "")
+            client_secret = decrypt_if_needed(client_secret_raw) if include_secrets else ""
             return {"client_id": client_id, "client_secret": client_secret}
 
         elif provider == "github":
             client_id = self.github_client_id or os.getenv("GITHUB_CLIENT_ID", "")
-            client_secret = self.github_client_secret or os.getenv("GITHUB_CLIENT_SECRET", "")
+            client_secret_raw = self.github_client_secret or os.getenv("GITHUB_CLIENT_SECRET", "")
+            client_secret = decrypt_if_needed(client_secret_raw) if include_secrets else ""
             return {"client_id": client_id, "client_secret": client_secret}
 
         elif provider == "google_calendar":
             client_id = getattr(self, "google_calendar_client_id", "") or os.getenv("GOOGLE_CLIENT_ID", "")
-            client_secret = getattr(self, "google_calendar_client_secret", "") or os.getenv("GOOGLE_CLIENT_SECRET", "")
+            client_secret_raw = getattr(self, "google_calendar_client_secret", "") or os.getenv("GOOGLE_CLIENT_SECRET", "")
+            client_secret = decrypt_if_needed(client_secret_raw) if include_secrets else ""
             return {"client_id": client_id, "client_secret": client_secret}
 
         elif provider == "outlook_calendar":
             client_id = getattr(self, "outlook_calendar_client_id", "") or os.getenv("OUTLOOK_CLIENT_ID", "")
-            client_secret = getattr(self, "outlook_calendar_client_secret", "") or os.getenv(
+            client_secret_raw = getattr(self, "outlook_calendar_client_secret", "") or os.getenv(
                 "OUTLOOK_CLIENT_SECRET", ""
             )
             tenant_id = getattr(self, "outlook_calendar_tenant_id", "") or os.getenv("OUTLOOK_TENANT_ID", "")
+            client_secret = decrypt_if_needed(client_secret_raw) if include_secrets else ""
             return {"client_id": client_id, "client_secret": client_secret, "tenant_id": tenant_id}
 
         elif provider == "microsoft_teams":
             client_id = getattr(self, "microsoft_teams_client_id", "") or os.getenv("MICROSOFT_TEAMS_CLIENT_ID", "")
-            client_secret = getattr(self, "microsoft_teams_client_secret", "") or os.getenv(
+            client_secret_raw = getattr(self, "microsoft_teams_client_secret", "") or os.getenv(
                 "MICROSOFT_TEAMS_CLIENT_SECRET", ""
             )
             tenant_id = getattr(self, "microsoft_teams_tenant_id", "") or os.getenv("MICROSOFT_TEAMS_TENANT_ID", "")
+            client_secret = decrypt_if_needed(client_secret_raw) if include_secrets else ""
             return {"client_id": client_id, "client_secret": client_secret, "tenant_id": tenant_id}
 
         elif provider == "asana":
             client_id = getattr(self, "asana_client_id", "") or os.getenv("ASANA_CLIENT_ID", "")
-            client_secret = getattr(self, "asana_client_secret", "") or os.getenv("ASANA_CLIENT_SECRET", "")
+            client_secret_raw = getattr(self, "asana_client_secret", "") or os.getenv("ASANA_CLIENT_SECRET", "")
+            client_secret = decrypt_if_needed(client_secret_raw) if include_secrets else ""
             return {"client_id": client_id, "client_secret": client_secret}
 
         elif provider == "trello":
             api_key = getattr(self, "trello_api_key", "") or os.getenv("TRELLO_API_KEY", "")
-            api_secret = getattr(self, "trello_api_secret", "") or os.getenv("TRELLO_API_SECRET", "")
+            api_secret_raw = getattr(self, "trello_api_secret", "") or os.getenv("TRELLO_API_SECRET", "")
+            api_secret = decrypt_if_needed(api_secret_raw) if include_secrets else ""
             return {"api_key": api_key, "api_secret": api_secret}
 
         elif provider == "gitlab":
             client_id = getattr(self, "gitlab_client_id", "") or os.getenv("GITLAB_CLIENT_ID", "")
-            client_secret = getattr(self, "gitlab_client_secret", "") or os.getenv("GITLAB_CLIENT_SECRET", "")
+            client_secret_raw = getattr(self, "gitlab_client_secret", "") or os.getenv("GITLAB_CLIENT_SECRET", "")
             instance_url = getattr(self, "gitlab_instance_url", "") or os.getenv(
                 "GITLAB_INSTANCE_URL", "https://gitlab.com"
             )
+            client_secret = decrypt_if_needed(client_secret_raw) if include_secrets else ""
             return {"client_id": client_id, "client_secret": client_secret, "instance_url": instance_url}
 
         elif provider == "quickbooks":
             client_id = getattr(self, "quickbooks_client_id", "") or os.getenv("QUICKBOOKS_CLIENT_ID", "")
-            client_secret = getattr(self, "quickbooks_client_secret", "") or os.getenv("QUICKBOOKS_CLIENT_SECRET", "")
+            client_secret_raw = getattr(self, "quickbooks_client_secret", "") or os.getenv("QUICKBOOKS_CLIENT_SECRET", "")
+            client_secret = decrypt_if_needed(client_secret_raw) if include_secrets else ""
             return {"client_id": client_id, "client_secret": client_secret}
 
         elif provider == "xero":
             client_id = getattr(self, "xero_client_id", "") or os.getenv("XERO_CLIENT_ID", "")
-            client_secret = getattr(self, "xero_client_secret", "") or os.getenv("XERO_CLIENT_SECRET", "")
+            client_secret_raw = getattr(self, "xero_client_secret", "") or os.getenv("XERO_CLIENT_SECRET", "")
+            client_secret = decrypt_if_needed(client_secret_raw) if include_secrets else ""
             return {"client_id": client_id, "client_secret": client_secret}
 
         else:
@@ -512,9 +590,67 @@ class Settings(db.Model):
             "time_entry_require_description": getattr(self, "time_entry_require_description", False),
             "time_entry_description_min_length": getattr(self, "time_entry_description_min_length", 20),
             "default_daily_working_hours": float(getattr(self, "default_daily_working_hours", 8.0) or 8.0),
+            "ai_enabled": getattr(self, "ai_enabled", None),
+            "ai_provider": getattr(self, "ai_provider", "") or "",
+            "ai_base_url": getattr(self, "ai_base_url", "") or "",
+            "ai_model": getattr(self, "ai_model", "") or "",
+            "ai_api_key_set": bool(getattr(self, "ai_api_key", "")),
+            "ai_timeout_seconds": getattr(self, "ai_timeout_seconds", None),
+            "ai_context_limit": getattr(self, "ai_context_limit", None),
+            "ai_system_prompt": getattr(self, "ai_system_prompt", "") or "",
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
+
+    _SECRET_FIELDS = (
+        "mail_password",
+        "peppol_access_point_token",
+        "ai_api_key",
+        "jira_client_secret",
+        "slack_client_secret",
+        "github_client_secret",
+        "google_calendar_client_secret",
+        "outlook_calendar_client_secret",
+        "microsoft_teams_client_secret",
+        "asana_client_secret",
+        "trello_api_secret",
+        "gitlab_client_secret",
+        "quickbooks_client_secret",
+        "xero_client_secret",
+    )
+
+    def set_secret(self, field: str, value: str) -> None:
+        if field not in self._SECRET_FIELDS:
+            raise ValueError("unsupported secret field")
+        value = (value or "").strip()
+        if not value:
+            setattr(self, field, "")
+            return
+        if secrets_encryption_configured():
+            setattr(self, field, encrypt_if_possible(value))
+        else:
+            # Best-effort fallback; still store (legacy behavior) but mark clearly in logs by leaving plaintext.
+            setattr(self, field, value)
+
+    def get_secret(self, field: str) -> str:
+        if field not in self._SECRET_FIELDS:
+            raise ValueError("unsupported secret field")
+        return decrypt_if_needed(getattr(self, field, "") or "")
+
+    def _encrypt_secrets_if_needed(self) -> bool:
+        """
+        One-time best-effort migration: if a secret is stored in plaintext and encryption is configured,
+        rewrite it encrypted. Returns True if any field changed.
+        """
+        if not secrets_encryption_configured():
+            return False
+        changed = False
+        for f in self._SECRET_FIELDS:
+            raw = (getattr(self, f, "") or "").strip()
+            if raw and not raw.startswith("enc:v1:"):
+                setattr(self, f, encrypt_if_possible(raw))
+                changed = True
+        return changed
 
     @classmethod
     def get_settings(cls):
@@ -649,6 +785,16 @@ class Settings(db.Model):
 
         settings.updated_at = datetime.utcnow()
         db.session.commit()
+        # Best-effort migration of plaintext secrets to encrypted-at-rest when key is configured.
+        try:
+            if settings and settings._encrypt_secrets_if_needed() and not _session_in_flush(db.session):
+                db.session.add(settings)
+                db.session.commit()
+        except Exception:
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
         return settings
 
     @classmethod
@@ -697,6 +843,14 @@ class Settings(db.Model):
             "BACKUP_RETENTION_DAYS": "backup_retention_days",
             "BACKUP_TIME": "backup_time",
             "DEFAULT_DAILY_WORKING_HOURS": "default_daily_working_hours",
+            "AI_ENABLED": "ai_enabled",
+            "AI_PROVIDER": "ai_provider",
+            "AI_BASE_URL": "ai_base_url",
+            "AI_MODEL": "ai_model",
+            "AI_API_KEY": "ai_api_key",
+            "AI_TIMEOUT_SECONDS": "ai_timeout_seconds",
+            "AI_CONTEXT_LIMIT": "ai_context_limit",
+            "AI_SYSTEM_PROMPT": "ai_system_prompt",
         }
 
         for env_var, attr_name in env_mapping.items():

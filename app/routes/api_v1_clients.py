@@ -3,11 +3,12 @@ API v1 - Clients sub-blueprint.
 Routes under /api/v1/clients.
 """
 
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request
+from flask_login import current_user
 
 from app.models import Client
 from app.routes.api_v1_common import _require_module_enabled_for_api
-from app.utils.api_auth import require_api_token
+from app.utils.api_auth import authenticate_token, extract_token_from_request, require_api_token
 from app.utils.api_responses import error_response, forbidden_response, validation_error_response
 
 api_v1_clients_bp = Blueprint("api_v1_clients", __name__, url_prefix="/api/v1")
@@ -92,3 +93,132 @@ def create_client():
     if not result.get("success"):
         return error_response(result.get("message", "Could not create client"), status_code=400)
     return jsonify({"message": "Client created successfully", "client": result["client"].to_dict()}), 201
+
+
+def _resolve_actor_for_invoice_unbilled():
+    """
+    API token (write:invoices) or logged-in web user (create_invoices / admin).
+    Sets g.api_user for module checks. Returns (user, None) or (None, response_tuple).
+    """
+    token_string = extract_token_from_request()
+    if token_string:
+        user, api_token, error_msg = authenticate_token(token_string, record_usage=False)
+        if not user or not api_token:
+            message = error_msg or "The provided API token is invalid or expired"
+            return None, (
+                jsonify({"error": "Invalid token", "message": message, "error_code": "unauthorized"}),
+                401,
+            )
+        if not api_token.has_scope("write:invoices"):
+            return None, (
+                jsonify(
+                    {
+                        "error": "Insufficient permissions",
+                        "message": 'This endpoint requires scope "write:invoices"',
+                        "error_code": "forbidden",
+                    }
+                ),
+                403,
+            )
+        try:
+            from app.utils.api_rate_limit import consume_api_token_rate_limit
+
+            allowed, rl_info = consume_api_token_rate_limit(api_token.id)
+            if not allowed:
+                retry_after = int(rl_info.get("retry_after_seconds") or 60)
+                resp = jsonify(
+                    {
+                        "error": "Rate limit exceeded",
+                        "message": "Too many requests for this API token. Try again later.",
+                        "error_code": "rate_limited",
+                    }
+                )
+                resp.status_code = 429
+                resp.headers["Retry-After"] = str(retry_after)
+                return None, (resp, resp.status_code)
+        except Exception as e:
+            current_app.logger.warning("API token rate limit check failed (allowing request): %s", e)
+        try:
+            api_token.record_usage(request.remote_addr)
+        except Exception as e:
+            current_app.logger.warning("Failed to record API token usage: %s", e)
+        g.api_user = user
+        g.api_token = api_token
+        return user, None
+
+    if getattr(current_user, "is_authenticated", False):
+        if not (current_user.is_admin or current_user.has_permission("create_invoices")):
+            return None, (
+                jsonify(
+                    {
+                        "error": "forbidden",
+                        "message": "You do not have permission to create invoices.",
+                        "error_code": "forbidden",
+                    }
+                ),
+                403,
+            )
+        g.api_user = current_user
+        return current_user, None
+
+    return None, (
+        jsonify(
+            {
+                "error": "Authentication required",
+                "message": "API token or login session required.",
+                "error_code": "unauthorized",
+            }
+        ),
+        401,
+    )
+
+
+@api_v1_clients_bp.route("/clients/<int:client_id>/invoice-unbilled", methods=["POST"])
+def post_client_invoice_unbilled(client_id):
+    """Create a draft invoice from all unbilled billable time for this client (grouped by project)."""
+    user, err = _resolve_actor_for_invoice_unbilled()
+    if err:
+        body, code = err
+        return body, code
+
+    for module_id in ("clients", "invoices"):
+        blocked = _require_module_enabled_for_api(module_id)
+        if blocked:
+            return blocked
+
+    from app.utils.scope_filter import user_can_access_client
+
+    client = Client.query.get(client_id)
+    if not client:
+        return jsonify({"error": "not_found", "message": "Client not found"}), 404
+    if not user_can_access_client(user, client_id):
+        return forbidden_response("You do not have access to this client")
+
+    from app.services import InvoiceService
+
+    result = InvoiceService().create_client_unbilled_invoice(client_id, acting_user_id=user.id)
+    if not result.get("success"):
+        err = result.get("error", "unknown")
+        if err == "not_found":
+            return jsonify({"error": "not_found", "message": result.get("message", "Not found")}), 404
+        return (
+            jsonify(
+                {
+                    "error": err,
+                    "message": result.get("message", "Cannot create invoice."),
+                }
+            ),
+            400,
+        )
+
+    return (
+        jsonify(
+            {
+                "invoice_id": result["invoice_id"],
+                "invoice_number": result["invoice_number"],
+                "total": result["total"],
+                "item_count": result["item_count"],
+            }
+        ),
+        200,
+    )

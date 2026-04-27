@@ -101,6 +101,8 @@ python app.py
    - **No authentication (`AUTH_METHOD=none`)**: Enter username only (no password)
    - **OIDC (`AUTH_METHOD=oidc`)**: Click "Sign in with SSO" button
    - **Both (`AUTH_METHOD=both`)**: Choose either SSO or local username/password
+   - **LDAP (`AUTH_METHOD=ldap`)**: Sign in with directory username and password (no SSO button)
+   - **All methods (`AUTH_METHOD=all`)**: SSO button plus username/password (local and/or LDAP, depending on account)
 
 3. **Admin users are configured in the environment**
    - Set via `ADMIN_USERNAMES` environment variable (default: `admin`)
@@ -114,9 +116,11 @@ python app.py
 > - `none`: Username only (for trusted internal networks)
 > - `local`: Username + password (default, recommended)
 > - `oidc`: Single Sign-On only
-> - `both`: Both OIDC and local password authentication
+> - `ldap`: LDAP directory only
+> - `both`: OIDC and local password (no LDAP)
+> - `all`: Local + OIDC + LDAP
 > 
-> See [OIDC Setup Guide](OIDC_SETUP.md#5-authentication-methods) for detailed explanations of all authentication modes.
+> See [OIDC Setup Guide](admin/configuration/OIDC_SETUP.md#5-authentication-methods) and [LDAP Setup](admin/configuration/LDAP_SETUP.md) for details.
 
 ---
 
@@ -149,7 +153,7 @@ The Admin Settings page has multiple sections. Configure what you need:
 #### Timer Settings
 - **Rounding (Minutes)**: Round to nearest 1/5/15 minutes
 - **Idle Timeout (Minutes)**: Auto-pause after idle (default: 30)
-- **Single Active Timer**: Allow only one running timer per user
+- **Single Active Timer**: When enabled (default), a user cannot start another timer until the current running entry is stopped. When disabled, multiple concurrent timers are allowed. The value is stored in the database (**System Settings**); the `SINGLE_ACTIVE_TIMER` environment variable only seeds that row on first install—after that, changes in the admin UI apply immediately to web, REST v1, and kiosk timer starts.
 
 #### User Management
 - **Allow Self-Registration**: ☑ Enable this to let users create accounts by entering any username and password on the login page. When enabled, anyone can create an app user with whatever credentials they type—there is no link to database credentials. **Security note**: Avoid using your database username (e.g. `timetracker`) as an app username, and do not share database passwords. With self-register enabled, someone could create an app account with credentials that match your DB user, which can be confusing or a security risk.

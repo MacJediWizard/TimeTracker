@@ -3,10 +3,12 @@ Tests for InvoiceService.
 """
 
 import pytest
-from datetime import date
-from app.services import InvoiceService
-from app.models import Invoice, Project, Client, TimeEntry
+from datetime import date, datetime, timedelta
+from decimal import Decimal
+
 from app import db
+from app.models import Client, Invoice, Project, TimeEntry
+from app.services import InvoiceService
 
 
 @pytest.mark.unit
@@ -266,3 +268,59 @@ def test_update_invoice_status(app, test_project, test_user):
     assert result["success"] is True
     db.session.refresh(invoice)
     assert invoice.status == "sent"
+
+
+@pytest.mark.unit
+def test_create_client_unbilled_invoice_two_projects(app, test_user, test_client, test_project):
+    """One draft invoice grouped by project; second call returns no_unbilled_entries."""
+    service = InvoiceService()
+
+    p2 = Project(
+        name="Second Project",
+        client_id=test_client.id,
+        description="p2",
+        billable=True,
+        hourly_rate=Decimal("100.00"),
+    )
+    p2.status = "active"
+    db.session.add(p2)
+    db.session.commit()
+
+    start = datetime(2025, 1, 10, 9, 0, 0)
+    e1 = TimeEntry(
+        user_id=test_user.id,
+        project_id=test_project.id,
+        start_time=start,
+        end_time=start + timedelta(hours=1),
+        duration_seconds=3600,
+        billable=True,
+    )
+    e2 = TimeEntry(
+        user_id=test_user.id,
+        project_id=p2.id,
+        start_time=start + timedelta(days=1),
+        end_time=start + timedelta(days=1, hours=2),
+        duration_seconds=7200,
+        billable=True,
+    )
+    db.session.add_all([e1, e2])
+    db.session.commit()
+
+    preview = service.get_client_unbilled_invoice_preview(test_client.id)
+    assert preview["entry_count"] == 2
+    assert preview["total_hours"] == pytest.approx(3.0)
+    assert preview["estimated_total"] == pytest.approx(275.0)
+
+    r1 = service.create_client_unbilled_invoice(test_client.id, acting_user_id=test_user.id)
+    assert r1["success"] is True
+    assert r1["item_count"] == 2
+    inv = Invoice.query.get(r1["invoice_id"])
+    assert inv is not None
+    assert inv.client_id == test_client.id
+    assert inv.project_id == p2.id
+    assert len(inv.items.all()) == 2
+    assert r1["total"] == pytest.approx(float(inv.total_amount))
+
+    r2 = service.create_client_unbilled_invoice(test_client.id, acting_user_id=test_user.id)
+    assert r2["success"] is False
+    assert r2["error"] == "no_unbilled_entries"

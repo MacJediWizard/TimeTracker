@@ -1,3 +1,5 @@
+@import url('https://fonts.bunny.net/css?family=Inter:400,500,600,700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -6,36 +8,41 @@
 @layer base {
   :root {
     /* Brand (brand-colors.css) */
-    --brand-primary: #4A90E2;
-    --brand-primary-dark: #3b82f6;
+    --brand-primary: #4F46E5;
+    --brand-primary-dark: #4338ca;
     --brand-secondary: #50E3C2;
     --brand-secondary-dark: #06b6d4;
-    --brand-gradient: linear-gradient(135deg, #4A90E2 0%, #50E3C2 100%);
-    --brand-gradient-horizontal: linear-gradient(to right, #4A90E2 0%, #50E3C2 100%);
-    --color-success: #4CAF50;
-    --color-warning: #FF9800;
-    --color-error: #E53935;
-    --color-info: #2196F3;
-    --color-bg-light: #F7F9FB;
-    --color-bg-light-secondary: #FFFFFF;
-    --color-text-light: #2D3748;
-    --color-text-light-secondary: #A0AEC0;
-    --color-text-light-muted: #718096;
-    --color-border-light: #E2E8F0;
-    --color-bg-dark: #1A202C;
-    --color-bg-dark-secondary: #2D3748;
-    --color-text-dark: #E2E8F0;
-    --color-text-dark-secondary: #718096;
-    --color-text-dark-muted: #A0AEC0;
-    --color-border-dark: #4A5568;
+    --brand-gradient: linear-gradient(135deg, #4F46E5 0%, #50E3C2 100%);
+    --brand-gradient-horizontal: linear-gradient(to right, #4F46E5 0%, #50E3C2 100%);
+
+    /* Semantic */
+    --color-success: #10b981;
+    --color-warning: #f59e0b;
+    --color-error: #ef4444;
+    --color-info: #3b82f6;
+
+    /* Neutrals (slate-based) */
+    --color-bg-light: #f8fafc;
+    --color-bg-light-secondary: #ffffff;
+    --color-text-light: #0f172a;
+    --color-text-light-secondary: #64748b;
+    --color-text-light-muted: #94a3b8;
+    --color-border-light: #e2e8f0;
+
+    --color-bg-dark: #0b1220;
+    --color-bg-dark-secondary: #0f172a;
+    --color-text-dark: #e2e8f0;
+    --color-text-dark-secondary: #94a3b8;
+    --color-text-dark-muted: #64748b;
+    --color-border-dark: #334155;
     /* Aliases for keyboard-shortcuts.css */
-    --color-primary: #4A90E2;
+    --color-primary: #4F46E5;
     --color-card-light: #FFFFFF;
-    --color-background-light: #F7F9FB;
-    --color-background-dark: #1A202C;
-    --color-card-dark: #2D3748;
-    --color-text-muted-light: #A0AEC0;
-    --color-text-muted-dark: #718096;
+    --color-background-light: #f8fafc;
+    --color-background-dark: #0b1220;
+    --color-card-dark: #0f172a;
+    --color-text-muted-light: #64748b;
+    --color-text-muted-dark: #94a3b8;
     /* Spacing (ui-enhancements) */
     --spacing-xs: 0.25rem;
     --spacing-sm: 0.5rem;
@@ -44,6 +51,35 @@
     --spacing-xl: 2rem;
     --spacing-2xl: 3rem;
     --spacing-3xl: 4rem;
+  }
+
+  html {
+    font-family: theme(fontFamily.sans);
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background-light text-text-light dark:bg-background-dark dark:text-text-dark;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply text-text-light dark:text-text-dark font-semibold tracking-tight;
+  }
+
+  a {
+    @apply text-primary hover:text-primary-dark underline-offset-4;
+  }
+
+  a:hover {
+    @apply underline;
+  }
+
+  :is(button, [type='button'], [type='submit'], [role='button']) {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900;
+  }
+
+  :is(input, select, textarea) {
+    @apply placeholder:text-slate-400 dark:placeholder:text-slate-500;
   }
 }
 
@@ -98,6 +134,19 @@
   .btn-lg {
     @apply px-6 py-3 text-base;
   }
+
+  .card {
+    @apply rounded-lg border border-border-light bg-card-light shadow-tt-soft dark:border-border-dark dark:bg-card-dark;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full border border-border-light bg-background-light px-2.5 py-1 text-xs font-medium text-text-light dark:border-border-dark dark:bg-background-dark dark:text-text-dark;
+  }
+
+  .badge-success { @apply badge border-success/20 bg-success/10 text-success dark:border-success/30 dark:bg-success/15; }
+  .badge-warning { @apply badge border-warning/20 bg-warning/10 text-warning dark:border-warning/30 dark:bg-warning/15; }
+  .badge-danger { @apply badge border-danger/20 bg-danger/10 text-danger dark:border-danger/30 dark:bg-danger/15; }
+  .badge-info { @apply badge border-info/20 bg-info/10 text-info dark:border-info/30 dark:bg-info/15; }
 
   /* Brand utilities (from brand-colors.css) */
   .bg-brand-gradient { background: var(--brand-gradient); }
@@ -282,12 +331,12 @@
   .enhanced-table tbody tr { transition: background-color 0.15s; }
   .enhanced-table tbody tr:nth-child(even) { background-color: rgba(0, 0, 0, 0.02); }
   .dark .enhanced-table tbody tr:nth-child(even) { background-color: rgba(255, 255, 255, 0.03); }
-  .enhanced-table tbody tr:hover { background-color: rgba(0, 0, 0, 0.04); border-left: 3px solid #4A90E2; }
+  .enhanced-table tbody tr:hover { background-color: rgba(0, 0, 0, 0.04); border-left: 3px solid #4F46E5; }
   .dark .enhanced-table tbody tr:hover { background-color: rgba(255, 255, 255, 0.05); border-left-color: #60a5fa; }
   .enhanced-table thead th { position: sticky; top: 0; z-index: 10; background: #fff; box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.06); }
   .dark .enhanced-table thead th { background: #1e293b; box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.3); }
-  .table-count-badge { display: inline-flex; align-items: center; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.875rem; font-weight: 500; background: rgba(74, 144, 226, 0.12); color: #4A90E2; }
-  .dark .table-count-badge { background: rgba(74, 144, 226, 0.2); color: #93c5fd; }
+  .table-count-badge { display: inline-flex; align-items: center; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.875rem; font-weight: 500; background: rgba(79, 70, 229, 0.12); color: #4F46E5; }
+  .dark .table-count-badge { background: rgba(79, 70, 229, 0.22); color: #c7d2fe; }
 
   .bulk-actions-bar {
     position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(100px);
@@ -498,8 +547,8 @@
 
   /* File input drag-over state */
   .form-group-wrapper label:has(input[type="file"]).drag-over {
-    border-color: #4A90E2;
-    background-color: rgba(74, 144, 226, 0.08);
+    border-color: #4F46E5;
+    background-color: rgba(79, 70, 229, 0.08);
   }
 
   /* ----- Responsive Table → Card Layout ----- */
@@ -585,6 +634,13 @@
   }
   .dark #sidebar.sidebar-scrollbar-hover:hover::-webkit-scrollbar-thumb {
     background: rgba(156, 163, 175, 0.35);
+  }
+}
+
+@layer utilities {
+  /* iOS home indicator / safe area (used by mobile bottom nav; safelist in tailwind.config.js) */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 }
 

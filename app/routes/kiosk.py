@@ -10,6 +10,7 @@ from sqlalchemy import func, or_
 
 from app import db, log_event
 from app.models import Project, Settings, StockItem, StockMovement, Task, TimeEntry, User, Warehouse, WarehouseStock
+from app.services.time_tracking_service import TimeTrackingService
 from app.utils.db import safe_commit
 from app.utils.module_helpers import module_enabled
 from app.utils.permissions import admin_or_permission_required
@@ -98,15 +99,16 @@ def kiosk_login():
         return redirect(url_for("kiosk.kiosk_dashboard"))
 
     # Get authentication method
-    try:
-        from app.config import Config
+    from app.config import Config
+    from app.utils.auth_method import normalize_auth_method, requires_password_form
 
-        auth_method = (getattr(Config, "AUTH_METHOD", "local") or "local").strip().lower()
+    try:
+        auth_method = normalize_auth_method(getattr(Config, "AUTH_METHOD", "local"))
     except Exception:
         auth_method = "local"
 
-    # Determine if password authentication is required (kiosk doesn't support OIDC)
-    requires_password = auth_method in ("local", "both")
+    # Determine if password authentication is required (kiosk doesn't support OIDC/LDAP flows)
+    requires_password = requires_password_form(auth_method)
 
     if request.method == "POST":
         username = request.form.get("username", "").strip()
@@ -468,9 +470,8 @@ def kiosk_start_timer():
     if not user_can_access_project(current_user, project_id):
         return jsonify({"error": "You do not have access to this project"}), 403
 
-    # Check if user already has an active timer
-    active_timer = current_user.active_timer
-    if active_timer:
+    can_start, _ = TimeTrackingService().can_start_timer(current_user.id)
+    if not can_start:
         return jsonify({"error": "You already have an active timer"}), 400
 
     # Validate task if provided

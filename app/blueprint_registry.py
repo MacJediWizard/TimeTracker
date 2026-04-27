@@ -3,10 +3,45 @@ Centralized blueprint registration for the Flask app.
 Extracted from app/__init__.py to reduce bootstrap module size and clarify structure.
 """
 
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
 
 def _is_dev_fail_fast(app):
     """Re-raise optional blueprint failures only in local development (not testing/production)."""
     return bool(app.debug or app.config.get("FLASK_ENV") == "development")
+
+
+def _record_blueprint_status(
+    app,
+    *,
+    kind: str,
+    module_path: str,
+    blueprint_attr: str,
+    ok: bool,
+    error: str | None = None,
+):
+    """
+    Record which (optional) blueprints loaded at startup.
+
+    Stored on `app.extensions["blueprint_load_status"]` so Admin can surface it.
+    """
+    try:
+        store = app.extensions.setdefault("blueprint_load_status", [])
+        store.append(
+            {
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "kind": kind,  # "optional" | "special"
+                "module": module_path,
+                "attr": blueprint_attr,
+                "ok": bool(ok),
+                "error": error,
+            }
+        )
+    except Exception:
+        # Never let diagnostics break app startup.
+        pass
 
 
 def register_all_blueprints(app, logger=None):
@@ -17,6 +52,7 @@ def register_all_blueprints(app, logger=None):
     from app.routes.api import api_bp
     from app.routes.api_docs import api_docs_bp, swaggerui_blueprint
     from app.routes.api_v1 import api_v1_bp
+    from app.routes.api_v1_ai import api_v1_ai_bp
     from app.routes.api_v1_clients import api_v1_clients_bp
     from app.routes.api_v1_contacts import api_v1_contacts_bp
     from app.routes.api_v1_deals import api_v1_deals_bp
@@ -73,16 +109,39 @@ def register_all_blueprints(app, logger=None):
         from app.routes.audit_logs import audit_logs_bp
 
         app.register_blueprint(audit_logs_bp)
+        _record_blueprint_status(
+            app,
+            kind="special",
+            module_path="app.routes.audit_logs",
+            blueprint_attr="audit_logs_bp",
+            ok=True,
+        )
     except ImportError:
         _log.warning(
             "Could not register audit_logs blueprint (optional module missing)",
             exc_info=True,
             extra={"event": "blueprint_register_skipped", "blueprint": "audit_logs"},
         )
+        _record_blueprint_status(
+            app,
+            kind="special",
+            module_path="app.routes.audit_logs",
+            blueprint_attr="audit_logs_bp",
+            ok=False,
+            error="ImportError: module missing",
+        )
     except (AttributeError, RuntimeError):
         _log.exception(
             "Could not register audit_logs blueprint",
             extra={"event": "blueprint_register_failed", "blueprint": "audit_logs"},
+        )
+        _record_blueprint_status(
+            app,
+            kind="special",
+            module_path="app.routes.audit_logs",
+            blueprint_attr="audit_logs_bp",
+            ok=False,
+            error="audit_logs blueprint failed to register (see server logs)",
         )
         if _is_dev_fail_fast(app):
             raise
@@ -95,6 +154,7 @@ def register_all_blueprints(app, logger=None):
     app.register_blueprint(admin_bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(api_v1_bp)
+    app.register_blueprint(api_v1_ai_bp)
     app.register_blueprint(api_v1_time_entries_bp)
     app.register_blueprint(api_v1_projects_bp)
     app.register_blueprint(api_v1_tasks_bp)
@@ -172,6 +232,13 @@ def _register_optional_blueprints(app, logger=None):
             mod = __import__(module_path, fromlist=[attr])
             bp = getattr(mod, attr)
             app.register_blueprint(bp)
+            _record_blueprint_status(
+                app,
+                kind="optional",
+                module_path=module_path,
+                blueprint_attr=attr,
+                ok=True,
+            )
         except Exception:
             _log.exception(
                 "Could not register optional blueprint",
@@ -180,6 +247,14 @@ def _register_optional_blueprints(app, logger=None):
                     "blueprint_module": module_path,
                     "blueprint_attr": attr,
                 },
+            )
+            _record_blueprint_status(
+                app,
+                kind="optional",
+                module_path=module_path,
+                blueprint_attr=attr,
+                ok=False,
+                error="optional blueprint failed to register (see server logs)",
             )
             if _is_dev_fail_fast(app):
                 raise

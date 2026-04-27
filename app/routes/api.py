@@ -6,7 +6,7 @@ from datetime import datetime, time, timedelta
 from flask import Blueprint, current_app, jsonify, make_response, request, send_from_directory, session
 from flask_babel import gettext as _
 from flask_login import current_user, login_required
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.utils import secure_filename
 
@@ -25,6 +25,7 @@ from app.models import (
 )
 from app.models.time_entry import local_now
 from app.services.global_search_service import run_global_search
+from app.services.llm_service import AIServiceError, LLMService
 from app.services.time_tracking_service import TimeTrackingService
 from app.utils.api_deprecation import deprecated_session_api
 from app.utils.db import safe_commit
@@ -34,11 +35,62 @@ from app.utils.timezone import convert_app_datetime_to_user, parse_local_datetim
 api_bp = Blueprint("api", __name__)
 
 
+def _ai_error_response(exc: AIServiceError):
+    return jsonify({"ok": False, "error": exc.message, "error_code": exc.code}), exc.status_code
+
+
 @api_bp.route("/api/health")
 @deprecated_session_api("/api/v1/health")
 def health_check():
     """Health check endpoint for monitoring and error handling"""
     return jsonify({"status": "ok", "timestamp": datetime.utcnow().isoformat()})
+
+
+@api_bp.route("/api/ai/context-preview")
+@login_required
+def ai_context_preview():
+    """Return the compact context preview that would be sent to the configured AI provider."""
+    try:
+        service = LLMService()
+        return jsonify({"ok": True, "context": service.context_preview(current_user), "provider": service.config.public_dict()})
+    except AIServiceError as exc:
+        return _ai_error_response(exc)
+
+
+@api_bp.route("/api/ai/test", methods=["POST"])
+@login_required
+def ai_test_connection():
+    """Test the configured AI provider. Admins/settings managers can use this from settings."""
+    if not (current_user.is_admin or current_user.has_permission("manage_settings")):
+        return jsonify({"ok": False, "error": "Admin permission required", "error_code": "forbidden"}), 403
+    try:
+        return jsonify(LLMService().test_connection())
+    except AIServiceError as exc:
+        return _ai_error_response(exc)
+
+
+@api_bp.route("/api/ai/chat", methods=["POST"])
+@login_required
+def ai_chat():
+    """Chat with the AI helper using server-built TimeTracker context."""
+    data = request.get_json(silent=True) or {}
+    try:
+        result = LLMService().chat(current_user, data.get("prompt") or "", data.get("history") or [])
+        return jsonify({"ok": True, **result})
+    except AIServiceError as exc:
+        return _ai_error_response(exc)
+
+
+@api_bp.route("/api/ai/actions/confirm", methods=["POST"])
+@login_required
+def ai_confirm_action():
+    """Execute a user-confirmed AI proposed action."""
+    data = request.get_json(silent=True) or {}
+    try:
+        result = LLMService().confirm_action(current_user, data.get("action") or {})
+        return jsonify(result)
+    except AIServiceError as exc:
+        return _ai_error_response(exc)
 
 
 def _effective_user_for_version_api():
@@ -395,7 +447,8 @@ def api_stop_timer_at():
 @deprecated_session_api("/api/v1/timer/start")
 def api_resume_timer():
     """Resume timer for last used project/task or provided project/task."""
-    if current_user.active_timer:
+    can_start, _ = TimeTrackingService().can_start_timer(current_user.id)
+    if not can_start:
         return jsonify({"error": "Timer already running"}), 400
 
     data = request.get_json() or {}
@@ -1437,7 +1490,84 @@ def value_dashboard_stats():
     return jsonify(StatsService.get_value_dashboard(current_user))
 
 
-@api_bp.route("/api/entry/<int:entry_id>", methods=["PUT"])
+@api_bp.route("/api/reports/week-comparison")
+@login_required
+def week_comparison():
+    """This week (Mon 00:00–now) vs same calendar weekdays last week; matches dashboard week hours."""
+    now = datetime.now()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = today_start - timedelta(days=today_start.weekday())
+    today_date = today_start.date()
+    week_start_date = week_start.date()
+    last_week_start_date = week_start_date - timedelta(days=7)
+    last_week_end_date = today_date - timedelta(days=7)
+
+    last_start_dt = datetime.combine(last_week_start_date, time.min)
+    last_end_exclusive = datetime.combine(last_week_end_date + timedelta(days=1), time.min)
+
+    user_id = current_user.id
+
+    def sum_hours_by_day(start_dt, end_dt, end_exclusive=False):
+        q = (
+            db.session.query(
+                func.date(TimeEntry.start_time).label("day"),
+                func.sum(TimeEntry.duration_seconds),
+            )
+            .filter(
+                TimeEntry.user_id == user_id,
+                TimeEntry.end_time.isnot(None),
+                TimeEntry.start_time >= start_dt,
+            )
+        )
+        if end_exclusive:
+            q = q.filter(TimeEntry.start_time < end_dt)
+        else:
+            q = q.filter(TimeEntry.start_time <= end_dt)
+        rows = q.group_by(func.date(TimeEntry.start_time)).all()
+        out = {}
+        for day_val, total_sec in rows:
+            if day_val is None:
+                continue
+            if hasattr(day_val, "isoformat"):
+                key = day_val.isoformat()
+            else:
+                key = str(day_val)
+            out[key] = round((total_sec or 0) / 3600.0, 2)
+        return out
+
+    current_map = sum_hours_by_day(week_start, now, end_exclusive=False)
+    last_map = sum_hours_by_day(last_start_dt, last_end_exclusive, end_exclusive=True)
+
+    def dense_series(start_d, end_d, hmap):
+        series = []
+        total = 0.0
+        d = start_d
+        while d <= end_d:
+            key = d.isoformat()
+            h = float(hmap.get(key, 0.0))
+            series.append({"day": key, "hours": h})
+            total += h
+            d += timedelta(days=1)
+        return series, round(total, 2)
+
+    current_by_day, current_total = dense_series(week_start_date, today_date, current_map)
+    last_by_day, last_total = dense_series(last_week_start_date, last_week_end_date, last_map)
+
+    if last_total > 0:
+        change_percent = round((current_total - last_total) / last_total * 100.0, 1)
+    else:
+        change_percent = None
+
+    return jsonify(
+        {
+            "current_week": {"total_hours": current_total, "by_day": current_by_day},
+            "last_week": {"total_hours": last_total, "by_day": last_by_day},
+            "change_percent": change_percent,
+        }
+    )
+
+
+@api_bp.route("/api/entry/<int:entry_id>", methods=["PUT", "PATCH"])
 @login_required
 @deprecated_session_api("/api/v1/time-entries")
 def update_entry(entry_id):

@@ -52,7 +52,8 @@ docker-compose logs app --tail=100
 ### 4) Optional services
 - Reverse proxy (HTTPS): See `docker-compose.yml` (services `certgen` and `nginx`).
   - **Note**: The `certgen` service is now self-contained and works with Portainer and other container orchestration tools without requiring host filesystem mounts.
-- Monitoring stack: Prometheus, Grafana, Loki, Promtail are available in `docker-compose.yml`.
+- Monitoring stack: Prometheus, Grafana, Loki, Promtail are available in `docker-compose.yml` (commented out by default; uncomment services to enable).
+- **Ollama (bundled LLM)**: The root `docker-compose.yml` includes `ollama` and a one-shot `ollama-init` container that pulls `AI_MODEL` into the `ollama_data` volume. The `app` service defaults to `AI_BASE_URL=http://ollama:11434` and waits for `ollama-init` to succeed before starting. Set `AI_ENABLED=false` in `.env` to turn off the in-app AI helper without removing the containers. Details: [README.md](../../../README.md) (sections *AI Helper* and *Bundled Ollama service*).
 
 ---
 
@@ -80,7 +81,7 @@ All environment variables can be provided via `.env` and are consumed by the `ap
 ### Application behavior
 - CURRENCY: ISO currency code. Default: `EUR`.
 - ROUNDING_MINUTES: Rounding step for entries. Default: `1`.
-- SINGLE_ACTIVE_TIMER: Allow only one active timer per user. Default: `true`.
+- SINGLE_ACTIVE_TIMER: Seeds **allow only one active timer per user** for the initial settings row. Default: `true`. After install, **System Settings → Settings** updates the database value used at runtime (web, API v1, kiosk).
 - IDLE_TIMEOUT_MINUTES: Auto-pause after idle. Default: `30`.
 - ALLOW_SELF_REGISTER: Allow new users to self-register by entering any username and password on the login page. Default: `true`. **Security note**: When enabled, anyone can create an app user with whatever credentials they type. The app does not use or import database credentials—users are created with exactly what is entered. Avoid using your database username (e.g. `timetracker`) as an app username; if someone creates an app user with matching DB credentials, it can be confusing or a security risk.
 - ADMIN_USERNAMES: Comma-separated admin usernames. Default: `admin`. **Important**: Only the first username in the list is automatically created during database initialization. Additional admin usernames must either:
@@ -94,9 +95,11 @@ All environment variables can be provided via `.env` and are consumed by the `ap
   - `none`: No password authentication (username only). Use only in trusted environments.
   - `local`: Password authentication required (default). Users must set and use passwords.
   - `oidc`: OIDC/Single Sign-On only. Local login form is hidden.
-  - `both`: OIDC + local password authentication. Users can choose either method.
+  - `ldap`: LDAP directory authentication only (username/password against LDAP).
+  - `both`: OIDC + local password (no LDAP). Users can choose SSO or local login.
+  - `all`: Local + OIDC + LDAP combined (see [OIDC Setup](OIDC_SETUP.md) and [LDAP Setup](LDAP_SETUP.md)).
   
-  Default: `local`. See [OIDC Setup Guide](OIDC_SETUP.md) for detailed explanations.
+  Default: `local`. See [OIDC Setup Guide](OIDC_SETUP.md) and [LDAP Setup](LDAP_SETUP.md) for details.
 - OIDC_ISSUER: OIDC provider issuer URL.
 - OIDC_CLIENT_ID: OIDC client id.
 - OIDC_CLIENT_SECRET: OIDC client secret.
@@ -109,6 +112,14 @@ All environment variables can be provided via `.env` and are consumed by the `ap
 - OIDC_ADMIN_GROUP: Optional admin group name.
 - OIDC_ADMIN_EMAILS: Optional comma-separated admin emails.
 - OIDC_POST_LOGOUT_REDIRECT_URI: Optional RP-initiated logout return URI.
+
+### Security hardening
+
+- SETTINGS_ENCRYPTION_KEY: Fernet key to encrypt secrets stored in the database (recommended). Used for things like SMTP password, OAuth client secrets, Peppol access point token, AI API key, and TOTP 2FA secrets. No default.
+  - Generate with: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
+- SETTINGS_ENCRYPTION_KEY_FILE: Alternative to `SETTINGS_ENCRYPTION_KEY` (reads first line of the file).
+- PASSWORD_RESET_TOKEN_MAX_AGE_SECONDS: Password reset link lifetime in seconds. Default: `3600`.
+- REQUIRE_2FA_FOR_ADMINS: When `true`, admin users are prompted to enroll in TOTP 2FA after login. Default: `false`.
 
 ### CSRF and Cookies
 - WTF_CSRF_ENABLED: Enable CSRF protection. Default: `true` (example) or `false` in dev.
@@ -137,6 +148,18 @@ All environment variables can be provided via `.env` and are consumed by the `ap
 ### Logging
 - LOG_LEVEL: Default: `INFO`.
 - LOG_FILE: Default: `/data/logs/timetracker.log` or `/app/logs/timetracker.log` based on compose.
+
+### AI helper (optional)
+Used by the server-side AI helper (`/api/ai/*`, Admin → System Settings). In the root `docker-compose.yml`, defaults target the bundled `ollama` service.
+
+- AI_ENABLED: Enable the AI helper. Default in root compose: `true` (override with `false` if you do not want LLM calls).
+- AI_PROVIDER: `ollama` or `openai_compatible`. Default: `ollama`.
+- AI_BASE_URL: Provider base URL without a trailing path. Default in root compose: `http://ollama:11434` (Docker service name). For Ollama on the host: `http://127.0.0.1:11434`.
+- AI_MODEL: Model tag (e.g. `llama3.1`, `qwen2.5:3b`). Pulled automatically on startup by `ollama-init` when using the bundled stack.
+- AI_API_KEY: Required when `AI_PROVIDER=openai_compatible`. Empty for Ollama.
+- AI_TIMEOUT_SECONDS: HTTP timeout for provider requests. Default in root compose: `60`.
+- AI_CONTEXT_LIMIT: Max recent time entries included in context. Default: `40`.
+- OLLAMA_KEEP_ALIVE: Passed to the `ollama` service (how long models stay loaded). Default: `5m`.
 
 ### Analytics & Telemetry (optional)
 - SENTRY_DSN: Sentry DSN (empty by default).

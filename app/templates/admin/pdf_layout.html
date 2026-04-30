@@ -1665,6 +1665,7 @@
         <strong>{{ _('Keyboard Shortcuts:') }}</strong>
         <span style="opacity: 0.9;">
             Delete/Backspace = Remove | Ctrl+C = Copy | Ctrl+V = Paste | Ctrl+D = Duplicate | Arrow Keys = Move (+ Shift for 10px steps)
+            <span class="block mt-1">{{ _('Ctrl+Z undo; Ctrl+Y or Ctrl+Shift+Z redo (Cmd+Z / Cmd+Shift+Z on Mac). Mouse wheel over the canvas zooms in or out.') }}</span>
         </span>
     </p>
 </div>
@@ -2467,8 +2468,14 @@ function ensureTableGroupNames(layerRef, bgRef) {
         if (currentName === 'items-table' || currentName === 'expenses-table') return;
         const inferred = inferTableNameFromGroup(child);
         if (inferred) {
-            if (child.setAttr) child.setAttr('name', inferred);
-            if (child.attrs) child.attrs.name = inferred;
+            if (child.setAttr) {
+                child.setAttr('name', inferred);
+                child.setAttr('pdfTable', inferred);
+            }
+            if (child.attrs) {
+                child.attrs.name = inferred;
+                child.attrs.pdfTable = inferred;
+            }
             if (child.name) child.name(inferred);
             console.log('[PDF_EDITOR] Ensured table group name before save:', inferred);
         }
@@ -2964,6 +2971,7 @@ function initializePDFEditor() {
             elements.push({ type: 'custom-text', node: text });
             setupSelection(text);
             layer.draw();
+            scheduleInvoiceEditorHistoryPush();
             return;
         }
         
@@ -2982,6 +2990,7 @@ function initializePDFEditor() {
                 elements.push({ type: 'line', node: line });
                 setupSelection(line);
             layer.draw();
+                scheduleInvoiceEditorHistoryPush();
                 return;
             }
         
@@ -3001,6 +3010,7 @@ function initializePDFEditor() {
             elements.push({ type: 'rectangle', node: rect });
             setupSelection(rect);
             layer.draw();
+            scheduleInvoiceEditorHistoryPush();
             return;
         }
         
@@ -3019,6 +3029,7 @@ function initializePDFEditor() {
             elements.push({ type: 'circle', node: circle });
             setupSelection(circle);
             layer.draw();
+            scheduleInvoiceEditorHistoryPush();
             return;
         }
         
@@ -3036,6 +3047,7 @@ function initializePDFEditor() {
                     elements.push({ type: 'logo', node: image });
                     setupSelection(image);
                     layer.draw();
+                    scheduleInvoiceEditorHistoryPush();
                 });
                 return;
             }
@@ -3103,6 +3115,7 @@ function initializePDFEditor() {
             elements.push({ type: 'decorative-image', node: placeholder });
             setupSelection(placeholder);
             layer.draw();
+            scheduleInvoiceEditorHistoryPush();
             return;
         }
         
@@ -3129,6 +3142,7 @@ function initializePDFEditor() {
         checkElementWarnings(text);
         updateWarningPanel();
         layer.draw();
+        scheduleInvoiceEditorHistoryPush();
     }
     
     function addTable(x, y) {
@@ -3139,6 +3153,7 @@ function initializePDFEditor() {
             name: 'items-table'
         });
         tableGroup.setAttr('name', 'items-table');
+        tableGroup.setAttr('pdfTable', 'items-table');
         
         const header = new Konva.Text({
             text: 'Description | Qty | Price | Total',
@@ -3175,6 +3190,7 @@ function initializePDFEditor() {
         checkElementWarnings(tableGroup);
         updateWarningPanel();
         layer.draw();
+        scheduleInvoiceEditorHistoryPush();
     }
     
     function addExpensesTable(x, y) {
@@ -3185,6 +3201,7 @@ function initializePDFEditor() {
             name: 'expenses-table'
         });
         tableGroup.setAttr('name', 'expenses-table');
+        tableGroup.setAttr('pdfTable', 'expenses-table');
         
         const header = new Konva.Text({
             text: 'Expense | Date | Category | Amount',
@@ -3219,6 +3236,7 @@ function initializePDFEditor() {
         setupSelection(line);
         setupSelection(items);
         layer.draw();
+        scheduleInvoiceEditorHistoryPush();
     }
     
     function setupSelection(node) {
@@ -3290,6 +3308,7 @@ function initializePDFEditor() {
             // Final check after drag ends
             checkElementWarnings(node);
             updateWarningPanel();
+            scheduleInvoiceEditorHistoryPush();
         });
     }
     
@@ -3514,6 +3533,7 @@ function initializePDFEditor() {
                 checkElementWarnings(selectedElement);
                 updateWarningPanel();
             }
+            scheduleInvoiceEditorHistoryPush();
         });
 
         layer.add(transformer);
@@ -3917,20 +3937,22 @@ function initializePDFEditor() {
         const propRadius = document.getElementById('prop-radius');
         const propOpacity = document.getElementById('prop-opacity');
         
-        if (propX) propX.addEventListener('input', () => { selectedElement.x(parseFloat(propX.value)); layer.draw(); });
-        if (propY) propY.addEventListener('input', () => { selectedElement.y(parseFloat(propY.value)); layer.draw(); });
+        if (propX) propX.addEventListener('input', () => { selectedElement.x(parseFloat(propX.value)); layer.draw(); scheduleInvoiceEditorHistoryPush(); });
+        if (propY) propY.addEventListener('input', () => { selectedElement.y(parseFloat(propY.value)); layer.draw(); scheduleInvoiceEditorHistoryPush(); });
         if (propText) {
             // Add both input and change listeners to ensure changes are captured
             propText.addEventListener('input', function() { 
                 if (selectedElement && selectedElement.text) {
                     selectedElement.text(this.value); 
-                    layer.draw(); 
+                    layer.draw();
+                    scheduleInvoiceEditorHistoryPush();
                 }
             });
             propText.addEventListener('change', function() { 
                 if (selectedElement && selectedElement.text) {
                     selectedElement.text(this.value); 
-                    layer.draw(); 
+                    layer.draw();
+                    scheduleInvoiceEditorHistoryPush();
                 }
             });
             // Also handle paste events
@@ -3939,24 +3961,26 @@ function initializePDFEditor() {
                     if (selectedElement && selectedElement.text) {
                         selectedElement.text(this.value);
                         layer.draw();
+                        scheduleInvoiceEditorHistoryPush();
                     }
                 }, 10);
             });
         }
-        if (propFontSize) propFontSize.addEventListener('input', () => { selectedElement.fontSize(parseFloat(propFontSize.value)); layer.draw(); });
-        if (propFontFamily) propFontFamily.addEventListener('change', () => { selectedElement.fontFamily(propFontFamily.value); layer.draw(); });
-        if (propFontStyle) propFontStyle.addEventListener('change', () => { selectedElement.fontStyle(propFontStyle.value); layer.draw(); });
-        if (propFill) propFill.addEventListener('input', () => { selectedElement.fill(propFill.value); layer.draw(); });
-        if (propStroke) propStroke.addEventListener('input', () => { selectedElement.stroke(propStroke.value); layer.draw(); });
-        if (propStrokeWidth) propStrokeWidth.addEventListener('input', () => { selectedElement.strokeWidth(parseFloat(propStrokeWidth.value)); layer.draw(); });
-        if (propWidth) propWidth.addEventListener('input', () => { selectedElement.width(parseFloat(propWidth.value)); layer.draw(); });
-        if (propHeight) propHeight.addEventListener('input', () => { selectedElement.height(parseFloat(propHeight.value)); layer.draw(); });
-        if (propRadius) propRadius.addEventListener('input', () => { selectedElement.radius(parseFloat(propRadius.value)); layer.draw(); });
+        if (propFontSize) propFontSize.addEventListener('input', () => { selectedElement.fontSize(parseFloat(propFontSize.value)); layer.draw(); scheduleInvoiceEditorHistoryPush(); });
+        if (propFontFamily) propFontFamily.addEventListener('change', () => { selectedElement.fontFamily(propFontFamily.value); layer.draw(); scheduleInvoiceEditorHistoryPush(); });
+        if (propFontStyle) propFontStyle.addEventListener('change', () => { selectedElement.fontStyle(propFontStyle.value); layer.draw(); scheduleInvoiceEditorHistoryPush(); });
+        if (propFill) propFill.addEventListener('input', () => { selectedElement.fill(propFill.value); layer.draw(); scheduleInvoiceEditorHistoryPush(); });
+        if (propStroke) propStroke.addEventListener('input', () => { selectedElement.stroke(propStroke.value); layer.draw(); scheduleInvoiceEditorHistoryPush(); });
+        if (propStrokeWidth) propStrokeWidth.addEventListener('input', () => { selectedElement.strokeWidth(parseFloat(propStrokeWidth.value)); layer.draw(); scheduleInvoiceEditorHistoryPush(); });
+        if (propWidth) propWidth.addEventListener('input', () => { selectedElement.width(parseFloat(propWidth.value)); layer.draw(); scheduleInvoiceEditorHistoryPush(); });
+        if (propHeight) propHeight.addEventListener('input', () => { selectedElement.height(parseFloat(propHeight.value)); layer.draw(); scheduleInvoiceEditorHistoryPush(); });
+        if (propRadius) propRadius.addEventListener('input', () => { selectedElement.radius(parseFloat(propRadius.value)); layer.draw(); scheduleInvoiceEditorHistoryPush(); });
         if (propOpacity) {
             propOpacity.addEventListener('input', () => {
                 selectedElement.opacity(parseFloat(propOpacity.value));
                 document.getElementById('opacity-value').textContent = (propOpacity.value * 100) + '%';
                 layer.draw();
+                scheduleInvoiceEditorHistoryPush();
             });
         }
         
@@ -4271,6 +4295,7 @@ function initializePDFEditor() {
                 if (headerText) {
                     headerText.text(propTableHeaderText.value.replace(/\n/g, '\\n'));
                     layer.draw();
+                    scheduleInvoiceEditorHistoryPush();
                 }
             });
         }
@@ -4281,6 +4306,7 @@ function initializePDFEditor() {
                 if (headerText) {
                     headerText.fontSize(parseFloat(propTableHeaderFontSize.value));
                     layer.draw();
+                    scheduleInvoiceEditorHistoryPush();
                 }
             });
         }
@@ -4291,6 +4317,7 @@ function initializePDFEditor() {
                 if (headerText) {
                     headerText.fontStyle(propTableHeaderFontStyle.value);
                     layer.draw();
+                    scheduleInvoiceEditorHistoryPush();
                 }
             });
         }
@@ -4301,6 +4328,7 @@ function initializePDFEditor() {
                 if (headerText) {
                     headerText.fill(propTableHeaderFill.value);
                     layer.draw();
+                    scheduleInvoiceEditorHistoryPush();
                 }
             });
         }
@@ -4311,6 +4339,7 @@ function initializePDFEditor() {
                 if (itemsText) {
                     itemsText.text(propTableItemsText.value.replace(/\n/g, '\\n'));
                     layer.draw();
+                    scheduleInvoiceEditorHistoryPush();
                 }
             });
         }
@@ -4321,6 +4350,7 @@ function initializePDFEditor() {
                 if (itemsText) {
                     itemsText.fontSize(parseFloat(propTableItemsFontSize.value));
                     layer.draw();
+                    scheduleInvoiceEditorHistoryPush();
                 }
             });
         }
@@ -4331,6 +4361,7 @@ function initializePDFEditor() {
                 if (itemsText) {
                     itemsText.fill(propTableItemsFill.value);
                     layer.draw();
+                    scheduleInvoiceEditorHistoryPush();
                 }
             });
         }
@@ -4341,6 +4372,7 @@ function initializePDFEditor() {
                 if (line) {
                     line.stroke(propTableLineStroke.value);
                     layer.draw();
+                    scheduleInvoiceEditorHistoryPush();
                 }
             });
         }
@@ -4351,6 +4383,7 @@ function initializePDFEditor() {
                 if (line) {
                     line.strokeWidth(parseFloat(propTableLineStrokeWidth.value));
                     layer.draw();
+                    scheduleInvoiceEditorHistoryPush();
                 }
             });
         }
@@ -4369,6 +4402,7 @@ function initializePDFEditor() {
                     line.points([0, currentY, width, currentY]);
                 }
                 layer.draw();
+                scheduleInvoiceEditorHistoryPush();
             });
         }
     }
@@ -4388,6 +4422,7 @@ function initializePDFEditor() {
         }
         
         layer.draw();
+        scheduleInvoiceEditorHistoryPush();
     };
     
     // Toolbar actions
@@ -4397,6 +4432,8 @@ function initializePDFEditor() {
             layer.find('Transformer').forEach(t => t.destroy());
             selectedElement = null;
             layer.draw();
+            document.getElementById('properties-content').innerHTML = '<p class="text-sm text-gray-500 italic">Select an element to edit its properties</p>';
+            pushInvoiceEditorHistory();
         }
     });
     
@@ -4468,6 +4505,23 @@ function initializePDFEditor() {
         layer.draw();
         updateZoomDisplay();
     });
+
+    const wheelZoomContainer = document.getElementById('canvas-container');
+    if (wheelZoomContainer) {
+        wheelZoomContainer.addEventListener('wheel', function(ev) {
+            if (!stage) return;
+            ev.preventDefault();
+            const step = 0.06;
+            if (ev.deltaY < 0) {
+                zoomScale = Math.min(zoomScale + step, 2);
+            } else {
+                zoomScale = Math.max(zoomScale - step, 0.5);
+            }
+            stage.scale({ x: baseFitScale * zoomScale, y: baseFitScale * zoomScale });
+            layer.draw();
+            updateZoomDisplay();
+        }, { passive: false });
+    }
     
     // Generate preview
     // ============================================
@@ -4916,9 +4970,8 @@ function initializePDFEditor() {
         showLoading();
         hideError();
         
-        // For preview, we want to load the saved template for the selected page size
-        // So we send the page_size and let the backend load the correct template
-        // We still send the current canvas JSON as a fallback, but backend will use saved template if available
+        // Preview POST includes current canvas as template_json when the modal page size matches the editor.
+        // The invoice preview endpoint prefers that form JSON over the database so unsaved edits show up.
         const { html, css, json } = generateCode();
         
         const fd = new FormData();
@@ -5471,12 +5524,13 @@ function initializePDFEditor() {
                     // Legacy HTML for preview
                     bodyContent += `  <hr class="line-element" style="position:absolute;left:${adjustedX}px;top:${adjustedY}px;width:${width}px;border:none;border-top:${strokeWidth}px solid ${stroke};margin:0;opacity:${opacity}">\n`;
                 }
-                    } else if (child.className === 'Group' || child.constructor.name === 'Group' || child.children) {
+                    } else if (child.className === 'Group' || (child.constructor && child.constructor.name === 'Group') || child.children) {
                     // It's a Group element (check multiple ways since className might be undefined after JSON restore)
                     // Check if this is a table by looking at the group's name (use getAttr too - Konva may store name there after load)
                     const nameAttr = (child.getAttr && child.getAttr('name')) || (child.attrs && child.attrs.name) || '';
-                    let isItemsTable = nameAttr === 'items-table';
-                    let isExpensesTable = nameAttr === 'expenses-table';
+                    const pdfTableAttr = (child.getAttr && child.getAttr('pdfTable')) || (attrs && attrs.pdfTable) || '';
+                    let isItemsTable = pdfTableAttr === 'items-table' || nameAttr === 'items-table';
+                    let isExpensesTable = pdfTableAttr === 'expenses-table' || nameAttr === 'expenses-table';
                     
                     // CRITICAL FIX: Check if this is a decorative-image group (handle name variations)
                     const groupName = nameAttr;
@@ -6212,10 +6266,12 @@ table tr:last-child td {
                 const isGroup = child && (child.className === 'Group' || (child.constructor && child.constructor.name === 'Group'));
                 if (!child || !isGroup) return;
                 const n = child.getAttr ? child.getAttr('name') : (child.attrs && child.attrs.name);
-                if (n === 'items-table' || n === 'expenses-table') {
+                const pt = child.getAttr ? child.getAttr('pdfTable') : (child.attrs && child.attrs.pdfTable);
+                const tableName = n === 'items-table' || n === 'expenses-table' ? n : (pt === 'items-table' || pt === 'expenses-table' ? pt : null);
+                if (tableName) {
                     const x = Math.round(child.x() || child.attrs.x || 0);
                     const y = Math.round(child.y() || child.attrs.y || 0);
-                    tableGroupsFromLayer.push({ name: n, x: x, y: y });
+                    tableGroupsFromLayer.push({ name: tableName, x: x, y: y });
                 }
             });
             const tolerance = 5;
@@ -6228,6 +6284,7 @@ table tr:last-child td {
                     if (tg && Math.abs(tg.x - jx) <= tolerance && Math.abs(tg.y - jy) <= tolerance) {
                         if (!jsonChild.attrs) jsonChild.attrs = {};
                         jsonChild.attrs.name = tg.name;
+                        jsonChild.attrs.pdfTable = tg.name;
                         tableGroupsFromLayer[t] = null;
                         break;
                     }
@@ -6301,6 +6358,21 @@ table tr:last-child td {
         );
         
         // Delete selected element with Delete or Backspace (only if not editing text)
+        const mod = e.ctrlKey || e.metaKey;
+        if (mod && !isEditingText) {
+            const k = (e.key || '').toLowerCase();
+            if (k === 'z' && !e.shiftKey) {
+                e.preventDefault();
+                undoInvoiceEditor();
+                return;
+            }
+            if (k === 'y' || (k === 'z' && e.shiftKey)) {
+                e.preventDefault();
+                redoInvoiceEditor();
+                return;
+            }
+        }
+
         if ((e.key === 'Delete' || e.key === 'Backspace') && selectedElement && !isEditingText) {
             e.preventDefault();
             selectedElement.destroy();
@@ -6308,6 +6380,7 @@ table tr:last-child td {
             selectedElement = null;
             layer.draw();
             document.getElementById('properties-content').innerHTML = '<p class="text-sm text-gray-500 italic">Select an element to edit its properties</p>';
+            pushInvoiceEditorHistory();
         }
         
         // Copy with Ctrl+C
@@ -6326,6 +6399,7 @@ table tr:last-child td {
             layer.add(node);
             setupSelection(node);
             layer.draw();
+            pushInvoiceEditorHistory();
         }
         
         // Duplicate with Ctrl+D
@@ -6338,6 +6412,7 @@ table tr:last-child td {
             layer.add(node);
             setupSelection(node);
             layer.draw();
+            pushInvoiceEditorHistory();
         }
         
         // Arrow keys to move element (only if not editing text)
@@ -6367,6 +6442,7 @@ table tr:last-child td {
             const propY = document.getElementById('prop-y');
             if (propX) propX.value = Math.round(selectedElement.x());
             if (propY) propY.value = Math.round(selectedElement.y());
+            scheduleInvoiceEditorHistoryPush();
         }
     });
     
@@ -6408,6 +6484,7 @@ table tr:last-child td {
         }
         
         layer.draw();
+        scheduleInvoiceEditorHistoryPush();
         
         // Update properties panel
         const propX = document.getElementById('prop-x');
@@ -6477,12 +6554,8 @@ table tr:last-child td {
         canvasToolbar.insertAdjacentHTML('beforeend', alignmentButtons);
     }
     
-    // Load saved design or default layout
-    setTimeout(() => {
-        if (SAVED_DESIGN_JSON && SAVED_DESIGN_JSON.trim() !== '') {
-            console.log('Loading saved design from database...');
-            try {
-                const savedJson = JSON.parse(SAVED_DESIGN_JSON);
+    window.__invoiceReloadCanvasFromSnapshot = function(jsonString) {
+                const savedJson = JSON.parse(jsonString);
                 
                 // Get current page size dimensions
                 const currentSize = CURRENT_PAGE_SIZE || 'A4';
@@ -6531,8 +6604,14 @@ table tr:last-child td {
                             }
                             if (liveChild.name) liveChild.name('decorative-image');
                         } else if (savedName === 'items-table' || savedName === 'expenses-table') {
-                            if (liveChild.setAttr) liveChild.setAttr('name', savedName);
-                            if (liveChild.attrs) liveChild.attrs.name = savedName;
+                            if (liveChild.setAttr) {
+                                liveChild.setAttr('name', savedName);
+                                liveChild.setAttr('pdfTable', savedName);
+                            }
+                            if (liveChild.attrs) {
+                                liveChild.attrs.name = savedName;
+                                liveChild.attrs.pdfTable = savedName;
+                            }
                             if (liveChild.name) liveChild.name(savedName);
                         }
                     }
@@ -6558,8 +6637,14 @@ table tr:last-child td {
                     if (currentName === 'items-table' || currentName === 'expenses-table') return;
                     const inferredName = inferTableNameFromGroup(child, background);
                     if (inferredName) {
-                        if (child.setAttr) child.setAttr('name', inferredName);
-                        if (child.attrs) child.attrs.name = inferredName;
+                        if (child.setAttr) {
+                            child.setAttr('name', inferredName);
+                            child.setAttr('pdfTable', inferredName);
+                        }
+                        if (child.attrs) {
+                            child.attrs.name = inferredName;
+                            child.attrs.pdfTable = inferredName;
+                        }
                         if (child.name) child.name(inferredName);
                         console.log('[INVOICE] [LOAD] Restored table group name from structure:', inferredName);
                     }
@@ -7553,6 +7638,87 @@ table tr:last-child td {
                 }, 150);
                 
                 console.log('✅ Saved design loaded successfully for size:', currentSize);
+    };
+
+    const MAX_INVOICE_EDITOR_HISTORY = 45;
+    let invoiceEditorHistoryStack = [];
+    let invoiceEditorHistoryIndex = -1;
+    let invoiceEditorHistorySuspended = false;
+    let invoiceEditorHistoryDebounceTimer = null;
+
+    function getInvoiceEditorSnapshotString() {
+        try {
+            if (!stage || typeof stage.toJSON !== 'function') return null;
+            return JSON.stringify(stage.toJSON());
+        } catch (e) {
+            console.warn('Snapshot failed:', e);
+            return null;
+        }
+    }
+
+    function pushInvoiceEditorHistory() {
+        if (invoiceEditorHistorySuspended || !stage) return;
+        const snap = getInvoiceEditorSnapshotString();
+        if (!snap) return;
+        if (invoiceEditorHistoryIndex < invoiceEditorHistoryStack.length - 1) {
+            invoiceEditorHistoryStack = invoiceEditorHistoryStack.slice(0, invoiceEditorHistoryIndex + 1);
+        }
+        const last = invoiceEditorHistoryStack[invoiceEditorHistoryStack.length - 1];
+        if (last === snap) return;
+        invoiceEditorHistoryStack.push(snap);
+        invoiceEditorHistoryIndex = invoiceEditorHistoryStack.length - 1;
+        while (invoiceEditorHistoryStack.length > MAX_INVOICE_EDITOR_HISTORY) {
+            invoiceEditorHistoryStack.shift();
+            invoiceEditorHistoryIndex--;
+        }
+    }
+
+    function scheduleInvoiceEditorHistoryPush() {
+        if (invoiceEditorHistorySuspended) return;
+        clearTimeout(invoiceEditorHistoryDebounceTimer);
+        invoiceEditorHistoryDebounceTimer = setTimeout(function() {
+            pushInvoiceEditorHistory();
+        }, 160);
+    }
+
+    function applyInvoiceEditorHistoryAtCurrentIndex() {
+        const snap = invoiceEditorHistoryStack[invoiceEditorHistoryIndex];
+        if (!snap) return;
+        invoiceEditorHistorySuspended = true;
+        selectedElement = null;
+        try {
+            if (stage && stage.find) {
+                stage.find('Transformer').forEach(function(t) { t.destroy(); });
+            }
+            window.__invoiceReloadCanvasFromSnapshot(snap);
+        } catch (e) {
+            console.error('History restore failed:', e);
+        } finally {
+            invoiceEditorHistorySuspended = false;
+        }
+        if (typeof updateZoomDisplay === 'function') updateZoomDisplay();
+        if (typeof fitCanvasToContainer === 'function') fitCanvasToContainer();
+    }
+
+    function undoInvoiceEditor() {
+        if (invoiceEditorHistoryIndex <= 0) return;
+        invoiceEditorHistoryIndex--;
+        applyInvoiceEditorHistoryAtCurrentIndex();
+    }
+
+    function redoInvoiceEditor() {
+        if (invoiceEditorHistoryIndex >= invoiceEditorHistoryStack.length - 1) return;
+        invoiceEditorHistoryIndex++;
+        applyInvoiceEditorHistoryAtCurrentIndex();
+    }
+
+
+    // Load saved design or default layout
+    setTimeout(() => {
+        if (SAVED_DESIGN_JSON && SAVED_DESIGN_JSON.trim() !== '') {
+            console.log('Loading saved design from database...');
+            try {
+                window.__invoiceReloadCanvasFromSnapshot(SAVED_DESIGN_JSON);
             } catch (error) {
                 console.error('Failed to load saved design:', error);
                 console.log('Loading default layout instead...');
@@ -7562,6 +7728,11 @@ table tr:last-child td {
             console.log('No saved design found, loading default layout...');
             loadDefaultLayout();
         }
+        setTimeout(function() {
+            invoiceEditorHistoryStack = [];
+            invoiceEditorHistoryIndex = -1;
+            pushInvoiceEditorHistory();
+        }, 950);
     }, 100);
     
     function loadDefaultLayout() {

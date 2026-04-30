@@ -1476,6 +1476,7 @@
         <strong>{{ _('Keyboard Shortcuts:') }}</strong>
         <span style="opacity: 0.9;">
             Delete/Backspace = Remove | Ctrl+C = Copy | Ctrl+V = Paste | Ctrl+D = Duplicate | Arrow Keys = Move (+ Shift for 10px steps)
+            <span class="block mt-1">{{ _('Ctrl+Z undo; Ctrl+Y or Ctrl+Shift+Z redo (Cmd+Z / Cmd+Shift+Z on Mac). Mouse wheel over the canvas zooms in or out.') }}</span>
         </span>
     </p>
 </div>
@@ -2697,6 +2698,7 @@ function initializePDFEditor() {
             elements.push({ type: 'custom-text', node: text });
             setupSelection(text);
             layer.draw();
+            scheduleQuoteEditorHistoryPush();
             return;
         }
         
@@ -2715,6 +2717,7 @@ function initializePDFEditor() {
                 elements.push({ type: 'line', node: line });
                 setupSelection(line);
             layer.draw();
+                scheduleQuoteEditorHistoryPush();
                 return;
             }
         
@@ -2734,6 +2737,7 @@ function initializePDFEditor() {
             elements.push({ type: 'rectangle', node: rect });
             setupSelection(rect);
             layer.draw();
+            scheduleQuoteEditorHistoryPush();
             return;
         }
         
@@ -2752,6 +2756,7 @@ function initializePDFEditor() {
             elements.push({ type: 'circle', node: circle });
             setupSelection(circle);
             layer.draw();
+            scheduleQuoteEditorHistoryPush();
             return;
         }
         
@@ -2769,6 +2774,7 @@ function initializePDFEditor() {
                     elements.push({ type: 'logo', node: image });
                     setupSelection(image);
                     layer.draw();
+                    scheduleQuoteEditorHistoryPush();
                 });
                 return;
             }
@@ -2826,6 +2832,7 @@ function initializePDFEditor() {
             elements.push({ type: 'decorative-image', node: placeholder });
             setupSelection(placeholder);
             layer.draw();
+            scheduleQuoteEditorHistoryPush();
             return;
         }
         
@@ -2861,6 +2868,7 @@ function initializePDFEditor() {
         elements.push({ type: type, node: text, template: template });
         setupSelection(text);
         layer.draw();
+        scheduleQuoteEditorHistoryPush();
     }
     
     function addTable(x, y) {
@@ -2905,6 +2913,7 @@ function initializePDFEditor() {
         setupSelection(line);
         setupSelection(items);
         layer.draw();
+        scheduleQuoteEditorHistoryPush();
     }
     
     function addExpensesTable(x, y) {
@@ -2948,6 +2957,7 @@ function initializePDFEditor() {
         setupSelection(line);
         setupSelection(items);
         layer.draw();
+        scheduleQuoteEditorHistoryPush();
     }
     
     function setupSelection(node) {
@@ -3014,6 +3024,7 @@ function initializePDFEditor() {
             const propY = document.getElementById('prop-y');
             if (propX) propX.value = Math.round(node.x());
             if (propY) propY.value = Math.round(node.y());
+            scheduleQuoteEditorHistoryPush();
         });
     }
     
@@ -3068,6 +3079,9 @@ function initializePDFEditor() {
         }
         
         layer.add(transformer);
+        transformer.on('transformend', function() {
+            scheduleQuoteEditorHistoryPush();
+        });
         
         // Explicitly hide rotation handle if it exists (backup for rotateEnabled: false)
         transformer.forceUpdate();
@@ -3467,20 +3481,22 @@ function initializePDFEditor() {
         const propRadius = document.getElementById('prop-radius');
         const propOpacity = document.getElementById('prop-opacity');
         
-        if (propX) propX.addEventListener('input', () => { selectedElement.x(parseFloat(propX.value)); layer.draw(); });
-        if (propY) propY.addEventListener('input', () => { selectedElement.y(parseFloat(propY.value)); layer.draw(); });
+        if (propX) propX.addEventListener('input', () => { selectedElement.x(parseFloat(propX.value)); layer.draw(); scheduleQuoteEditorHistoryPush(); });
+        if (propY) propY.addEventListener('input', () => { selectedElement.y(parseFloat(propY.value)); layer.draw(); scheduleQuoteEditorHistoryPush(); });
         if (propText) {
             // Add both input and change listeners to ensure changes are captured
             propText.addEventListener('input', function() { 
                 if (selectedElement && selectedElement.text) {
                     selectedElement.text(this.value); 
-                    layer.draw(); 
+                    layer.draw();
+                    scheduleQuoteEditorHistoryPush();
                 }
             });
             propText.addEventListener('change', function() { 
                 if (selectedElement && selectedElement.text) {
                     selectedElement.text(this.value); 
-                    layer.draw(); 
+                    layer.draw();
+                    scheduleQuoteEditorHistoryPush();
                 }
             });
             // Also handle paste events
@@ -3489,24 +3505,26 @@ function initializePDFEditor() {
                     if (selectedElement && selectedElement.text) {
                         selectedElement.text(this.value);
                         layer.draw();
+                        scheduleQuoteEditorHistoryPush();
                     }
                 }, 10);
             });
         }
-        if (propFontSize) propFontSize.addEventListener('input', () => { selectedElement.fontSize(parseFloat(propFontSize.value)); layer.draw(); });
-        if (propFontFamily) propFontFamily.addEventListener('change', () => { selectedElement.fontFamily(propFontFamily.value); layer.draw(); });
-        if (propFontStyle) propFontStyle.addEventListener('change', () => { selectedElement.fontStyle(propFontStyle.value); layer.draw(); });
-        if (propFill) propFill.addEventListener('input', () => { selectedElement.fill(propFill.value); layer.draw(); });
-        if (propStroke) propStroke.addEventListener('input', () => { selectedElement.stroke(propStroke.value); layer.draw(); });
-        if (propStrokeWidth) propStrokeWidth.addEventListener('input', () => { selectedElement.strokeWidth(parseFloat(propStrokeWidth.value)); layer.draw(); });
-        if (propWidth) propWidth.addEventListener('input', () => { selectedElement.width(parseFloat(propWidth.value)); layer.draw(); });
-        if (propHeight) propHeight.addEventListener('input', () => { selectedElement.height(parseFloat(propHeight.value)); layer.draw(); });
-        if (propRadius) propRadius.addEventListener('input', () => { selectedElement.radius(parseFloat(propRadius.value)); layer.draw(); });
+        if (propFontSize) propFontSize.addEventListener('input', () => { selectedElement.fontSize(parseFloat(propFontSize.value)); layer.draw(); scheduleQuoteEditorHistoryPush(); });
+        if (propFontFamily) propFontFamily.addEventListener('change', () => { selectedElement.fontFamily(propFontFamily.value); layer.draw(); scheduleQuoteEditorHistoryPush(); });
+        if (propFontStyle) propFontStyle.addEventListener('change', () => { selectedElement.fontStyle(propFontStyle.value); layer.draw(); scheduleQuoteEditorHistoryPush(); });
+        if (propFill) propFill.addEventListener('input', () => { selectedElement.fill(propFill.value); layer.draw(); scheduleQuoteEditorHistoryPush(); });
+        if (propStroke) propStroke.addEventListener('input', () => { selectedElement.stroke(propStroke.value); layer.draw(); scheduleQuoteEditorHistoryPush(); });
+        if (propStrokeWidth) propStrokeWidth.addEventListener('input', () => { selectedElement.strokeWidth(parseFloat(propStrokeWidth.value)); layer.draw(); scheduleQuoteEditorHistoryPush(); });
+        if (propWidth) propWidth.addEventListener('input', () => { selectedElement.width(parseFloat(propWidth.value)); layer.draw(); scheduleQuoteEditorHistoryPush(); });
+        if (propHeight) propHeight.addEventListener('input', () => { selectedElement.height(parseFloat(propHeight.value)); layer.draw(); scheduleQuoteEditorHistoryPush(); });
+        if (propRadius) propRadius.addEventListener('input', () => { selectedElement.radius(parseFloat(propRadius.value)); layer.draw(); scheduleQuoteEditorHistoryPush(); });
         if (propOpacity) {
             propOpacity.addEventListener('input', () => {
                 selectedElement.opacity(parseFloat(propOpacity.value));
                 document.getElementById('opacity-value').textContent = (propOpacity.value * 100) + '%';
                 layer.draw();
+                scheduleQuoteEditorHistoryPush();
             });
         }
         
@@ -3594,6 +3612,7 @@ function initializePDFEditor() {
                         // Add image
                         element.add(konvaImage);
                         layer.draw();
+                        scheduleQuoteEditorHistoryPush();
                         console.log('Image added to element, new dimensions:', width, 'x', height);
                         
                         // Force a redraw of the properties panel to show the image
@@ -3654,6 +3673,7 @@ function initializePDFEditor() {
                 element.width(100);
                 element.height(100);
                 layer.draw();
+                scheduleQuoteEditorHistoryPush();
             }
         };
         
@@ -3790,6 +3810,7 @@ function initializePDFEditor() {
                 if (headerText) {
                     headerText.text(propTableHeaderText.value.replace(/\n/g, '\\n'));
                     layer.draw();
+                    scheduleQuoteEditorHistoryPush();
                 }
             });
         }
@@ -3800,6 +3821,7 @@ function initializePDFEditor() {
                 if (headerText) {
                     headerText.fontSize(parseFloat(propTableHeaderFontSize.value));
                     layer.draw();
+                    scheduleQuoteEditorHistoryPush();
                 }
             });
         }
@@ -3810,6 +3832,7 @@ function initializePDFEditor() {
                 if (headerText) {
                     headerText.fontStyle(propTableHeaderFontStyle.value);
                     layer.draw();
+                    scheduleQuoteEditorHistoryPush();
                 }
             });
         }
@@ -3820,6 +3843,7 @@ function initializePDFEditor() {
                 if (headerText) {
                     headerText.fill(propTableHeaderFill.value);
                     layer.draw();
+                    scheduleQuoteEditorHistoryPush();
                 }
             });
         }
@@ -3830,6 +3854,7 @@ function initializePDFEditor() {
                 if (itemsText) {
                     itemsText.text(propTableItemsText.value.replace(/\n/g, '\\n'));
                     layer.draw();
+                    scheduleQuoteEditorHistoryPush();
                 }
             });
         }
@@ -3840,6 +3865,7 @@ function initializePDFEditor() {
                 if (itemsText) {
                     itemsText.fontSize(parseFloat(propTableItemsFontSize.value));
                     layer.draw();
+                    scheduleQuoteEditorHistoryPush();
                 }
             });
         }
@@ -3850,6 +3876,7 @@ function initializePDFEditor() {
                 if (itemsText) {
                     itemsText.fill(propTableItemsFill.value);
                     layer.draw();
+                    scheduleQuoteEditorHistoryPush();
                 }
             });
         }
@@ -3860,6 +3887,7 @@ function initializePDFEditor() {
                 if (line) {
                     line.stroke(propTableLineStroke.value);
                     layer.draw();
+                    scheduleQuoteEditorHistoryPush();
                 }
             });
         }
@@ -3870,6 +3898,7 @@ function initializePDFEditor() {
                 if (line) {
                     line.strokeWidth(parseFloat(propTableLineStrokeWidth.value));
                     layer.draw();
+                    scheduleQuoteEditorHistoryPush();
                 }
             });
         }
@@ -3888,6 +3917,7 @@ function initializePDFEditor() {
                     line.points([0, currentY, width, currentY]);
                 }
                 layer.draw();
+                scheduleQuoteEditorHistoryPush();
             });
         }
     }
@@ -3907,6 +3937,7 @@ function initializePDFEditor() {
         }
         
         layer.draw();
+        scheduleQuoteEditorHistoryPush();
     };
     
     // Toolbar actions
@@ -3916,6 +3947,8 @@ function initializePDFEditor() {
             layer.find('Transformer').forEach(t => t.destroy());
             selectedElement = null;
             layer.draw();
+            document.getElementById('properties-content').innerHTML = '<p class="text-sm text-gray-500 italic">Select an element to edit its properties</p>';
+            pushQuoteEditorHistory();
         }
     });
     
@@ -3987,6 +4020,23 @@ function initializePDFEditor() {
         layer.draw();
         updateZoomDisplay();
     });
+
+    const quoteWheelZoomContainer = document.getElementById('canvas-container');
+    if (quoteWheelZoomContainer) {
+        quoteWheelZoomContainer.addEventListener('wheel', function(ev) {
+            if (!stage) return;
+            ev.preventDefault();
+            const step = 0.06;
+            if (ev.deltaY < 0) {
+                zoomScale = Math.min(zoomScale + step, 2);
+            } else {
+                zoomScale = Math.max(zoomScale - step, 0.5);
+            }
+            stage.scale({ x: baseFitScale * zoomScale, y: baseFitScale * zoomScale });
+            layer.draw();
+            updateZoomDisplay();
+        }, { passive: false });
+    }
     
     // Generate preview
     // ============================================
@@ -5807,6 +5857,21 @@ table tr:last-child td {
             activeElement.tagName === 'TEXTAREA' ||
             activeElement.isContentEditable
         );
+
+        const modQ = e.ctrlKey || e.metaKey;
+        if (modQ && !isEditingText) {
+            const kq = (e.key || '').toLowerCase();
+            if (kq === 'z' && !e.shiftKey) {
+                e.preventDefault();
+                undoQuoteEditor();
+                return;
+            }
+            if (kq === 'y' || (kq === 'z' && e.shiftKey)) {
+                e.preventDefault();
+                redoQuoteEditor();
+                return;
+            }
+        }
         
         // Delete selected element with Delete or Backspace (only if not editing text)
         if ((e.key === 'Delete' || e.key === 'Backspace') && selectedElement && !isEditingText) {
@@ -5816,6 +5881,7 @@ table tr:last-child td {
             selectedElement = null;
             layer.draw();
             document.getElementById('properties-content').innerHTML = '<p class="text-sm text-gray-500 italic">Select an element to edit its properties</p>';
+            pushQuoteEditorHistory();
         }
         
         // Copy with Ctrl+C
@@ -5834,6 +5900,7 @@ table tr:last-child td {
             layer.add(node);
             setupSelection(node);
             layer.draw();
+            pushQuoteEditorHistory();
         }
         
         // Duplicate with Ctrl+D
@@ -5846,6 +5913,7 @@ table tr:last-child td {
             layer.add(node);
             setupSelection(node);
             layer.draw();
+            pushQuoteEditorHistory();
         }
         
         // Arrow keys to move element (only if not editing text)
@@ -5875,6 +5943,7 @@ table tr:last-child td {
             const propY = document.getElementById('prop-y');
             if (propX) propX.value = Math.round(selectedElement.x());
             if (propY) propY.value = Math.round(selectedElement.y());
+            scheduleQuoteEditorHistoryPush();
         }
     });
     
@@ -5922,6 +5991,7 @@ table tr:last-child td {
         const propY = document.getElementById('prop-y');
         if (propX) propX.value = Math.round(selectedElement.x());
         if (propY) propY.value = Math.round(selectedElement.y());
+        scheduleQuoteEditorHistoryPush();
     };
     
     // Save design state
@@ -5990,12 +6060,8 @@ table tr:last-child td {
         canvasToolbar.insertAdjacentHTML('beforeend', alignmentButtons);
     }
     
-    // Load saved design or default layout
-    setTimeout(() => {
-        if (SAVED_DESIGN_JSON && SAVED_DESIGN_JSON.trim() !== '') {
-            console.log('Loading saved design from database...');
-            try {
-                const savedJson = JSON.parse(SAVED_DESIGN_JSON);
+    window.__quoteReloadCanvasFromSnapshot = function(jsonString) {
+                const savedJson = JSON.parse(jsonString);
                 
                 // Get current page size dimensions
                 const currentSize = CURRENT_PAGE_SIZE || 'A4';
@@ -6993,6 +7059,85 @@ table tr:last-child td {
                 }, 150);
                 
                 console.log('✅ Saved design loaded successfully for size:', currentSize);
+    };
+
+    const MAX_QUOTE_EDITOR_HISTORY = 45;
+    let quoteEditorHistoryStack = [];
+    let quoteEditorHistoryIndex = -1;
+    let quoteEditorHistorySuspended = false;
+    let quoteEditorHistoryDebounceTimer = null;
+
+    function getQuoteEditorSnapshotString() {
+        try {
+            if (!stage || typeof stage.toJSON !== 'function') return null;
+            return JSON.stringify(stage.toJSON());
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function pushQuoteEditorHistory() {
+        if (quoteEditorHistorySuspended || !stage) return;
+        const snap = getQuoteEditorSnapshotString();
+        if (!snap) return;
+        if (quoteEditorHistoryIndex < quoteEditorHistoryStack.length - 1) {
+            quoteEditorHistoryStack = quoteEditorHistoryStack.slice(0, quoteEditorHistoryIndex + 1);
+        }
+        const last = quoteEditorHistoryStack[quoteEditorHistoryStack.length - 1];
+        if (last === snap) return;
+        quoteEditorHistoryStack.push(snap);
+        quoteEditorHistoryIndex = quoteEditorHistoryStack.length - 1;
+        while (quoteEditorHistoryStack.length > MAX_QUOTE_EDITOR_HISTORY) {
+            quoteEditorHistoryStack.shift();
+            quoteEditorHistoryIndex--;
+        }
+    }
+
+    function scheduleQuoteEditorHistoryPush() {
+        if (quoteEditorHistorySuspended) return;
+        clearTimeout(quoteEditorHistoryDebounceTimer);
+        quoteEditorHistoryDebounceTimer = setTimeout(function() {
+            pushQuoteEditorHistory();
+        }, 160);
+    }
+
+    function applyQuoteEditorHistoryAtCurrentIndex() {
+        const snap = quoteEditorHistoryStack[quoteEditorHistoryIndex];
+        if (!snap) return;
+        quoteEditorHistorySuspended = true;
+        selectedElement = null;
+        try {
+            if (stage && stage.find) {
+                stage.find('Transformer').forEach(function(t) { t.destroy(); });
+            }
+            window.__quoteReloadCanvasFromSnapshot(snap);
+        } catch (e) {
+            console.error('Quote history restore failed:', e);
+        } finally {
+            quoteEditorHistorySuspended = false;
+        }
+        if (typeof updateZoomDisplay === 'function') updateZoomDisplay();
+        if (typeof fitCanvasToContainer === 'function') fitCanvasToContainer();
+    }
+
+    function undoQuoteEditor() {
+        if (quoteEditorHistoryIndex <= 0) return;
+        quoteEditorHistoryIndex--;
+        applyQuoteEditorHistoryAtCurrentIndex();
+    }
+
+    function redoQuoteEditor() {
+        if (quoteEditorHistoryIndex >= quoteEditorHistoryStack.length - 1) return;
+        quoteEditorHistoryIndex++;
+        applyQuoteEditorHistoryAtCurrentIndex();
+    }
+
+    // Load saved design or default layout
+    setTimeout(() => {
+        if (SAVED_DESIGN_JSON && SAVED_DESIGN_JSON.trim() !== '') {
+            console.log('Loading saved design from database...');
+            try {
+                window.__quoteReloadCanvasFromSnapshot(SAVED_DESIGN_JSON);
             } catch (error) {
                 console.error('Failed to load saved design:', error);
                 console.log('Loading default layout instead...');
@@ -7002,6 +7147,11 @@ table tr:last-child td {
             console.log('No saved design found, loading default layout...');
             loadDefaultLayout();
         }
+        setTimeout(function() {
+            quoteEditorHistoryStack = [];
+            quoteEditorHistoryIndex = -1;
+            pushQuoteEditorHistory();
+        }, 950);
     }, 100);
     
     function loadDefaultLayout() {

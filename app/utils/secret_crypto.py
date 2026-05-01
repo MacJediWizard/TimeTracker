@@ -78,4 +78,3 @@ def decrypt_if_needed(value: Optional[str]) -> str:
     token = value[len(ENC_PREFIX) :]
     f = get_fernet()
     return f.decrypt(token.encode("utf-8")).decode("utf-8")
-

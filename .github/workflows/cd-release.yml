@@ -279,13 +279,16 @@ jobs:
           # Extract version without 'v' prefix for comparison
           VERSION_NO_V="${VERSION#v}"
           
-          # Validate that the version matches setup.py
-          if [[ "$VERSION_NO_V" != "$SETUP_VERSION" ]]; then
+          # Validate that the version matches setup.py.
+          # Accept exact match OR fork-suffixed tags of the form <SETUP_VERSION>-<suffix>
+          # (e.g. 5.5.2-mjw.2) so a fork can ship patches without bumping setup.py.
+          if [[ "$VERSION_NO_V" != "$SETUP_VERSION" && "$VERSION_NO_V" != "$SETUP_VERSION"-* ]]; then
             echo "❌ ERROR: Version mismatch!"
             echo "   Tag version: $VERSION_NO_V"
             echo "   setup.py version: $SETUP_VERSION"
             echo ""
-            echo "Please update setup.py to version '$VERSION_NO_V' or use version 'v$SETUP_VERSION'"
+            echo "Please update setup.py to version '$VERSION_NO_V', use version 'v$SETUP_VERSION',"
+            echo "or use a suffixed tag like 'v$SETUP_VERSION-<suffix>'."
             exit 1
           fi
           

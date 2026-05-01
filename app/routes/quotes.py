@@ -248,10 +248,10 @@ def create_quote():
                 flash(_("Invalid discount amount format"), "error")
                 return render_template(
                     "quotes/create.html",
-                clients=clients,
-                only_one_client=only_one_client,
-                single_client=single_client,
-                **_quote_form_inventory_context(),
+                    clients=clients,
+                    only_one_client=only_one_client,
+                    single_client=single_client,
+                    **_quote_form_inventory_context(),
                 )
 
         # Parse valid_until date
@@ -263,10 +263,10 @@ def create_quote():
                 flash(_("Invalid date format for valid until"), "error")
                 return render_template(
                     "quotes/create.html",
-                clients=clients,
-                only_one_client=only_one_client,
-                single_client=single_client,
-                **_quote_form_inventory_context(),
+                    clients=clients,
+                    only_one_client=only_one_client,
+                    single_client=single_client,
+                    **_quote_form_inventory_context(),
                 )
 
         # Generate quote number

@@ -6,31 +6,16 @@ Simple high-level tests to ensure the system works end-to-end
 import pytest
 from datetime import date, timedelta
 from decimal import Decimal
-from app import create_app, db
-from app.models import User, Project, Client, Invoice, Settings
+from app import db
+from app.models import Settings  # noqa: F401  (kept for tooling discoverability)
 from factories import UserFactory, ClientFactory, ProjectFactory, InvoiceFactory
 
-
-@pytest.fixture
-def app():
-    """Create and configure a test app instance"""
-    # Create app with test configuration
-    test_config = {
-        "TESTING": True,
-        "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
-        "SQLALCHEMY_TRACK_MODIFICATIONS": False,
-        "WTF_CSRF_ENABLED": False,
-        "SECRET_KEY": "test-secret-key-do-not-use-in-production",
-        "SERVER_NAME": "localhost:5000",
-    }
-
-    app = create_app(test_config)
-
-    with app.app_context():
-        db.create_all()
-        yield app
-        db.session.remove()
-        db.drop_all()
+# The local `app` fixture this file used to define (with `sqlite:///:memory:` and
+# the default connection pool) raced against pytest-xdist parallel execution and
+# produced `ResourceClosedError: This transaction is closed` because :memory:
+# databases are per-connection and the default pool recycles connections.
+# The conftest-provided `app` fixture uses file-backed SQLite + NullPool +
+# pool_pre_ping, which is stable in the same scenario.
 
 
 @pytest.mark.smoke

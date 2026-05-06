@@ -9,14 +9,18 @@ name: CD - Release Build
 # - Tests can optionally be run via workflow_dispatch for manual releases
 #
 # Workflow is triggered by:
-# - Push to main/master (after PR merge from RC)
-# - Git tags (v*.*.*)
+# - Git tags (v*.*.*) - explicit release cuts
 # - Release events
 # - Manual workflow_dispatch
+#
+# Fork note: auto-trigger on push to main/master removed because the fork
+# does not bump setup.py per merge (Komodo deploys the floating :latest-mjw
+# tag with pull_policy: never, so no registry push is needed). Pushing a
+# version tag or running workflow_dispatch is still supported when an
+# explicit release is desired.
 
 on:
   push:
-    branches: [ main, master ]
     tags: [ 'v*.*.*' ]
   release:
     types: [ published ]

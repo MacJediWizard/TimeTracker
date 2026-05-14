@@ -4,7 +4,6 @@ import base64
 import os
 from typing import Optional
 
-
 _FERNET = None
 
 

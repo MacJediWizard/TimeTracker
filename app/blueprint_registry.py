@@ -194,6 +194,7 @@ def register_all_blueprints(app, logger=None):
     app.register_blueprint(budget_alerts_bp)
     app.register_blueprint(import_export_bp)
     app.register_blueprint(webhooks_bp)
+    app.register_blueprint(esignature_webhooks_bp)
     app.register_blueprint(quotes_bp)
     app.register_blueprint(inventory_bp)
     app.register_blueprint(kiosk_bp)

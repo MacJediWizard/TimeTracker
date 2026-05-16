@@ -1,4 +1,3 @@
-import json
 import secrets
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -24,19 +23,33 @@ class Client(db.Model):
     phone = db.Column(db.String(50), nullable=True)
     address = db.Column(db.Text, nullable=True)
     default_hourly_rate = db.Column(db.Numeric(9, 2), nullable=True)
-    status = db.Column(db.String(20), default="active", nullable=False)  # 'active' or 'inactive'
+    status = db.Column(
+        db.String(20), default="active", nullable=False
+    )  # 'active' or 'inactive'
     prepaid_hours_monthly = db.Column(db.Numeric(7, 2), nullable=True)
     prepaid_reset_day = db.Column(db.Integer, nullable=False, default=1)
     created_by = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
 
     # Client portal settings
-    portal_enabled = db.Column(db.Boolean, default=False, nullable=False)  # Enable/disable client portal access
-    portal_username = db.Column(db.String(80), unique=True, nullable=True, index=True)  # Portal login username
-    portal_password_hash = db.Column(db.String(255), nullable=True)  # Hashed password for portal access
-    password_setup_token = db.Column(db.String(100), nullable=True, index=True)  # Token for password setup/reset
-    password_setup_token_expires = db.Column(db.DateTime, nullable=True)  # Token expiration time
+    portal_enabled = db.Column(
+        db.Boolean, default=False, nullable=False
+    )  # Enable/disable client portal access
+    portal_username = db.Column(
+        db.String(80), unique=True, nullable=True, index=True
+    )  # Portal login username
+    portal_password_hash = db.Column(
+        db.String(255), nullable=True
+    )  # Hashed password for portal access
+    password_setup_token = db.Column(
+        db.String(100), nullable=True, index=True
+    )  # Token for password setup/reset
+    password_setup_token_expires = db.Column(
+        db.DateTime, nullable=True
+    )  # Token expiration time
     portal_issues_enabled = db.Column(
         db.Boolean, default=True, nullable=False
     )  # Enable/disable issue reporting in portal
@@ -44,9 +57,21 @@ class Client(db.Model):
     # Custom fields for flexible data storage (e.g., debtor_number, ERP IDs, etc.)
     custom_fields = db.Column(db.JSON, nullable=True)
 
+    # Timesheet signoff defaults (e-signature integration)
+    signoff_email = db.Column(db.String(255), nullable=True)
+    signoff_template_id = db.Column(
+        db.Integer,
+        db.ForeignKey("timesheet_signoff_templates.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     # Relationships
-    projects = db.relationship("Project", backref="client_obj", lazy="dynamic", cascade="all, delete-orphan")
-    time_entries = db.relationship("TimeEntry", backref="client", lazy="dynamic", cascade="all, delete-orphan")
+    projects = db.relationship(
+        "Project", backref="client_obj", lazy="dynamic", cascade="all, delete-orphan"
+    )
+    time_entries = db.relationship(
+        "TimeEntry", backref="client", lazy="dynamic", cascade="all, delete-orphan"
+    )
 
     def __init__(
         self,
@@ -74,9 +99,13 @@ class Client(db.Model):
         self.email = email.strip() if email else None
         self.phone = phone.strip() if phone else None
         self.address = address.strip() if address else None
-        self.default_hourly_rate = Decimal(str(default_hourly_rate)) if default_hourly_rate else None
+        self.default_hourly_rate = (
+            Decimal(str(default_hourly_rate)) if default_hourly_rate else None
+        )
         self.prepaid_hours_monthly = (
-            Decimal(str(prepaid_hours_monthly)) if prepaid_hours_monthly not in (None, "") else None
+            Decimal(str(prepaid_hours_monthly))
+            if prepaid_hours_monthly not in (None, "")
+            else None
         )
         try:
             reset_day = int(prepaid_reset_day) if prepaid_reset_day is not None else 1
@@ -117,7 +146,9 @@ class Client(db.Model):
         """Calculate total billable hours across all projects for this client"""
         total_seconds = 0
         for project in self.projects:
-            total_seconds += project.total_billable_hours * 3600  # Convert hours to seconds
+            total_seconds += (
+                project.total_billable_hours * 3600
+            )  # Convert hours to seconds
         return round(total_seconds / 3600, 2)
 
     @property
@@ -133,7 +164,11 @@ class Client(db.Model):
     def prepaid_plan_enabled(self):
         """Return True if client has prepaid hours configured."""
         try:
-            hours = Decimal(str(self.prepaid_hours_monthly)) if self.prepaid_hours_monthly is not None else Decimal("0")
+            hours = (
+                Decimal(str(self.prepaid_hours_monthly))
+                if self.prepaid_hours_monthly is not None
+                else Decimal("0")
+            )
         except Exception:
             hours = Decimal("0")
         return hours > 0
@@ -187,8 +222,14 @@ class Client(db.Model):
 
         try:
             seconds = (
-                self.prepaid_consumptions.filter(ClientPrepaidConsumption.allocation_month == month_start)
-                .with_entities(db.func.coalesce(db.func.sum(ClientPrepaidConsumption.seconds_consumed), 0))
+                self.prepaid_consumptions.filter(
+                    ClientPrepaidConsumption.allocation_month == month_start
+                )
+                .with_entities(
+                    db.func.coalesce(
+                        db.func.sum(ClientPrepaidConsumption.seconds_consumed), 0
+                    )
+                )
                 .scalar()
                 or 0
             )
@@ -272,13 +313,17 @@ class Client(db.Model):
             "email": self.email,
             "phone": self.phone,
             "address": self.address,
-            "default_hourly_rate": str(self.default_hourly_rate) if self.default_hourly_rate else None,
+            "default_hourly_rate": str(self.default_hourly_rate)
+            if self.default_hourly_rate
+            else None,
             "status": self.status,
             "is_active": self.is_active,
             "total_projects": self.total_projects,
             "active_projects": self.active_projects,
             "prepaid_hours_monthly": (
-                float(self.prepaid_hours_monthly) if self.prepaid_hours_monthly is not None else None
+                float(self.prepaid_hours_monthly)
+                if self.prepaid_hours_monthly is not None
+                else None
             ),
             "prepaid_reset_day": self.prepaid_reset_day,
             "custom_fields": self.custom_fields or {},
@@ -313,7 +358,9 @@ class Client(db.Model):
     @property
     def has_portal_access(self):
         """Check if client has portal access enabled and credentials set"""
-        return self.portal_enabled and self.portal_username and self.portal_password_hash
+        return (
+            self.portal_enabled and self.portal_username and self.portal_password_hash
+        )
 
     def get_portal_data(self):
         """Get data for client portal view (projects, invoices, time entries)"""
@@ -325,27 +372,45 @@ class Client(db.Model):
         from .time_entry import TimeEntry
 
         # Get active projects for this client
-        projects = Project.query.filter_by(client_id=self.id, status="active").order_by(Project.name).all()
+        projects = (
+            Project.query.filter_by(client_id=self.id, status="active")
+            .order_by(Project.name)
+            .all()
+        )
 
         # Get invoices for this client
-        invoices = Invoice.query.filter_by(client_id=self.id).order_by(Invoice.issue_date.desc()).limit(50).all()
+        invoices = (
+            Invoice.query.filter_by(client_id=self.id)
+            .order_by(Invoice.issue_date.desc())
+            .limit(50)
+            .all()
+        )
 
         # Get time entries for projects belonging to this client
         project_ids = [p.id for p in projects]
         time_entries = (
-            TimeEntry.query.filter(TimeEntry.project_id.in_(project_ids), TimeEntry.end_time.isnot(None))
+            TimeEntry.query.filter(
+                TimeEntry.project_id.in_(project_ids), TimeEntry.end_time.isnot(None)
+            )
             .order_by(TimeEntry.start_time.desc())
             .limit(100)
             .all()
         )
 
-        return {"client": self, "projects": projects, "invoices": invoices, "time_entries": time_entries}
+        return {
+            "client": self,
+            "projects": projects,
+            "invoices": invoices,
+            "time_entries": time_entries,
+        }
 
     def generate_password_setup_token(self, expires_hours=24):
         """Generate a secure token for password setup/reset"""
         token = secrets.token_urlsafe(32)
         self.password_setup_token = token
-        self.password_setup_token_expires = datetime.utcnow() + timedelta(hours=expires_hours)
+        self.password_setup_token_expires = datetime.utcnow() + timedelta(
+            hours=expires_hours
+        )
         return token
 
     def verify_password_setup_token(self, token):
@@ -356,7 +421,10 @@ class Client(db.Model):
         if self.password_setup_token != token:
             return False
 
-        if self.password_setup_token_expires and self.password_setup_token_expires < datetime.utcnow():
+        if (
+            self.password_setup_token_expires
+            and self.password_setup_token_expires < datetime.utcnow()
+        ):
             return False
 
         return True
@@ -369,7 +437,9 @@ class Client(db.Model):
     @classmethod
     def authenticate_portal(cls, username, password):
         """Authenticate a client portal login"""
-        client = cls.query.filter_by(portal_username=username, portal_enabled=True).first()
+        client = cls.query.filter_by(
+            portal_username=username, portal_enabled=True
+        ).first()
         if not client:
             return None
 
@@ -391,7 +461,10 @@ class Client(db.Model):
         if not client:
             return None
 
-        if client.password_setup_token_expires and client.password_setup_token_expires < datetime.utcnow():
+        if (
+            client.password_setup_token_expires
+            and client.password_setup_token_expires < datetime.utcnow()
+        ):
             return None
 
         return client

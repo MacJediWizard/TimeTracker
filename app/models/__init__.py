@@ -2,17 +2,30 @@ from .activity import Activity
 from .api_idempotency_key import ApiIdempotencyKey
 from .api_token import ApiToken
 from .audit_log import AuditLog
+from .branding_asset import BrandingAsset
 from .budget_alert import BudgetAlert
 from .calendar_event import CalendarEvent
 from .calendar_integration import CalendarIntegration, CalendarSyncEvent
 from .client import Client
 from .client_attachment import ClientAttachment
 from .client_note import ClientNote
-from .client_notification import ClientNotification, ClientNotificationPreferences, NotificationType
+from .client_notification import (
+    ClientNotification,
+    ClientNotificationPreferences,
+    NotificationType,
+)
 from .client_portal_customization import ClientPortalCustomization
-from .client_portal_dashboard_preference import DEFAULT_WIDGET_ORDER, VALID_WIDGET_IDS, ClientPortalDashboardPreference
+from .client_portal_dashboard_preference import (
+    DEFAULT_WIDGET_ORDER,
+    VALID_WIDGET_IDS,
+    ClientPortalDashboardPreference,
+)
 from .client_prepaid_consumption import ClientPrepaidConsumption
-from .client_time_approval import ClientApprovalPolicy, ClientApprovalStatus, ClientTimeApproval
+from .client_time_approval import (
+    ClientApprovalPolicy,
+    ClientApprovalStatus,
+    ClientTimeApproval,
+)
 from .comment import Comment
 from .comment_attachment import CommentAttachment
 from .contact import Contact
@@ -23,6 +36,7 @@ from .custom_report import CustomReportConfig
 from .deal import Deal
 from .deal_activity import DealActivity
 from .donation_interaction import DonationInteraction
+from .esignature_request import ESignatureRequest, ESignatureStatus
 from .expense import Expense
 from .expense_category import ExpenseCategory
 from .expense_gps import MileageTrack
@@ -85,6 +99,8 @@ from .time_entry_template import TimeEntryTemplate
 from .time_off import CompanyHoliday, LeaveType, TimeOffRequest, TimeOffRequestStatus
 from .timesheet_period import TimesheetPeriod, TimesheetPeriodStatus
 from .timesheet_policy import TimesheetPolicy
+from .timesheet_signoff_request import TimesheetSignoffRequest, TimesheetSignoffStatus
+from .timesheet_signoff_template import TimesheetSignoffTemplate
 from .user import User
 from .user_client import UserClient
 from .user_favorite_project import UserFavoriteProject
@@ -192,6 +208,12 @@ __all__ = [
     "TimesheetPeriod",
     "TimesheetPeriodStatus",
     "TimesheetPolicy",
+    "TimesheetSignoffRequest",
+    "TimesheetSignoffStatus",
+    "TimesheetSignoffTemplate",
+    "BrandingAsset",
+    "ESignatureRequest",
+    "ESignatureStatus",
     "LeaveType",
     "TimeOffRequest",
     "TimeOffRequestStatus",

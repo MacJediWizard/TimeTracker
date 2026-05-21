@@ -2,7 +2,15 @@ import csv
 import io
 from datetime import date, datetime, timedelta
 
-from flask import Blueprint, Response, flash, redirect, render_template, request, url_for
+from flask import (
+    Blueprint,
+    Response,
+    flash,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 from flask_babel import gettext as _
 from flask_login import current_user, login_required
 
@@ -48,24 +56,38 @@ def dashboard():
     start = _parse_date(request.args.get("start_date"))
     end = _parse_date(request.args.get("end_date"))
 
-    periods = service.list_periods(user_id=selected_user_id, period_start=start, period_end=end)
+    periods = service.list_periods(
+        user_id=selected_user_id, period_start=start, period_end=end
+    )
 
     leave_requests_query = TimeOffRequest.query
     if not (current_user.is_admin or _can_approve()):
-        leave_requests_query = leave_requests_query.filter(TimeOffRequest.user_id == current_user.id)
-    leave_requests = leave_requests_query.order_by(TimeOffRequest.start_date.desc()).limit(40).all()
+        leave_requests_query = leave_requests_query.filter(
+            TimeOffRequest.user_id == current_user.id
+        )
+    leave_requests = (
+        leave_requests_query.order_by(TimeOffRequest.start_date.desc()).limit(40).all()
+    )
 
     leave_types = service.list_leave_types(enabled_only=False)
-    holidays = CompanyHoliday.query.order_by(CompanyHoliday.start_date.desc()).limit(30).all()
+    holidays = (
+        CompanyHoliday.query.order_by(CompanyHoliday.start_date.desc()).limit(30).all()
+    )
 
-    policy = service.get_or_create_default_policy() if (current_user.is_admin or _can_approve()) else None
+    policy = (
+        service.get_or_create_default_policy()
+        if (current_user.is_admin or _can_approve())
+        else None
+    )
 
     # default capacity window: current week
     today = date.today()
     cap_start = start or (today - timedelta(days=today.weekday()))
     cap_end = end or (cap_start + timedelta(days=6))
     capacity = service.capacity_report(
-        start_date=cap_start, end_date=cap_end, team_user_ids=None if current_user.is_admin else [current_user.id]
+        start_date=cap_start,
+        end_date=cap_end,
+        team_user_ids=None if current_user.is_admin else [current_user.id],
     )
 
     balances = service.get_leave_balance(selected_user_id)
@@ -76,6 +98,11 @@ def dashboard():
     users = []
     if current_user.is_admin:
         users = User.query.order_by(User.username.asc()).all()
+
+    # Signoff state for the workforce dashboard (#22). Built per-render so
+    # the "Send for approval" UI degrades gracefully when DocuSeal is not
+    # configured (button becomes a Configure-DocuSeal link).
+    signoff_state = _build_signoff_state(periods)
 
     # Accumulated overtime (YTD) for selected user and overtime leave type for "Take as paid leave"
     selected_user = User.query.get(selected_user_id)
@@ -102,7 +129,48 @@ def dashboard():
         cap_end=cap_end,
         overtime_ytd_hours=overtime_ytd_hours,
         overtime_leave_type_id=overtime_leave_type_id,
+        signoff_state=signoff_state,
     )
+
+
+def _build_signoff_state(periods):
+    """Assemble the context the workforce template needs for the signoff
+    surfaces. Cheap enough to run on every dashboard render; the heavy
+    work (test_connection) is gated by integration presence."""
+    from app.models.client import Client
+    from app.models.timesheet_signoff_request import TimesheetSignoffRequest
+    from app.models.timesheet_signoff_template import TimesheetSignoffTemplate
+    from app.services.timesheet_signoff_service import TimesheetSignoffService
+
+    connector = TimesheetSignoffService.get_esignature_connector()
+    period_ids = [p.id for p in periods] if periods else []
+    requests_for_periods = []
+    if period_ids:
+        requests_for_periods = (
+            TimesheetSignoffRequest.query.filter(
+                TimesheetSignoffRequest.timesheet_period_id.in_(period_ids)
+            )
+            .order_by(TimesheetSignoffRequest.created_at.desc())
+            .all()
+        )
+
+    clients = Client.query.filter_by(status="active").order_by(Client.name.asc()).all()
+    templates = (
+        TimesheetSignoffTemplate.query.filter_by(archived_at=None)
+        .order_by(
+            TimesheetSignoffTemplate.is_default.desc(),
+            TimesheetSignoffTemplate.name.asc(),
+        )
+        .all()
+    )
+
+    return {
+        "connector_available": connector is not None,
+        "configure_url": url_for("admin.admin_dashboard"),
+        "requests": requests_for_periods,
+        "clients": clients,
+        "templates": templates,
+    }
 
 
 @workforce_bp.route("/workforce/periods/create", methods=["POST"])
@@ -128,7 +196,9 @@ def create_period():
 @workforce_bp.route("/workforce/periods/<int:period_id>/submit", methods=["POST"])
 @login_required
 def submit_period(period_id):
-    result = WorkforceGovernanceService().submit_period(period_id=period_id, actor_id=current_user.id)
+    result = WorkforceGovernanceService().submit_period(
+        period_id=period_id, actor_id=current_user.id
+    )
     flash(
         (
             _(result.get("message", "Timesheet period submitted"))
@@ -172,7 +242,9 @@ def reject_period(period_id):
     if not reason:
         flash(_("Rejection reason is required"), "error")
         return redirect(url_for("workforce.dashboard"))
-    result = WorkforceGovernanceService().reject_period(period_id=period_id, approver_id=current_user.id, reason=reason)
+    result = WorkforceGovernanceService().reject_period(
+        period_id=period_id, approver_id=current_user.id, reason=reason
+    )
     flash(
         (
             _(result.get("message", "Timesheet period rejected"))
@@ -209,7 +281,9 @@ def close_period(period_id):
 @workforce_bp.route("/workforce/periods/<int:period_id>/delete", methods=["POST"])
 @login_required
 def delete_period(period_id):
-    result = WorkforceGovernanceService().delete_period(period_id=period_id, actor_id=current_user.id)
+    result = WorkforceGovernanceService().delete_period(
+        period_id=period_id, actor_id=current_user.id
+    )
     flash(
         (
             _(result.get("message", "Period deleted"))
@@ -232,12 +306,18 @@ def update_policy():
     policy = service.get_or_create_default_policy()
 
     policy.auto_lock_days = request.form.get("auto_lock_days", type=int)
-    policy.enable_multi_level_approval = bool(request.form.get("enable_multi_level_approval"))
-    policy.require_rejection_comment = bool(request.form.get("require_rejection_comment"))
+    policy.enable_multi_level_approval = bool(
+        request.form.get("enable_multi_level_approval")
+    )
+    policy.require_rejection_comment = bool(
+        request.form.get("require_rejection_comment")
+    )
     policy.enable_admin_override = bool(request.form.get("enable_admin_override"))
 
     approver_ids = request.form.get("approver_user_ids", "")
-    policy.approver_user_ids = ",".join([part.strip() for part in approver_ids.split(",") if part.strip()])
+    policy.approver_user_ids = ",".join(
+        [part.strip() for part in approver_ids.split(",") if part.strip()]
+    )
 
     db.session.commit()
     flash(_("Timesheet policy updated"), "success")
@@ -271,7 +351,9 @@ def create_leave_type():
     return redirect(url_for("workforce.dashboard"))
 
 
-@workforce_bp.route("/workforce/leave-types/<int:leave_type_id>/delete", methods=["POST"])
+@workforce_bp.route(
+    "/workforce/leave-types/<int:leave_type_id>/delete", methods=["POST"]
+)
 @login_required
 def delete_leave_type(leave_type_id):
     if not current_user.is_admin:
@@ -405,7 +487,13 @@ def create_holiday():
         flash(_("Name and date range are required"), "error")
         return redirect(url_for("workforce.dashboard"))
 
-    holiday = CompanyHoliday(name=name, start_date=start, end_date=end, region=request.form.get("region"), enabled=True)
+    holiday = CompanyHoliday(
+        name=name,
+        start_date=start,
+        end_date=end,
+        region=request.form.get("region"),
+        enabled=True,
+    )
     db.session.add(holiday)
     db.session.commit()
     flash(_("Holiday created"), "success")
@@ -522,7 +610,9 @@ def capacity_export_csv():
     if not current_user.is_admin:
         team_user_ids = [current_user.id]
 
-    rows = service.capacity_report(start_date=start, end_date=end, team_user_ids=team_user_ids)
+    rows = service.capacity_report(
+        start_date=start, end_date=end, team_user_ids=team_user_ids
+    )
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -622,7 +712,9 @@ def audit_events_export_csv():
     if not current_user.is_admin:
         user_id = current_user.id
 
-    rows = service.compliance_audit_events(start_date=start, end_date=end, user_id=user_id)
+    rows = service.compliance_audit_events(
+        start_date=start, end_date=end, user_id=user_id
+    )
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -657,5 +749,7 @@ def audit_events_export_csv():
     return Response(
         output.getvalue(),
         mimetype="text/csv",
-        headers={"Content-Disposition": "attachment; filename=compliance_audit_events.csv"},
+        headers={
+            "Content-Disposition": "attachment; filename=compliance_audit_events.csv"
+        },
     )

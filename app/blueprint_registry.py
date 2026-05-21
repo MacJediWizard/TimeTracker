@@ -102,6 +102,8 @@ def register_all_blueprints(app, logger=None):
     from app.routes.time_entry_templates import time_entry_templates_bp
     from app.routes.timer import timer_bp
     from app.routes.user import user_bp
+    from app.routes.esignature_webhooks import esignature_webhooks_bp
+    from app.routes.signoff_templates import signoff_templates_bp
     from app.routes.webhooks import webhooks_bp
     from app.routes.weekly_goals import weekly_goals_bp
 
@@ -195,6 +197,7 @@ def register_all_blueprints(app, logger=None):
     app.register_blueprint(import_export_bp)
     app.register_blueprint(webhooks_bp)
     app.register_blueprint(esignature_webhooks_bp)
+    app.register_blueprint(signoff_templates_bp)
     app.register_blueprint(quotes_bp)
     app.register_blueprint(inventory_bp)
     app.register_blueprint(kiosk_bp)

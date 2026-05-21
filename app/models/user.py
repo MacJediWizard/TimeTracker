@@ -62,6 +62,10 @@ class User(UserMixin, db.Model):
     smart_notify_browser = db.Column(db.Boolean, default=False, nullable=False)
     smart_notify_no_tracking_after = db.Column(db.String(5), nullable=True)  # HH:MM override; null = use app config
     smart_notify_summary_at = db.Column(db.String(5), nullable=True)  # HH:MM override; null = use app config
+    smart_notify_break_reminder = db.Column(db.Boolean, default=False, nullable=False)
+    smart_notify_break_interval_minutes = db.Column(db.Integer, default=60, nullable=False)
+    smart_notify_end_of_day = db.Column(db.Boolean, default=False, nullable=False)
+    smart_notify_end_of_day_time = db.Column(db.String(5), nullable=True)  # HH:MM; null = use app config
     timezone = db.Column(db.String(50), nullable=True)  # User-specific timezone override
     date_format = db.Column(db.String(20), default=None, nullable=True)  # None = use system default
     time_format = db.Column(db.String(10), default=None, nullable=True)  # None = use system default
@@ -164,6 +168,21 @@ class User(UserMixin, db.Model):
     # Support UX: count of report generations (exports + custom report views) for stats in support modal
     support_stats_reports_generated = db.Column(db.Integer, default=0, nullable=False)
 
+    # GitHub login for the GitHubConnector integration (links a TimeTracker
+    # user to a GitHub account so webhook events such as "issue assigned"
+    # can act on the right account). Optional, not unique – a single GitHub
+    # login can map to multiple TimeTracker users in shared installations.
+    github_username = db.Column(db.String(100), nullable=True)
+
+    # Custom theme preferences (see app/services/theme_service.py).
+    # theme_name picks one of the built-in themes; the remaining four
+    # columns let users override individual aspects independently.
+    theme_name = db.Column(db.String(50), nullable=True, default="default")
+    theme_accent_color = db.Column(db.String(7), nullable=True, default=None)
+    theme_sidebar_style = db.Column(db.String(20), nullable=True, default="default")
+    theme_font_size = db.Column(db.String(10), nullable=True, default="base")
+    theme_border_radius = db.Column(db.String(10), nullable=True, default="default")
+
     # Relationships
     time_entries = db.relationship("TimeEntry", backref="user", lazy="dynamic", cascade="all, delete-orphan")
     project_costs = db.relationship("ProjectCost", backref="user", lazy="dynamic", cascade="all, delete-orphan")
@@ -174,7 +193,12 @@ class User(UserMixin, db.Model):
         backref=db.backref("favorited_by", lazy="dynamic"),
     )
     roles = db.relationship("Role", secondary="user_roles", lazy="joined", backref=db.backref("users", lazy="dynamic"))
-    client = db.relationship("Client", backref="portal_users", lazy="joined")
+    client = db.relationship(
+        "Client",
+        foreign_keys=[client_id],
+        backref="portal_users",
+        lazy="joined",
+    )
     assigned_clients = db.relationship(
         "Client",
         secondary="user_clients",
@@ -516,28 +540,62 @@ class User(UserMixin, db.Model):
 
     def get_allowed_client_ids(self):
         """Return list of client IDs this user may access, or None for full access."""
+        from app.utils.permissions import user_has_view_all_clients, user_has_view_own_clients_only
+
         if self.is_admin:
             return None
         if self.is_client_portal_user:
             return [self.client_id] if self.client_id else []
-        if not self.is_scope_restricted:
+        if self.is_scope_restricted:
+            ids = [c.id for c in self.assigned_clients.all()]
+            return ids if ids else []
+        if user_has_view_all_clients(self):
             return None
-        ids = [c.id for c in self.assigned_clients.all()]
-        return ids if ids else []
+        if user_has_view_own_clients_only(self):
+            from .client import Client
+
+            rows = db.session.query(Client.id).filter(Client.created_by == self.id).all()
+            return [r[0] for r in rows]
+        if self.has_any_permission("view_own_clients", "view_clients", "view_all_clients"):
+            return []
+        return []
 
     def get_allowed_project_ids(self):
         """Return list of project IDs this user may access, or None for full access."""
+        from app.utils.permissions import user_has_view_all_projects, user_has_view_own_projects_only
+
         if self.is_admin:
             return None
         from .project import Project
 
-        client_ids = self.get_allowed_client_ids()
-        if client_ids is None:
-            return None
-        if not client_ids:
+        if self.is_client_portal_user or self.is_scope_restricted:
+            client_ids = (
+                [self.client_id]
+                if self.is_client_portal_user
+                else [c.id for c in self.assigned_clients.all()]
+            )
+            if not client_ids:
+                return []
+            rows = db.session.query(Project.id).filter(Project.client_id.in_(client_ids)).all()
+            return [r[0] for r in rows]
+
+        if user_has_view_all_projects(self):
+            client_ids = self.get_allowed_client_ids()
+            if client_ids is None:
+                return None
+            if not client_ids:
+                return []
+            rows = db.session.query(Project.id).filter(Project.client_id.in_(client_ids)).all()
+            return [r[0] for r in rows]
+
+        if user_has_view_own_projects_only(self):
+            rows = db.session.query(Project.id).filter(Project.created_by == self.id).all()
+            return [r[0] for r in rows]
+
+        if self.has_any_permission("view_own_projects", "view_projects", "view_all_projects"):
             return []
-        rows = db.session.query(Project.id).filter(Project.client_id.in_(client_ids)).all()
-        return [r[0] for r in rows]
+
+        return []
 
     # Client portal helpers
     def get_client_portal_data(self):

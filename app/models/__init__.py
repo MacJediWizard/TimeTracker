@@ -9,23 +9,11 @@ from .calendar_integration import CalendarIntegration, CalendarSyncEvent
 from .client import Client
 from .client_attachment import ClientAttachment
 from .client_note import ClientNote
-from .client_notification import (
-    ClientNotification,
-    ClientNotificationPreferences,
-    NotificationType,
-)
+from .client_notification import ClientNotification, ClientNotificationPreferences, NotificationType
 from .client_portal_customization import ClientPortalCustomization
-from .client_portal_dashboard_preference import (
-    DEFAULT_WIDGET_ORDER,
-    VALID_WIDGET_IDS,
-    ClientPortalDashboardPreference,
-)
+from .client_portal_dashboard_preference import DEFAULT_WIDGET_ORDER, VALID_WIDGET_IDS, ClientPortalDashboardPreference
 from .client_prepaid_consumption import ClientPrepaidConsumption
-from .client_time_approval import (
-    ClientApprovalPolicy,
-    ClientApprovalStatus,
-    ClientTimeApproval,
-)
+from .client_time_approval import ClientApprovalPolicy, ClientApprovalStatus, ClientTimeApproval
 from .comment import Comment
 from .comment_attachment import CommentAttachment
 from .contact import Contact

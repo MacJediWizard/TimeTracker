@@ -27,17 +27,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from flask import (
-    Blueprint,
-    current_app,
-    flash,
-    jsonify,
-    redirect,
-    render_template,
-    request,
-    send_file,
-    url_for,
-)
+from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
 from flask_babel import gettext as _
 from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
@@ -46,11 +36,7 @@ from app import db
 from app.models.branding_asset import BrandingAsset
 from app.models.timesheet_signoff_template import TimesheetSignoffTemplate
 from app.utils.permissions import admin_or_permission_required
-from app.utils.timesheet_signoff_pdf import (
-    SignoffData,
-    SignoffTemplate,
-    build_signoff_pdf,
-)
+from app.utils.timesheet_signoff_pdf import SignoffData, SignoffTemplate, build_signoff_pdf
 
 signoff_templates_bp = Blueprint("signoff_templates", __name__)
 _log = logging.getLogger(__name__)

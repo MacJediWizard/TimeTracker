@@ -20,11 +20,7 @@ from app.models import (
 from app.services.integration_service import IntegrationService
 from app.services.scheduled_report_service import ScheduledReportService
 from app.utils.budget_forecasting import check_budget_alerts
-from app.utils.email import (
-    send_overdue_invoice_notification,
-    send_remind_to_log_email,
-    send_weekly_summary,
-)
+from app.utils.email import send_overdue_invoice_notification, send_remind_to_log_email, send_weekly_summary
 
 logger = logging.getLogger(__name__)
 
@@ -429,9 +425,7 @@ def register_scheduled_tasks(scheduler, app=None):
                     logger.error("No app instance available for e-signature reconciliation")
                     return
             with app_instance.app_context():
-                from app.services.timesheet_signoff_service import (
-                    TimesheetSignoffService,
-                )
+                from app.services.timesheet_signoff_service import TimesheetSignoffService
 
                 touched = TimesheetSignoffService.reconcile_stuck_requests()
                 if touched:

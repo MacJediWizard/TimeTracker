@@ -16,11 +16,7 @@ from sqlalchemy import func
 
 from app import db
 from app.models import Project, TimeEntry
-from app.utils.timezone import (
-    get_timezone_for_user,
-    get_timezone_obj,
-    now_in_user_timezone,
-)
+from app.utils.timezone import get_timezone_for_user, get_timezone_obj, now_in_user_timezone
 
 logger = logging.getLogger(__name__)
 

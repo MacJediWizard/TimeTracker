@@ -103,9 +103,7 @@ def get_time_entry(entry_id):
 @require_api_token("write:time_entries")
 def import_time_entries_csv():
     """Import time entries from CSV (header row required)."""
-    from app.services.time_entry_csv_import_service import (
-        import_time_entries_from_csv_text,
-    )
+    from app.services.time_entry_csv_import_service import import_time_entries_from_csv_text
 
     csv_text = ""
     if request.files and request.files.get("file"):

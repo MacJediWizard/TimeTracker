@@ -21,15 +21,7 @@ import logging
 from datetime import date as _date
 from pathlib import Path
 
-from flask import (
-    Blueprint,
-    abort,
-    flash,
-    redirect,
-    request,
-    send_file,
-    url_for,
-)
+from flask import Blueprint, abort, flash, redirect, request, send_file, url_for
 from flask_babel import gettext as _
 from flask_login import current_user, login_required
 
@@ -38,10 +30,7 @@ from app.integrations.esignature.base import ESignatureError
 from app.models.client import Client
 from app.models.esignature_request import ESignatureRequest
 from app.models.timesheet_period import TimesheetPeriod
-from app.models.timesheet_signoff_request import (
-    TimesheetSignoffRequest,
-    TimesheetSignoffStatus,
-)
+from app.models.timesheet_signoff_request import TimesheetSignoffRequest, TimesheetSignoffStatus
 from app.models.timesheet_signoff_template import TimesheetSignoffTemplate
 from app.services.timesheet_signoff_service import TimesheetSignoffService
 

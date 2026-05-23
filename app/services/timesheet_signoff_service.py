@@ -27,28 +27,17 @@ from flask import current_app
 from sqlalchemy import or_
 
 from app import db
-from app.integrations.esignature.base import (
-    ESignatureError,
-    ESignatureWebhookEvent,
-)
+from app.integrations.esignature.base import ESignatureError, ESignatureWebhookEvent
 from app.models.branding_asset import BrandingAsset
 from app.models.client import Client
 from app.models.esignature_request import ESignatureRequest, ESignatureStatus
 from app.models.integration import Integration
 from app.models.project import Project
 from app.models.time_entry import TimeEntry
-from app.models.timesheet_signoff_request import (
-    TimesheetSignoffRequest,
-    TimesheetSignoffStatus,
-)
+from app.models.timesheet_signoff_request import TimesheetSignoffRequest, TimesheetSignoffStatus
 from app.models.timesheet_signoff_template import TimesheetSignoffTemplate
 from app.models.user import User
-from app.utils.timesheet_signoff_pdf import (
-    SignatureAreas,
-    SignoffData,
-    SignoffTemplate,
-    build_signoff_pdf,
-)
+from app.utils.timesheet_signoff_pdf import SignatureAreas, SignoffData, SignoffTemplate, build_signoff_pdf
 
 _TARGET_TYPE = "TimesheetSignoffRequest"
 

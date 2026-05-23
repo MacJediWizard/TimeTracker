@@ -11,35 +11,60 @@ class Project(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False, index=True)
-    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=False, index=True)
-    quote_id = db.Column(db.Integer, db.ForeignKey("quotes.id"), nullable=True, index=True)
+    client_id = db.Column(
+        db.Integer, db.ForeignKey("clients.id"), nullable=False, index=True
+    )
+    quote_id = db.Column(
+        db.Integer, db.ForeignKey("quotes.id"), nullable=True, index=True
+    )
     description = db.Column(db.Text, nullable=True)
     billable = db.Column(db.Boolean, default=True, nullable=False)
     hourly_rate = db.Column(db.Numeric(9, 2), nullable=True)
     billing_ref = db.Column(db.String(100), nullable=True)
     # Short project code for compact display (e.g., on Kanban cards)
     code = db.Column(db.String(20), nullable=True, unique=True, index=True)
-    status = db.Column(db.String(20), default="active", nullable=False)  # 'active', 'inactive', or 'archived'
+    status = db.Column(
+        db.String(20), default="active", nullable=False
+    )  # 'active', 'inactive', or 'archived'
     # Estimates & budgets
     estimated_hours = db.Column(db.Float, nullable=True)
     budget_amount = db.Column(db.Numeric(10, 2), nullable=True)
-    budget_threshold_percent = db.Column(db.Integer, nullable=False, default=80)  # alert when exceeded
+    budget_threshold_percent = db.Column(
+        db.Integer, nullable=False, default=80
+    )  # alert when exceeded
     custom_fields = db.Column(db.JSON, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
     # Archiving metadata
     archived_at = db.Column(db.DateTime, nullable=True, index=True)
-    archived_by = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_by = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    archived_by = db.Column(
+        db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_by = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     archived_reason = db.Column(db.Text, nullable=True)
     # Gantt chart bar color (hex e.g. #3b82f6)
     color = db.Column(db.String(7), nullable=True)
 
     # Relationships
-    time_entries = db.relationship("TimeEntry", backref="project", lazy="dynamic", cascade="all, delete-orphan")
-    tasks = db.relationship("Task", backref="project", lazy="dynamic", cascade="all, delete-orphan")
-    costs = db.relationship("ProjectCost", backref="project", lazy="dynamic", cascade="all, delete-orphan")
-    extra_goods = db.relationship("ExtraGood", backref="project", lazy="dynamic", cascade="all, delete-orphan")
+    time_entries = db.relationship(
+        "TimeEntry", backref="project", lazy="dynamic", cascade="all, delete-orphan"
+    )
+    tasks = db.relationship(
+        "Task", backref="project", lazy="dynamic", cascade="all, delete-orphan"
+    )
+    costs = db.relationship(
+        "ProjectCost", backref="project", lazy="dynamic", cascade="all, delete-orphan"
+    )
+    extra_goods = db.relationship(
+        "ExtraGood", backref="project", lazy="dynamic", cascade="all, delete-orphan"
+    )
     # comments relationship is defined via backref in Comment model
 
     def __init__(
@@ -74,7 +99,9 @@ class Project(db.Model):
         self.billing_ref = billing_ref.strip() if billing_ref else None
         self.code = code.strip().upper() if code and code.strip() else None
         self.budget_amount = Decimal(str(budget_amount)) if budget_amount else None
-        self.budget_threshold_percent = budget_threshold_percent if budget_threshold_percent else 80
+        self.budget_threshold_percent = (
+            budget_threshold_percent if budget_threshold_percent else 80
+        )
         self.status = status
 
         resolved_client_id = client_id
@@ -100,7 +127,7 @@ class Project(db.Model):
         self.created_by = created_by
 
     def __repr__(self):
-        return f'<Project {self.name} ({self.client_obj.name if self.client_obj else "Unknown Client"})>'
+        return f"<Project {self.name} ({self.client_obj.name if self.client_obj else 'Unknown Client'})>"
 
     @property
     def client(self):
@@ -160,7 +187,11 @@ class Project(db.Model):
 
         total_seconds = (
             db.session.query(db.func.sum(TimeEntry.duration_seconds))
-            .filter(TimeEntry.project_id == self.id, TimeEntry.end_time.isnot(None), TimeEntry.billable == True)
+            .filter(
+                TimeEntry.project_id == self.id,
+                TimeEntry.end_time.isnot(None),
+                TimeEntry.billable == True,
+            )
             .scalar()
             or 0
         )
@@ -179,7 +210,10 @@ class Project(db.Model):
         from .project_cost import ProjectCost
 
         total = (
-            db.session.query(db.func.sum(ProjectCost.amount)).filter(ProjectCost.project_id == self.id).scalar() or 0
+            db.session.query(db.func.sum(ProjectCost.amount))
+            .filter(ProjectCost.project_id == self.id)
+            .scalar()
+            or 0
         )
         return float(total)
 
@@ -258,7 +292,10 @@ class Project(db.Model):
 
         query = (
             db.session.query(
-                User.id, User.username, User.full_name, db.func.sum(TimeEntry.duration_seconds).label("total_seconds")
+                User.id,
+                User.username,
+                User.full_name,
+                db.func.sum(TimeEntry.duration_seconds).label("total_seconds"),
             )
             .join(TimeEntry)
             .filter(TimeEntry.project_id == self.id, TimeEntry.end_time.isnot(None))
@@ -274,7 +311,9 @@ class Project(db.Model):
 
         return [
             {
-                "username": (full_name.strip() if full_name and full_name.strip() else username),
+                "username": (
+                    full_name.strip() if full_name and full_name.strip() else username
+                ),
                 "total_hours": round(total_seconds / 3600, 2),
             }
             for _id, username, full_name, total_seconds in results
@@ -380,6 +419,7 @@ class Project(db.Model):
             "code": self.code,
             "code_display": self.code_display,
             "client": self.client,
+            "client_id": self.client_id,
             "description": self.description,
             "billable": self.billable,
             "hourly_rate": float(self.hourly_rate) if self.hourly_rate else None,
@@ -392,7 +432,9 @@ class Project(db.Model):
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "total_hours": self.total_hours,
             "total_billable_hours": self.total_billable_hours,
-            "estimated_cost": float(self.estimated_cost) if self.estimated_cost else None,
+            "estimated_cost": float(self.estimated_cost)
+            if self.estimated_cost
+            else None,
             "budget_consumed_amount": self.budget_consumed_amount,
             "budget_threshold_exceeded": self.budget_threshold_exceeded,
             "total_costs": self.total_costs,

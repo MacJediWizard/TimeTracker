@@ -579,6 +579,8 @@ def project(app, test_client, user):
                 default_hourly_rate=Decimal("85.00"),
             )
             fallback.status = "active"
+            if hasattr(Client, "created_by"):
+                fallback.created_by = user.id
             db.session.add(fallback)
             db.session.flush()
             cid = fallback.id

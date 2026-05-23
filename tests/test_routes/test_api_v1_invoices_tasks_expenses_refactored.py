@@ -6,9 +6,8 @@ import pytest
 
 pytestmark = [pytest.mark.api, pytest.mark.integration]
 
-from datetime import date, datetime, timedelta
-from decimal import Decimal
-from app.models import Invoice, Task, Expense, Project, Client, ApiToken
+from datetime import date, timedelta
+from app.models import ApiToken
 
 
 class TestAPIInvoicesRefactored:
@@ -18,7 +17,9 @@ class TestAPIInvoicesRefactored:
     def api_token(self, app, user):
         """Create an API token for testing"""
         token, plain_token = ApiToken.create_token(
-            user_id=user.id, name="Test API Token", scopes="read:invoices,write:invoices"
+            user_id=user.id,
+            name="Test API Token",
+            scopes="read:invoices,write:invoices",
         )
         from app import db
 
@@ -52,14 +53,16 @@ class TestAPIInvoicesRefactored:
         assert "invoice" in data
         assert data["invoice"]["id"] == invoice.id
 
-    def test_create_invoice_uses_service_layer(self, app, client_with_token, project, test_client):
+    def test_create_invoice_uses_service_layer(
+        self, app, client_with_token, project, test_client
+    ):
         """Test that create_invoice route uses service layer"""
         response = client_with_token.post(
             "/api/v1/invoices",
             json={
                 "project_id": project.id,
                 "client_id": test_client.id,
-                "client_name": client.name,
+                "client_name": test_client.name,
                 "due_date": (date.today() + timedelta(days=30)).isoformat(),
                 "notes": "Test invoice",
             },
@@ -117,7 +120,11 @@ class TestAPITasksRefactored:
         """Test that create_task route uses service layer"""
         response = client_with_token.post(
             "/api/v1/tasks",
-            json={"name": "API Test Task", "project_id": project.id, "description": "Test task description"},
+            json={
+                "name": "API Test Task",
+                "project_id": project.id,
+                "description": "Test task description",
+            },
             content_type="application/json",
         )
 
@@ -134,7 +141,9 @@ class TestAPIExpensesRefactored:
     def api_token(self, app, user):
         """Create an API token for testing"""
         token, plain_token = ApiToken.create_token(
-            user_id=user.id, name="Test API Token", scopes="read:expenses,write:expenses"
+            user_id=user.id,
+            name="Test API Token",
+            scopes="read:expenses,write:expenses",
         )
         from app import db
 

@@ -11,7 +11,9 @@ import pytest
 
 # Set before app is imported so InstallationConfig uses a writable dir in tests (avoids /data on CI)
 if "INSTALLATION_CONFIG_DIR" not in os.environ:
-    os.environ["INSTALLATION_CONFIG_DIR"] = tempfile.mkdtemp(prefix="timetracker_install_")
+    os.environ["INSTALLATION_CONFIG_DIR"] = tempfile.mkdtemp(
+        prefix="timetracker_install_"
+    )
 
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -27,7 +29,9 @@ from app import create_app, db
 # SQLite has foreign keys disabled by default per-connection, which breaks
 # any test relying on ondelete="CASCADE" at the DB level.
 @event.listens_for(Engine, "connect")
-def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):  # pragma: no cover - infra hook
+def _enable_sqlite_foreign_keys(
+    dbapi_connection, connection_record
+):  # pragma: no cover - infra hook
     try:
         # Only act on sqlite connections. The DBAPI connection class name
         # check avoids importing sqlite3 at module import time on non-sqlite envs.
@@ -47,7 +51,9 @@ def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):  # pragma:
 # leads, projects, quotes), so SQLAlchemy can't order DROPs cleanly and any
 # drop_all() call would otherwise fail with "FOREIGN KEY constraint failed".
 @event.listens_for(Engine, "before_cursor_execute")
-def _disable_fk_for_drop(conn, cursor, statement, parameters, context, executemany):  # pragma: no cover - infra hook
+def _disable_fk_for_drop(
+    conn, cursor, statement, parameters, context, executemany
+):  # pragma: no cover - infra hook
     try:
         if not statement:
             return
@@ -156,7 +162,9 @@ def app_config():
 def app(app_config):
     """Create application for testing with function scope."""
     # Use a unique SQLite file per test function to avoid Windows file locking
-    unique_db_path = os.path.join(tempfile.gettempdir(), f"pytest_{uuid.uuid4().hex}.sqlite")
+    unique_db_path = os.path.join(
+        tempfile.gettempdir(), f"pytest_{uuid.uuid4().hex}.sqlite"
+    )
     config = dict(app_config)
     config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{unique_db_path}"
     app = create_app(config)
@@ -187,7 +195,9 @@ def app(app_config):
             # SQLite may raise OperationalError if indexes already exist
             # This can happen if db.create_all() is called multiple times
             error_msg = str(e).lower()
-            if "index" in error_msg and ("already exists" in error_msg or "duplicate" in error_msg):
+            if "index" in error_msg and (
+                "already exists" in error_msg or "duplicate" in error_msg
+            ):
                 # Index already exists - this is okay, but we need to ensure all tables are created
                 # Create tables individually to work around the issue
                 from sqlalchemy import inspect
@@ -225,7 +235,9 @@ def app(app_config):
             for table_name in missing_tables:
                 if table_name in db.metadata.tables:
                     try:
-                        db.metadata.tables[table_name].create(db.engine, checkfirst=True)
+                        db.metadata.tables[table_name].create(
+                            db.engine, checkfirst=True
+                        )
                     except Exception:
                         # Ignore errors - table might already exist or have dependency issues
                         pass
@@ -489,7 +501,11 @@ def multiple_users(app):
 
 @pytest.fixture
 def test_client(app, user):
-    """Create a test client (business client, not test client)."""
+    """Create a test client (business client, not test client).
+
+    Sets created_by to the user fixture so upstream PR #641's per-user
+    scope filter doesn't hide this client from the requesting user.
+    """
     client_model = Client(
         name="Test Client Corp",
         description="Test client for integration tests",
@@ -500,13 +516,17 @@ def test_client(app, user):
         default_hourly_rate=Decimal("85.00"),
     )
     client_model.status = "active"  # Set after creation
+    if hasattr(Client, "created_by"):
+        client_model.created_by = user.id
     db.session.add(client_model)
     # Flush to assign primary key before commit to avoid expired attribute reloads
     db.session.flush()
     client_id = client_model.id
     db.session.commit()
     # Re-query to ensure we return a persistent instance without relying on refresh
-    persisted_client = Client.query.get(client_id) or Client.query.filter_by(id=client_id).first()
+    persisted_client = (
+        Client.query.get(client_id) or Client.query.filter_by(id=client_id).first()
+    )
     # Fallback to the original instance if re-query unexpectedly returns None
     return persisted_client or client_model
 
@@ -546,7 +566,10 @@ def project(app, test_client, user):
     except Exception:
         cid = None
     if not cid:
-        existing = Client.query.filter_by(name="Test Client Corp").first() or Client.query.first()
+        existing = (
+            Client.query.filter_by(name="Test Client Corp").first()
+            or Client.query.first()
+        )
         if existing:
             cid = existing.id
         else:
@@ -585,7 +608,10 @@ def multiple_projects(app, test_client):
     except Exception:
         cid = None
     if not cid:
-        existing = Client.query.filter_by(name="Test Client Corp").first() or Client.query.first()
+        existing = (
+            Client.query.filter_by(name="Test Client Corp").first()
+            or Client.query.first()
+        )
         if existing:
             cid = existing.id
         else:
@@ -931,7 +957,9 @@ def authenticated_client(client, user):
         except Exception:
             pass
 
-    client.post("/login", data=login_data, headers=headers or None, follow_redirects=True)
+    client.post(
+        "/login", data=login_data, headers=headers or None, follow_redirects=True
+    )
     return client
 
 
@@ -961,7 +989,9 @@ def admin_authenticated_client(client, admin_user):
         except Exception:
             pass
 
-    client.post("/login", data=login_data, headers=headers or None, follow_redirects=True)
+    client.post(
+        "/login", data=login_data, headers=headers or None, follow_redirects=True
+    )
     return client
 
 
@@ -1051,12 +1081,16 @@ def scope_restricted_authenticated_client(client, scope_restricted_user):
 
         if current_app.config.get("WTF_CSRF_ENABLED"):
             resp = client.get("/auth/csrf-token")
-            token = (resp.get_json() or {}).get("csrf_token", "") if resp.is_json else ""
+            token = (
+                (resp.get_json() or {}).get("csrf_token", "") if resp.is_json else ""
+            )
             login_data["csrf_token"] = token
             headers["X-CSRFToken"] = token
     except Exception:
         pass
-    client.post("/login", data=login_data, headers=headers or None, follow_redirects=True)
+    client.post(
+        "/login", data=login_data, headers=headers or None, follow_redirects=True
+    )
     return client
 
 

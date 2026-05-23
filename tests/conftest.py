@@ -3,10 +3,11 @@ Pytest configuration and shared fixtures for TimeTracker tests.
 This file contains common fixtures and test configuration used across all test modules.
 """
 
-import pytest
 import os
 import tempfile
 import uuid
+
+import pytest
 
 # Set before app is imported so InstallationConfig uses a writable dir in tests (avoids /data on CI)
 if "INSTALLATION_CONFIG_DIR" not in os.environ:
@@ -14,6 +15,7 @@ if "INSTALLATION_CONFIG_DIR" not in os.environ:
 
 from datetime import datetime, timedelta
 from decimal import Decimal
+
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import NullPool
@@ -45,9 +47,7 @@ def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):  # pragma:
 # leads, projects, quotes), so SQLAlchemy can't order DROPs cleanly and any
 # drop_all() call would otherwise fail with "FOREIGN KEY constraint failed".
 @event.listens_for(Engine, "before_cursor_execute")
-def _disable_fk_for_drop(  # pragma: no cover - infra hook
-    conn, cursor, statement, parameters, context, executemany
-):
+def _disable_fk_for_drop(conn, cursor, statement, parameters, context, executemany):  # pragma: no cover - infra hook
     try:
         if not statement:
             return
@@ -61,69 +61,24 @@ def _disable_fk_for_drop(  # pragma: no cover - infra hook
         # Never let this hook break statement execution.
         pass
 
+
 # Import all models to ensure their tables are created by db.create_all()
 from app.models import (
-    User,
-    Project,
-    TimeEntry,
-    Client,
-    Settings,
-    Invoice,
-    InvoiceItem,
-    Task,
-    TaskActivity,
-    Comment,
-    ExpenseCategory,
-    Mileage,
-    PerDiem,
-    PerDiemRate,
-    ExtraGood,
-    FocusSession,
-    RecurringBlock,
-    RateOverride,
-    SavedFilter,
-    ProjectCost,
-    KanbanColumn,
-    TimeEntryTemplate,
-    Activity,
-    UserFavoriteProject,
-    UserSmartNotificationDismissal,
-    UserClient,
-    ClientNote,
-    WeeklyTimeGoal,
-    Expense,
-    Permission,
-    Role,
     ApiToken,
-    CalendarEvent,
-    BudgetAlert,
-    DataImport,
-    DataExport,
-    InvoicePDFTemplate,
-    ClientPrepaidConsumption,
-    AuditLog,
-    RecurringInvoice,
-    InvoiceEmail,
-    InvoicePeppolTransmission,
-    Webhook,
-    WebhookDelivery,
-    InvoiceTemplate,
-    Currency,
-    ExchangeRate,
-    TaxRule,
-    Payment,
+    Client,
     CreditNote,
-    InvoiceReminderSchedule,
-    SavedReportView,
-    ReportEmailSchedule,
-    Warehouse,
-    StockItem,
-    WarehouseStock,
-    StockMovement,
-    StockReservation,
-    ProjectStockAllocation,
+    Expense,
+    Invoice,
+    Mileage,
+    Payment,
+    Project,
     Quote,
-    QuoteItem,
+    RecurringInvoice,
+    Role,
+    Task,
+    TimeEntry,
+    User,
+    UserClient,
 )
 
 
@@ -210,60 +165,7 @@ def app(app_config):
         # Import all models AFTER app creation but BEFORE db.create_all()
         # This ensures they're registered with SQLAlchemy's metadata
         # Import all models explicitly to ensure their tables are created
-        from app.models import (
-            User,
-            Project,
-            TimeEntry,
-            Client,
-            Settings,
-            Invoice,
-            InvoiceItem,
-            Task,
-            TaskActivity,
-            Comment,
-            ExpenseCategory,
-            Mileage,
-            PerDiem,
-            PerDiemRate,
-            ExtraGood,
-            FocusSession,
-            RecurringBlock,
-            RateOverride,
-            SavedFilter,
-            ProjectCost,
-            KanbanColumn,
-            TimeEntryTemplate,
-            Activity,
-            UserFavoriteProject,
-            UserClient,
-            ClientNote,
-            WeeklyTimeGoal,
-            Expense,
-            Permission,
-            Role,
-            ApiToken,
-            CalendarEvent,
-            BudgetAlert,
-            DataImport,
-            DataExport,
-            InvoicePDFTemplate,
-            ClientPrepaidConsumption,
-            AuditLog,
-            RecurringInvoice,
-            InvoiceEmail,
-            InvoicePeppolTransmission,
-            Webhook,
-            WebhookDelivery,
-            InvoiceTemplate,
-            Currency,
-            ExchangeRate,
-            TaxRule,
-            Payment,
-            CreditNote,
-            InvoiceReminderSchedule,
-            SavedReportView,
-            ReportEmailSchedule,
-        )
+        from app.models import Role, Settings
 
         # Ensure any lingering connections are closed to avoid SQLite file locks (Windows)
         try:
@@ -298,7 +200,7 @@ def app(app_config):
                     if table_name not in existing_tables:
                         try:
                             table.create(db.engine, checkfirst=True)
-                        except Exception as table_error:
+                        except Exception:
                             # Ignore errors for individual tables (might be index issues)
                             pass
             else:
@@ -324,14 +226,20 @@ def app(app_config):
                 if table_name in db.metadata.tables:
                     try:
                         db.metadata.tables[table_name].create(db.engine, checkfirst=True)
-                    except Exception as e:
+                    except Exception:
                         # Ignore errors - table might already exist or have dependency issues
                         pass
 
         # Role baseline + permission links (login auto-migrates legacy users to roles).
         for role_name in ("admin", "user", "manager", "subcontractor"):
             if Role.query.filter_by(name=role_name).first() is None:
-                db.session.add(Role(name=role_name, description=f"Test {role_name} role", is_system_role=True))
+                db.session.add(
+                    Role(
+                        name=role_name,
+                        description=f"Test {role_name} role",
+                        is_system_role=True,
+                    )
+                )
         db.session.commit()
         from app.utils.permissions_seed import seed_permissions, seed_roles
 
@@ -491,6 +399,73 @@ def auth_user(user):
 
 
 @pytest.fixture
+def sample_user(user):
+    """Alias for user fixture — used by test files under tests/test_services/
+    and tests/test_utils/ that historically expected a sample_user fixture
+    locally available. Originally defined only in tests/test_invoices.py;
+    promoted here so cross-directory tests can share the same regular user."""
+    return user
+
+
+@pytest.fixture
+def sample_project(app, user, sample_client):
+    """A simple Project tied to the sample_user and sample_client. Used by
+    test files that build invoices / comments / time entries against a
+    canonical project."""
+    from app.models import Project
+
+    project = Project(
+        name="Sample Project",
+        description="Fixture project for tests",
+        hourly_rate=75.0,
+        status="active",
+        client_id=sample_client.id,
+    )
+    if hasattr(Project, "created_by"):
+        project.created_by = user.id
+    db.session.add(project)
+    db.session.commit()
+    return project
+
+
+@pytest.fixture
+def sample_client(app, user):
+    """A canonical Client for tests that need a project's parent.
+    Sets created_by to the user fixture when the model supports it
+    (upstream PR #641 per-user scope)."""
+    from app.models import Client
+
+    client_obj = Client(name="Sample Client", email="sample-client@example.com")
+    if hasattr(Client, "created_by"):
+        client_obj.created_by = user.id
+    db.session.add(client_obj)
+    db.session.commit()
+    return client_obj
+
+
+@pytest.fixture
+def sample_time_entry(app, user, sample_project):
+    """A simple TimeEntry on the sample_project for the user."""
+    from datetime import datetime, timedelta
+
+    from app.models import TimeEntry
+
+    start = datetime.utcnow().replace(hour=9, minute=0, second=0, microsecond=0)
+    entry = TimeEntry(
+        user_id=user.id,
+        project_id=sample_project.id,
+        start_time=start,
+        end_time=start + timedelta(hours=2),
+        duration_seconds=7200,
+        billable=True,
+        notes="Sample entry",
+    )
+    db.session.add(entry)
+    db.session.commit()
+    return entry
+
+
+@pytest.fixture
 def multiple_users(app):
     """Create multiple test users."""
     users = []
@@ -542,7 +517,9 @@ def multiple_clients(app, user):
     clients = []
     for i in range(1, 4):
         client = Client(
-            name=f"Client {i}", email=f"client{i}@example.com", default_hourly_rate=Decimal("75.00") + Decimal(i * 10)
+            name=f"Client {i}",
+            email=f"client{i}@example.com",
+            default_hourly_rate=Decimal("75.00") + Decimal(i * 10),
         )
         client.status = "active"  # Set after creation
         clients.append(client)
@@ -574,7 +551,9 @@ def project(app, test_client, user):
             cid = existing.id
         else:
             fallback = Client(
-                name="Test Client Corp", email="john@testclient.com", default_hourly_rate=Decimal("85.00")
+                name="Test Client Corp",
+                email="john@testclient.com",
+                default_hourly_rate=Decimal("85.00"),
             )
             fallback.status = "active"
             db.session.add(fallback)
@@ -611,7 +590,9 @@ def multiple_projects(app, test_client):
             cid = existing.id
         else:
             fallback = Client(
-                name="Test Client Corp", email="john@testclient.com", default_hourly_rate=Decimal("85.00")
+                name="Test Client Corp",
+                email="john@testclient.com",
+                default_hourly_rate=Decimal("85.00"),
             )
             fallback.status = "active"
             db.session.add(fallback)
@@ -687,7 +668,7 @@ def multiple_time_entries(app, user, project):
             project_id=project.id,
             start_time=start,
             end_time=end,
-            notes=f"Work day {i+1}",
+            notes=f"Work day {i + 1}",
             tags="development,testing",
             source="manual",
             billable=True,
@@ -753,6 +734,7 @@ def task(app, project, user):
 def invoice(app, user, project, test_client):
     """Create a test invoice."""
     from datetime import date
+
     from factories import InvoiceFactory
 
     invoice = InvoiceFactory(
@@ -784,7 +766,10 @@ def invoice_with_items(app, invoice):
             unit_price=Decimal("75.00"),
         ),
         InvoiceItemFactory(
-            invoice_id=invoice.id, description="Testing work", quantity=Decimal("5.00"), unit_price=Decimal("60.00")
+            invoice_id=invoice.id,
+            description="Testing work",
+            quantity=Decimal("5.00"),
+            unit_price=Decimal("60.00"),
         ),
     ]
     db.session.commit()
@@ -810,8 +795,6 @@ def mileage(app, user, project):
     from datetime import date
     from decimal import Decimal
 
-    from app.models import Mileage
-
     entry = Mileage(
         user_id=user.id,
         trip_date=date.today(),
@@ -835,8 +818,6 @@ def expense(app, user, project):
     from datetime import date
     from decimal import Decimal
 
-    from app.models import Expense
-
     item = Expense(
         user_id=user.id,
         title="Test expense",
@@ -857,8 +838,6 @@ def payment(app, invoice):
     from datetime import date
     from decimal import Decimal
 
-    from app.models import Payment
-
     p = Payment(
         invoice_id=invoice.id,
         amount=Decimal("100.00"),
@@ -876,8 +855,6 @@ def payment(app, invoice):
 def credit_note(app, invoice, user):
     """Create a credit note against the test invoice."""
     from decimal import Decimal
-
-    from app.models import CreditNote
 
     cn = CreditNote(
         invoice_id=invoice.id,
@@ -897,8 +874,6 @@ def recurring_invoice(app, project, test_client):
     """Create a recurring invoice template tied to project + client."""
     from datetime import date, timedelta
 
-    from app.models import RecurringInvoice
-
     ri = RecurringInvoice(
         name="Monthly retainer",
         project_id=project.id,
@@ -917,7 +892,6 @@ def recurring_invoice(app, project, test_client):
 @pytest.fixture
 def quote(app, test_client, user):
     """Create a quote tied to the test client."""
-    from app.models import Quote
 
     q = Quote(
         quote_number=f"Q-{test_client.id}-1",

@@ -24,9 +24,7 @@ class BrandingAsset(db.Model):
     mime_type = db.Column(db.String(64), nullable=True)
     original_filename = db.Column(db.String(255), nullable=True)
     file_size_bytes = db.Column(db.BigInteger, nullable=True)
-    uploaded_by = db.Column(
-        db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True
-    )
+    uploaded_by = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     archived_at = db.Column(db.DateTime, nullable=True)
 

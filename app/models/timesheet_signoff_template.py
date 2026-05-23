@@ -27,9 +27,7 @@ class TimesheetSignoffTemplate(db.Model):
     columns_to_show = db.Column(JSON, nullable=False)
     show_billable = db.Column(db.Boolean, default=False, nullable=False)
     show_daily_totals = db.Column(db.Boolean, default=True, nullable=False)
-    signature_block_label = db.Column(
-        db.String(80), nullable=False, default="Approved by Project Manager"
-    )
+    signature_block_label = db.Column(db.String(80), nullable=False, default="Approved by Project Manager")
 
     primary_color_hex = db.Column(db.String(7), nullable=False, default="#c41e3a")
     accent_color_hex = db.Column(db.String(7), nullable=False, default="#1a1a1a")
@@ -78,29 +76,15 @@ class TimesheetSignoffTemplate(db.Model):
     )
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = db.Column(
-        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
-    )
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     logo_asset = db.relationship("BrandingAsset", foreign_keys=[logo_asset_id])
-    body_font_regular_asset = db.relationship(
-        "BrandingAsset", foreign_keys=[body_font_regular_asset_id]
-    )
-    body_font_bold_asset = db.relationship(
-        "BrandingAsset", foreign_keys=[body_font_bold_asset_id]
-    )
-    body_font_italic_asset = db.relationship(
-        "BrandingAsset", foreign_keys=[body_font_italic_asset_id]
-    )
-    body_font_bold_italic_asset = db.relationship(
-        "BrandingAsset", foreign_keys=[body_font_bold_italic_asset_id]
-    )
-    display_font_regular_asset = db.relationship(
-        "BrandingAsset", foreign_keys=[display_font_regular_asset_id]
-    )
-    display_font_bold_asset = db.relationship(
-        "BrandingAsset", foreign_keys=[display_font_bold_asset_id]
-    )
+    body_font_regular_asset = db.relationship("BrandingAsset", foreign_keys=[body_font_regular_asset_id])
+    body_font_bold_asset = db.relationship("BrandingAsset", foreign_keys=[body_font_bold_asset_id])
+    body_font_italic_asset = db.relationship("BrandingAsset", foreign_keys=[body_font_italic_asset_id])
+    body_font_bold_italic_asset = db.relationship("BrandingAsset", foreign_keys=[body_font_bold_italic_asset_id])
+    display_font_regular_asset = db.relationship("BrandingAsset", foreign_keys=[display_font_regular_asset_id])
+    display_font_bold_asset = db.relationship("BrandingAsset", foreign_keys=[display_font_bold_asset_id])
 
     @property
     def is_archived(self) -> bool:

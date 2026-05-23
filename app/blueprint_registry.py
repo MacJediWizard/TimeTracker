@@ -75,6 +75,7 @@ def register_all_blueprints(app, logger=None):
     from app.routes.custom_field_definitions import custom_field_definitions_bp
     from app.routes.custom_reports import custom_reports_bp
     from app.routes.deals import deals_bp
+    from app.routes.esignature_webhooks import esignature_webhooks_bp
     from app.routes.expense_categories import expense_categories_bp
     from app.routes.expenses import expenses_bp
     from app.routes.import_export import import_export_bp
@@ -98,13 +99,12 @@ def register_all_blueprints(app, logger=None):
     from app.routes.saved_filters import saved_filters_bp
     from app.routes.settings import settings_bp
     from app.routes.setup import setup_bp
+    from app.routes.signoff import signoff_bp
+    from app.routes.signoff_templates import signoff_templates_bp
     from app.routes.tasks import tasks_bp
     from app.routes.time_entry_templates import time_entry_templates_bp
     from app.routes.timer import timer_bp
     from app.routes.user import user_bp
-    from app.routes.esignature_webhooks import esignature_webhooks_bp
-    from app.routes.signoff import signoff_bp
-    from app.routes.signoff_templates import signoff_templates_bp
     from app.routes.webhooks import webhooks_bp
     from app.routes.weekly_goals import weekly_goals_bp
 

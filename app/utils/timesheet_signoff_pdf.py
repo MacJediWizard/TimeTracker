@@ -89,9 +89,7 @@ class SignoffTemplate:
     # Content knobs
     intro_markdown: str = ""
     terms_markdown: str = ""
-    columns_to_show: list[str] = field(
-        default_factory=lambda: ["time", "duration", "project", "task", "notes"]
-    )
+    columns_to_show: list[str] = field(default_factory=lambda: ["time", "duration", "project", "task", "notes"])
     show_billable: bool = False
     show_daily_totals: bool = True
     signature_block_label: str = "Approved by Project Manager"
@@ -224,19 +222,9 @@ def _build_theme(template: SignoffTemplate) -> _Theme:
     body_name = template.body_font_name
     if body_name and _font_registered(body_name):
         body_regular = body_name
-        body_bold = (
-            f"{body_name}-Bold" if _font_registered(f"{body_name}-Bold") else body_name
-        )
-        body_italic = (
-            f"{body_name}-Italic"
-            if _font_registered(f"{body_name}-Italic")
-            else body_name
-        )
-        body_bold_italic = (
-            f"{body_name}-BoldItalic"
-            if _font_registered(f"{body_name}-BoldItalic")
-            else body_bold
-        )
+        body_bold = f"{body_name}-Bold" if _font_registered(f"{body_name}-Bold") else body_name
+        body_italic = f"{body_name}-Italic" if _font_registered(f"{body_name}-Italic") else body_name
+        body_bold_italic = f"{body_name}-BoldItalic" if _font_registered(f"{body_name}-BoldItalic") else body_bold
     else:
         body_regular = "Helvetica"
         body_bold = "Helvetica-Bold"
@@ -246,11 +234,7 @@ def _build_theme(template: SignoffTemplate) -> _Theme:
     display_name = template.display_font_name
     if display_name and _font_registered(display_name):
         display_regular = display_name
-        display_bold = (
-            f"{display_name}-Bold"
-            if _font_registered(f"{display_name}-Bold")
-            else display_name
-        )
+        display_bold = f"{display_name}-Bold" if _font_registered(f"{display_name}-Bold") else display_name
     else:
         display_regular = body_bold
         display_bold = body_bold
@@ -354,10 +338,7 @@ def _prepare_logo_path(template: SignoffTemplate) -> str | None:
         img = PILImage.open(src).convert("RGBA")
         alpha = img.split()[-1].point(lambda p: int(p * template.logo_opacity))
         img.putalpha(alpha)
-        out = (
-            Path("/tmp")
-            / f"_signoff_logo_{int(template.logo_opacity * 100)}_{Path(src).name}"
-        )
+        out = Path("/tmp") / f"_signoff_logo_{int(template.logo_opacity * 100)}_{Path(src).name}"
         img.save(out)
         return str(out)
     except Exception:
@@ -547,9 +528,7 @@ def _build_intro(template: SignoffTemplate, theme: _Theme) -> list:
     return [Paragraph(template.intro_markdown, style), Spacer(1, 10)]
 
 
-def _build_entries_table(
-    data: SignoffData, template: SignoffTemplate, theme: _Theme
-) -> list:
+def _build_entries_table(data: SignoffData, template: SignoffTemplate, theme: _Theme) -> list:
     columns = list(template.columns_to_show)
     if template.show_billable and "billable" not in columns:
         columns.append("billable")
@@ -588,9 +567,7 @@ def _build_entries_table(
             cell = {
                 "time": time_range or " ",
                 "duration": _duration_hhmm(dur_sec),
-                "project": _wrap_cell(
-                    entry.project.name if entry.project else "", theme
-                ),
+                "project": _wrap_cell(entry.project.name if entry.project else "", theme),
                 "task": _wrap_cell(entry.task.name if entry.task else "", theme),
                 "notes": _wrap_cell(entry.notes, theme),
                 "billable": "✓" if entry.billable else "—",
@@ -601,11 +578,7 @@ def _build_entries_table(
             totals_row = [""] * len(columns)
             if "duration" in columns:
                 totals_row[columns.index("duration")] = _duration_hhmm(day_seconds)
-            label_col = (
-                "task"
-                if "task" in columns
-                else ("project" if "project" in columns else columns[0])
-            )
+            label_col = "task" if "task" in columns else ("project" if "project" in columns else columns[0])
             totals_row[columns.index(label_col)] = Paragraph(
                 "<i>Day total</i>",
                 ParagraphStyle(
@@ -664,9 +637,7 @@ def _build_entries_table(
 
 def _build_grand_total(data: SignoffData, theme: _Theme) -> list:
     total_seconds = sum(getattr(e, "duration_seconds", 0) or 0 for e in data.entries)
-    billable_seconds = sum(
-        (getattr(e, "duration_seconds", 0) or 0) for e in data.entries if e.billable
-    )
+    billable_seconds = sum((getattr(e, "duration_seconds", 0) or 0) for e in data.entries if e.billable)
     entry_count = len(data.entries)
 
     summary_style = ParagraphStyle(
@@ -714,9 +685,7 @@ def _build_terms(template: SignoffTemplate, theme: _Theme) -> list:
     return [Spacer(1, 14), Paragraph(template.terms_markdown, style)]
 
 
-def _build_signature_block(
-    data: SignoffData, template: SignoffTemplate, theme: _Theme
-) -> list:
+def _build_signature_block(data: SignoffData, template: SignoffTemplate, theme: _Theme) -> list:
     title_style = ParagraphStyle(
         "SigTitle",
         fontName=theme.display_bold,
@@ -871,17 +840,13 @@ def _page_footer_factory(theme: _Theme):
         canvas.saveState()
         canvas.setFont(theme.body_regular, 7)
         canvas.setFillColor(theme.muted_text)
-        canvas.drawRightString(
-            doc.pagesize[0] - MARGIN, 0.5 * cm, f"Page {canvas.getPageNumber()}"
-        )
+        canvas.drawRightString(doc.pagesize[0] - MARGIN, 0.5 * cm, f"Page {canvas.getPageNumber()}")
         canvas.restoreState()
 
     return _page_footer
 
 
-def build_signoff_pdf(
-    data: SignoffData, template: SignoffTemplate | None = None
-) -> tuple[bytes, SignatureAreas]:
+def build_signoff_pdf(data: SignoffData, template: SignoffTemplate | None = None) -> tuple[bytes, SignatureAreas]:
     """Return ``(pdf_bytes, sig_areas)``."""
     template = template or SignoffTemplate()
     _register_fonts(template)
@@ -1062,8 +1027,7 @@ def _sample_data() -> SignoffData:
             30,
             "Data Pipeline",
             "Sprint planning",
-            "Sprint retro and planning for the next two-week cycle; committed to 3 "
-            "stories totalling 21 points.",
+            "Sprint retro and planning for the next two-week cycle; committed to 3 " "stories totalling 21 points.",
         )
     )
     entries.append(
@@ -1074,8 +1038,7 @@ def _sample_data() -> SignoffData:
             30,
             "Reporting Layer",
             "Bug fix",
-            "Fixed off-by-one in the rolling 28-day active-user metric; deployed and "
-            "verified in production.",
+            "Fixed off-by-one in the rolling 28-day active-user metric; deployed and " "verified in production.",
         )
     )
 

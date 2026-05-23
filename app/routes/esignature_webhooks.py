@@ -82,20 +82,14 @@ def esignature_webhook(integration_id: int):
         _log.info("Unhandled webhook event for integration %s: %s", integration_id, exc)
         return "", 200
     except Exception:
-        _log.exception(
-            "Failed to parse webhook payload for integration %s", integration_id
-        )
+        _log.exception("Failed to parse webhook payload for integration %s", integration_id)
         return "", 200
 
     if not event.external_id:
-        _log.warning(
-            "Webhook event missing external_id; integration %s", integration_id
-        )
+        _log.warning("Webhook event missing external_id; integration %s", integration_id)
         return "", 200
 
-    esig_req = ESignatureRequest.query.filter_by(
-        integration_id=integration_id, external_id=event.external_id
-    ).first()
+    esig_req = ESignatureRequest.query.filter_by(integration_id=integration_id, external_id=event.external_id).first()
     if not esig_req:
         _log.info(
             "Webhook references unknown external_id=%s on integration %s; skipping",
@@ -107,11 +101,7 @@ def esignature_webhook(integration_id: int):
     if esig_req.status in _TERMINAL_STATUSES and event.status == esig_req.status:
         return "", 200
 
-    if (
-        event.occurred_at
-        and esig_req.updated_at
-        and event.occurred_at < esig_req.updated_at
-    ):
+    if event.occurred_at and esig_req.updated_at and event.occurred_at < esig_req.updated_at:
         _log.info(
             "Webhook event is older than local state (esig %s); skipping",
             esig_req.id,

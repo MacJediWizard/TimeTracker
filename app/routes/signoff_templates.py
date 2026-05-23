@@ -73,11 +73,7 @@ def _hex_color(value: str | None, fallback: str) -> str:
     if not value:
         return fallback
     v = value.strip()
-    if (
-        len(v) == 7
-        and v[0] == "#"
-        and all(c in "0123456789abcdefABCDEF" for c in v[1:])
-    ):
+    if len(v) == 7 and v[0] == "#" and all(c in "0123456789abcdefABCDEF" for c in v[1:]):
         return v.lower()
     return fallback
 
@@ -99,30 +95,24 @@ def _form_to_template_kwargs(form) -> dict:
         "columns_to_show": _parse_columns(form),
         "show_billable": form.get("show_billable") == "on",
         "show_daily_totals": form.get("show_daily_totals") == "on",
-        "signature_block_label": (
-            (form.get("signature_block_label") or "").strip()
-            or "Approved by Project Manager"
-        ),
+        "signature_block_label": ((form.get("signature_block_label") or "").strip() or "Approved by Project Manager"),
         "primary_color_hex": _hex_color(form.get("primary_color_hex"), "#c41e3a"),
         "accent_color_hex": _hex_color(form.get("accent_color_hex"), "#1a1a1a"),
         "logo_asset_id": _opt_int(form.get("logo_asset_id")),
-        "logo_position": (form.get("logo_position") or "left").strip().lower()
-        if (form.get("logo_position") or "left").strip().lower()
-        in _VALID_LOGO_POSITIONS
-        else "left",
+        "logo_position": (
+            (form.get("logo_position") or "left").strip().lower()
+            if (form.get("logo_position") or "left").strip().lower() in _VALID_LOGO_POSITIONS
+            else "left"
+        ),
         "logo_max_height_pt": _opt_float(form.get("logo_max_height_pt"), 32.0),
         "logo_opacity": max(0.0, min(1.0, _opt_float(form.get("logo_opacity"), 1.0))),
         "body_font_name": (form.get("body_font_name") or "").strip() or None,
         "body_font_regular_asset_id": _opt_int(form.get("body_font_regular_asset_id")),
         "body_font_bold_asset_id": _opt_int(form.get("body_font_bold_asset_id")),
         "body_font_italic_asset_id": _opt_int(form.get("body_font_italic_asset_id")),
-        "body_font_bold_italic_asset_id": _opt_int(
-            form.get("body_font_bold_italic_asset_id")
-        ),
+        "body_font_bold_italic_asset_id": _opt_int(form.get("body_font_bold_italic_asset_id")),
         "display_font_name": (form.get("display_font_name") or "").strip() or None,
-        "display_font_regular_asset_id": _opt_int(
-            form.get("display_font_regular_asset_id")
-        ),
+        "display_font_regular_asset_id": _opt_int(form.get("display_font_regular_asset_id")),
         "display_font_bold_asset_id": _opt_int(form.get("display_font_bold_asset_id")),
     }
 
@@ -160,9 +150,7 @@ def _assets_by_kind() -> dict[str, list[BrandingAsset]]:
         .all()
     )
     fonts = (
-        BrandingAsset.query.filter_by(
-            kind=BrandingAsset.KIND_FONT_TTF, archived_at=None
-        )
+        BrandingAsset.query.filter_by(kind=BrandingAsset.KIND_FONT_TTF, archived_at=None)
         .order_by(BrandingAsset.name.asc())
         .all()
     )
@@ -174,9 +162,11 @@ def _assets_by_kind() -> dict[str, list[BrandingAsset]]:
 @admin_or_permission_required("manage_integrations")
 def list_templates():
     templates = TimesheetSignoffTemplate.query.order_by(
-        TimesheetSignoffTemplate.archived_at.asc().nullsfirst()
-        if hasattr(TimesheetSignoffTemplate.archived_at.asc(), "nullsfirst")
-        else TimesheetSignoffTemplate.archived_at.asc(),
+        (
+            TimesheetSignoffTemplate.archived_at.asc().nullsfirst()
+            if hasattr(TimesheetSignoffTemplate.archived_at.asc(), "nullsfirst")
+            else TimesheetSignoffTemplate.archived_at.asc()
+        ),
         TimesheetSignoffTemplate.name.asc(),
     ).all()
     return render_template("admin/signoff_templates/list.html", templates=templates)
@@ -216,9 +206,7 @@ def new_template():
             )
 
         flash(_("Template '%(name)s' created", name=template.name), "success")
-        return redirect(
-            url_for("signoff_templates.edit_template", template_id=template.id)
-        )
+        return redirect(url_for("signoff_templates.edit_template", template_id=template.id))
 
     return render_template(
         "admin/signoff_templates/form.html",
@@ -228,9 +216,7 @@ def new_template():
     )
 
 
-@signoff_templates_bp.route(
-    "/admin/signoff-templates/<int:template_id>", methods=["GET", "POST"]
-)
+@signoff_templates_bp.route("/admin/signoff-templates/<int:template_id>", methods=["GET", "POST"])
 @login_required
 @admin_or_permission_required("manage_integrations")
 def edit_template(template_id: int):
@@ -267,9 +253,7 @@ def edit_template(template_id: int):
             )
 
         flash(_("Template '%(name)s' updated", name=template.name), "success")
-        return redirect(
-            url_for("signoff_templates.edit_template", template_id=template.id)
-        )
+        return redirect(url_for("signoff_templates.edit_template", template_id=template.id))
 
     return render_template(
         "admin/signoff_templates/form.html",
@@ -302,9 +286,7 @@ def restore_template(template_id: int):
     return redirect(url_for("signoff_templates.list_templates"))
 
 
-@signoff_templates_bp.route(
-    "/admin/signoff-templates/<int:template_id>/preview", methods=["GET", "POST"]
-)
+@signoff_templates_bp.route("/admin/signoff-templates/<int:template_id>/preview", methods=["GET", "POST"])
 @login_required
 @admin_or_permission_required("manage_integrations")
 def preview_template(template_id: int):
@@ -347,27 +329,20 @@ def _signoff_template_from_kwargs(kwargs: dict) -> SignoffTemplate:
         columns_to_show=list(kwargs.get("columns_to_show") or []),
         show_billable=bool(kwargs.get("show_billable")),
         show_daily_totals=bool(kwargs.get("show_daily_totals")),
-        signature_block_label=kwargs.get("signature_block_label")
-        or "Approved by Project Manager",
+        signature_block_label=kwargs.get("signature_block_label") or "Approved by Project Manager",
         primary_color_hex=kwargs.get("primary_color_hex") or "#c41e3a",
         accent_color_hex=kwargs.get("accent_color_hex") or "#1a1a1a",
         logo_path=asset_path(kwargs.get("logo_asset_id")),
         logo_position=kwargs.get("logo_position") or "left",
         logo_max_height_pt=kwargs.get("logo_max_height_pt") or 32.0,
-        logo_opacity=kwargs.get("logo_opacity")
-        if kwargs.get("logo_opacity") is not None
-        else 1.0,
+        logo_opacity=kwargs.get("logo_opacity") if kwargs.get("logo_opacity") is not None else 1.0,
         body_font_name=kwargs.get("body_font_name"),
         body_font_regular_path=asset_path(kwargs.get("body_font_regular_asset_id")),
         body_font_bold_path=asset_path(kwargs.get("body_font_bold_asset_id")),
         body_font_italic_path=asset_path(kwargs.get("body_font_italic_asset_id")),
-        body_font_bold_italic_path=asset_path(
-            kwargs.get("body_font_bold_italic_asset_id")
-        ),
+        body_font_bold_italic_path=asset_path(kwargs.get("body_font_bold_italic_asset_id")),
         display_font_name=kwargs.get("display_font_name"),
-        display_font_regular_path=asset_path(
-            kwargs.get("display_font_regular_asset_id")
-        ),
+        display_font_regular_path=asset_path(kwargs.get("display_font_regular_asset_id")),
         display_font_bold_path=asset_path(kwargs.get("display_font_bold_asset_id")),
     )
 
@@ -381,12 +356,8 @@ def _sample_data_for_preview() -> SignoffData:
     monday = today - timedelta(days=today.weekday())
     friday = monday + timedelta(days=4)
 
-    def entry(
-        day_offset: int, h_start: int, h_end: int, project: str, task: str, notes: str
-    ):
-        start = datetime.combine(
-            monday + timedelta(days=day_offset), datetime.min.time()
-        )
+    def entry(day_offset: int, h_start: int, h_end: int, project: str, task: str, notes: str):
+        start = datetime.combine(monday + timedelta(days=day_offset), datetime.min.time())
         return SimpleNamespace(
             start_time=start.replace(hour=h_start),
             end_time=start.replace(hour=h_end),

@@ -50,7 +50,6 @@ from app.utils.timesheet_signoff_pdf import (
     build_signoff_pdf,
 )
 
-
 _TARGET_TYPE = "TimesheetSignoffRequest"
 
 _ESIG_TO_LOCAL_STATUS = {
@@ -69,9 +68,7 @@ class TimesheetSignoffService:
         if no e-signature integration is active. The feature UI uses this
         check to gate the "Send for approval" action and surface a
         Configure-DocuSeal prompt when the result is ``None``."""
-        integration = Integration.query.filter_by(
-            provider="docuseal", is_active=True
-        ).first()
+        integration = Integration.query.filter_by(provider="docuseal", is_active=True).first()
         if not integration:
             return None
         from app.services.integration_service import IntegrationService
@@ -83,9 +80,7 @@ class TimesheetSignoffService:
             if not connector.test_connection():
                 return None
         except Exception:
-            current_app.logger.exception(
-                "DocuSeal test_connection raised; treating as disconnected"
-            )
+            current_app.logger.exception("DocuSeal test_connection raised; treating as disconnected")
             return None
         return connector
 
@@ -99,9 +94,7 @@ class TimesheetSignoffService:
         return IntegrationService.get_connector(integration)
 
     @classmethod
-    def resolve_template_for_client(
-        cls, client: Client
-    ) -> TimesheetSignoffTemplate | None:
+    def resolve_template_for_client(cls, client: Client) -> TimesheetSignoffTemplate | None:
         if client and client.signoff_template_id:
             template = TimesheetSignoffTemplate.query.get(client.signoff_template_id)
             if template and not template.archived_at:
@@ -113,9 +106,7 @@ class TimesheetSignoffService:
         )
 
     @classmethod
-    def build_template_from_orm(
-        cls, orm_template: TimesheetSignoffTemplate
-    ) -> SignoffTemplate:
+    def build_template_from_orm(cls, orm_template: TimesheetSignoffTemplate) -> SignoffTemplate:
         def asset_path(asset_id: int | None) -> str | None:
             if not asset_id:
                 return None
@@ -141,13 +132,9 @@ class TimesheetSignoffService:
             body_font_regular_path=asset_path(orm_template.body_font_regular_asset_id),
             body_font_bold_path=asset_path(orm_template.body_font_bold_asset_id),
             body_font_italic_path=asset_path(orm_template.body_font_italic_asset_id),
-            body_font_bold_italic_path=asset_path(
-                orm_template.body_font_bold_italic_asset_id
-            ),
+            body_font_bold_italic_path=asset_path(orm_template.body_font_bold_italic_asset_id),
             display_font_name=orm_template.display_font_name,
-            display_font_regular_path=asset_path(
-                orm_template.display_font_regular_asset_id
-            ),
+            display_font_regular_path=asset_path(orm_template.display_font_regular_asset_id),
             display_font_bold_path=asset_path(orm_template.display_font_bold_asset_id),
         )
 
@@ -187,14 +174,12 @@ class TimesheetSignoffService:
         )
         client = Client.query.get(request.client_id)
         engineer = User.query.get(request.engineer_user_id)
-        engineer_display = (
-            engineer.full_name if engineer and engineer.full_name else None
-        ) or (engineer.username if engineer else "")
+        engineer_display = (engineer.full_name if engineer and engineer.full_name else None) or (
+            engineer.username if engineer else ""
+        )
         my_company = cls._resolve_company_name()
         project_names = [e.project.name for e in entries if e.project]
-        engagement = (
-            max(set(project_names), key=project_names.count) if project_names else ""
-        )
+        engagement = max(set(project_names), key=project_names.count) if project_names else ""
         return SignoffData(
             my_company_name=my_company,
             client_name=client.name if client else "",
@@ -233,9 +218,7 @@ class TimesheetSignoffService:
         signoff_template = cls.build_template_from_orm(template)
         pdf_bytes, sig_areas = build_signoff_pdf(data, signoff_template)
 
-        request.total_hours_seconds = sum(
-            getattr(e, "duration_seconds", 0) or 0 for e in data.entries
-        )
+        request.total_hours_seconds = sum(getattr(e, "duration_seconds", 0) or 0 for e in data.entries)
 
         signature_fields = cls._signature_fields_from_areas(sig_areas)
         subject = (
@@ -274,9 +257,7 @@ class TimesheetSignoffService:
     def _signature_fields_from_areas(sig_areas: SignatureAreas) -> list[dict]:
         page = sig_areas.page_index
 
-        def field(
-            name: str, kind: str, area: tuple[float, float, float, float]
-        ) -> dict:
+        def field(name: str, kind: str, area: tuple[float, float, float, float]) -> dict:
             return {
                 "name": name,
                 "type": kind,
@@ -379,9 +360,7 @@ class TimesheetSignoffService:
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
         stuck = (
             ESignatureRequest.query.filter(
-                ESignatureRequest.status.in_(
-                    [ESignatureStatus.SENT, ESignatureStatus.VIEWED]
-                ),
+                ESignatureRequest.status.in_([ESignatureStatus.SENT, ESignatureStatus.VIEWED]),
                 ESignatureRequest.sent_at < cutoff,
                 ESignatureRequest.external_id.isnot(None),
             )
@@ -405,9 +384,7 @@ class TimesheetSignoffService:
                     cls.apply_webhook_event(esig_req, event)
                     touched += 1
             except Exception:
-                current_app.logger.exception(
-                    "Reconcile failed for esignature_request %s", esig_req.id
-                )
+                current_app.logger.exception("Reconcile failed for esignature_request %s", esig_req.id)
         return touched
 
     @classmethod

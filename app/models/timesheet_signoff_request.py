@@ -87,14 +87,10 @@ class TimesheetSignoffRequest(db.Model):
     client = db.relationship("Client", foreign_keys=[client_id])
     engineer = db.relationship("User", foreign_keys=[engineer_user_id])
     template = db.relationship("TimesheetSignoffTemplate")
-    esignature_request = db.relationship(
-        "ESignatureRequest", foreign_keys=[esignature_request_id]
-    )
+    esignature_request = db.relationship("ESignatureRequest", foreign_keys=[esignature_request_id])
     creator = db.relationship("User", foreign_keys=[created_by])
 
-    __table_args__ = (
-        db.Index("ix_signoff_requests_period", "period_start", "period_end"),
-    )
+    __table_args__ = (db.Index("ix_signoff_requests_period", "period_start", "period_end"),)
 
     @property
     def is_active(self) -> bool:
@@ -110,19 +106,13 @@ class TimesheetSignoffRequest(db.Model):
         )
 
     def to_dict(self) -> dict:
-        status = (
-            self.status.value
-            if isinstance(self.status, TimesheetSignoffStatus)
-            else str(self.status)
-        )
+        status = self.status.value if isinstance(self.status, TimesheetSignoffStatus) else str(self.status)
         return {
             "id": self.id,
             "timesheet_period_id": self.timesheet_period_id,
             "client_id": self.client_id,
             "engineer_user_id": self.engineer_user_id,
-            "period_start": self.period_start.isoformat()
-            if self.period_start
-            else None,
+            "period_start": self.period_start.isoformat() if self.period_start else None,
             "period_end": self.period_end.isoformat() if self.period_end else None,
             "signer_email": self.signer_email,
             "signer_name": self.signer_name,
@@ -134,9 +124,7 @@ class TimesheetSignoffRequest(db.Model):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "sent_at": self.sent_at.isoformat() if self.sent_at else None,
             "signed_at": self.signed_at.isoformat() if self.signed_at else None,
-            "cancelled_at": self.cancelled_at.isoformat()
-            if self.cancelled_at
-            else None,
+            "cancelled_at": self.cancelled_at.isoformat() if self.cancelled_at else None,
         }
 
     def __repr__(self) -> str:

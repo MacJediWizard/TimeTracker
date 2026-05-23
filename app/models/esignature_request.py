@@ -66,9 +66,7 @@ class ESignatureRequest(db.Model):
     document_hash = db.Column(db.String(64), nullable=True)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = db.Column(
-        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
-    )
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     integration = db.relationship("Integration")
 
@@ -85,11 +83,7 @@ class ESignatureRequest(db.Model):
         )
 
     def to_dict(self) -> dict:
-        status = (
-            self.status.value
-            if isinstance(self.status, ESignatureStatus)
-            else str(self.status)
-        )
+        status = self.status.value if isinstance(self.status, ESignatureStatus) else str(self.status)
         return {
             "id": self.id,
             "integration_id": self.integration_id,
@@ -111,7 +105,4 @@ class ESignatureRequest(db.Model):
         }
 
     def __repr__(self) -> str:
-        return (
-            f"<ESignatureRequest {self.id} {self.target_type}:{self.target_id} "
-            f"status={self.status}>"
-        )
+        return f"<ESignatureRequest {self.id} {self.target_type}:{self.target_id} " f"status={self.status}>"

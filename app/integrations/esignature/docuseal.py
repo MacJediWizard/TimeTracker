@@ -26,7 +26,6 @@ from app.integrations.esignature.base import (
 )
 from app.models.esignature_request import ESignatureStatus
 
-
 _DOCUSEAL_TO_INTERNAL_STATUS = {
     "pending": ESignatureStatus.SENT,
     "completed": ESignatureStatus.SIGNED,
@@ -105,9 +104,7 @@ class DocuSealConnector(BaseESignatureConnector):
             raise ESignatureError("DocuSeal credentials not configured")
 
         encoded = base64.b64encode(document_pdf).decode("ascii")
-        expire_at = (
-            datetime.now(timezone.utc) + timedelta(days=expire_in_days)
-        ).isoformat()
+        expire_at = (datetime.now(timezone.utc) + timedelta(days=expire_in_days)).isoformat()
 
         fields = []
         for f in signature_fields:
@@ -142,9 +139,7 @@ class DocuSealConnector(BaseESignatureConnector):
             ],
             "submitters": [
                 {
-                    "role": signature_fields[0].get("role", "Client")
-                    if signature_fields
-                    else "Client",
+                    "role": signature_fields[0].get("role", "Client") if signature_fields else "Client",
                     "email": recipient_email,
                     "name": recipient_name,
                     "external_id": external_id,
@@ -152,25 +147,17 @@ class DocuSealConnector(BaseESignatureConnector):
             ],
         }
 
-        resp = self._session.post(
-            f"{self.base_url}/submissions/pdf", json=body, timeout=30
-        )
+        resp = self._session.post(f"{self.base_url}/submissions/pdf", json=body, timeout=30)
         if resp.status_code >= 400:
-            raise ESignatureError(
-                f"DocuSeal send failed: {resp.status_code} {resp.text[:500]}"
-            )
+            raise ESignatureError(f"DocuSeal send failed: {resp.status_code} {resp.text[:500]}")
 
         submitters = resp.json()
         if not submitters:
-            raise ESignatureError(
-                "DocuSeal returned no submitters for created submission"
-            )
+            raise ESignatureError("DocuSeal returned no submitters for created submission")
 
         submitter = submitters[0]
         submission_id = str(submitter.get("submission_id") or submitter.get("id"))
-        signer_url = (
-            f"{self.base_url}/s/{submitter['slug']}" if submitter.get("slug") else None
-        )
+        signer_url = f"{self.base_url}/s/{submitter['slug']}" if submitter.get("slug") else None
 
         return ESignatureSendResult(
             external_id=submission_id,
@@ -179,14 +166,10 @@ class DocuSealConnector(BaseESignatureConnector):
         )
 
     def get_status(self, external_id: str) -> ESignatureStatus:
-        resp = self._session.get(
-            f"{self.base_url}/submissions/{external_id}", timeout=10
-        )
+        resp = self._session.get(f"{self.base_url}/submissions/{external_id}", timeout=10)
         resp.raise_for_status()
         data = resp.json()
-        return _DOCUSEAL_TO_INTERNAL_STATUS.get(
-            data.get("status"), ESignatureStatus.SENT
-        )
+        return _DOCUSEAL_TO_INTERNAL_STATUS.get(data.get("status"), ESignatureStatus.SENT)
 
     def download_signed_document(self, external_id: str) -> bytes:
         resp = self._session.get(
@@ -197,18 +180,14 @@ class DocuSealConnector(BaseESignatureConnector):
         resp.raise_for_status()
         documents = resp.json().get("documents", [])
         if not documents:
-            raise ESignatureError(
-                f"No signed documents available for submission {external_id}"
-            )
+            raise ESignatureError(f"No signed documents available for submission {external_id}")
         pdf_url = documents[0]["url"]
         pdf_resp = requests.get(pdf_url, timeout=60)
         pdf_resp.raise_for_status()
         return pdf_resp.content
 
     def download_audit_certificate(self, external_id: str) -> bytes | None:
-        resp = self._session.get(
-            f"{self.base_url}/submissions/{external_id}", timeout=10
-        )
+        resp = self._session.get(f"{self.base_url}/submissions/{external_id}", timeout=10)
         resp.raise_for_status()
         audit_url = resp.json().get("audit_log_url")
         if not audit_url:
@@ -218,21 +197,15 @@ class DocuSealConnector(BaseESignatureConnector):
         return pdf_resp.content
 
     def cancel(self, external_id: str) -> bool:
-        resp = self._session.delete(
-            f"{self.base_url}/submissions/{external_id}", timeout=10
-        )
+        resp = self._session.delete(f"{self.base_url}/submissions/{external_id}", timeout=10)
         return resp.status_code in (200, 204)
 
     def verify_webhook(self, raw_body: bytes, headers: dict[str, str]) -> bool:
         if not self.webhook_secret:
-            current_app.logger.warning(
-                "DocuSeal webhook secret not configured; rejecting webhook"
-            )
+            current_app.logger.warning("DocuSeal webhook secret not configured; rejecting webhook")
             return False
 
-        sig_header = headers.get("X-Docuseal-Signature") or headers.get(
-            "x-docuseal-signature"
-        )
+        sig_header = headers.get("X-Docuseal-Signature") or headers.get("x-docuseal-signature")
         if not sig_header:
             return False
 
@@ -243,16 +216,11 @@ class DocuSealConnector(BaseESignatureConnector):
             return False
 
         now = int(time.time())
-        if (
-            ts < now - _WEBHOOK_TOLERANCE_SECONDS
-            or ts > now + _WEBHOOK_TOLERANCE_SECONDS
-        ):
+        if ts < now - _WEBHOOK_TOLERANCE_SECONDS or ts > now + _WEBHOOK_TOLERANCE_SECONDS:
             return False
 
         signed_payload = f"{ts}.".encode() + raw_body
-        expected = hmac.new(
-            self.webhook_secret.encode(), signed_payload, hashlib.sha256
-        ).hexdigest()
+        expected = hmac.new(self.webhook_secret.encode(), signed_payload, hashlib.sha256).hexdigest()
         return hmac.compare_digest(expected, sig)
 
     def parse_webhook(self, raw_body: bytes) -> ESignatureWebhookEvent:

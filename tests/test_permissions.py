@@ -10,7 +10,9 @@ from app.models import User, Permission, Role
 def test_permission_creation(app):
     """Test permission creation"""
     with app.app_context():
-        permission = Permission(name="test_permission", description="Test permission", category="testing")
+        permission = Permission(
+            name="test_permission", description="Test permission", category="testing"
+        )
         db.session.add(permission)
         db.session.commit()
 
@@ -283,9 +285,14 @@ def test_super_admin_role_user(app):
         user = User(username="testuser", role="user")
         db.session.add(user)
 
-        # Create super_admin role
-        super_admin_role = Role(name="super_admin")
-        db.session.add(super_admin_role)
+        # The conftest's app fixture pre-seeds default roles via
+        # seed_roles(), which already includes 'super_admin'. Re-use
+        # the existing row rather than INSERTing a duplicate (which
+        # would hit the UNIQUE constraint on roles.name).
+        super_admin_role = Role.query.filter_by(name="super_admin").first()
+        if super_admin_role is None:
+            super_admin_role = Role(name="super_admin")
+            db.session.add(super_admin_role)
         db.session.commit()
 
         # Assign super_admin role
@@ -347,7 +354,9 @@ def test_user_get_role_names(app):
 def test_permission_to_dict(app):
     """Test permission serialization to dictionary"""
     with app.app_context():
-        permission = Permission(name="test_permission", description="Test description", category="testing")
+        permission = Permission(
+            name="test_permission", description="Test description", category="testing"
+        )
         db.session.add(permission)
         db.session.commit()
 
@@ -363,7 +372,9 @@ def test_permission_to_dict(app):
 def test_role_to_dict(app):
     """Test role serialization to dictionary"""
     with app.app_context():
-        role = Role(name="test_role", description="Test description", is_system_role=True)
+        role = Role(
+            name="test_role", description="Test description", is_system_role=True
+        )
         db.session.add(role)
         db.session.commit()
 

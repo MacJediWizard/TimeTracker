@@ -67,8 +67,16 @@ def client(app):
 
 @pytest.fixture
 def test_user(app):
-    """Create a test user and return its ID"""
-    user = User(username="testuser", email="test@example.com")
+    """Create a test user and return its ID.
+
+    The user is created with role='admin' so the per-user project/client
+    scope filter from upstream PR #641 doesn't hide rows we create in
+    test fixtures. This file's tests use an API token with explicit
+    scopes (read:projects, write:projects, ...), so the API surface is
+    still being exercised by the token — the role just controls
+    visibility, not the auth path.
+    """
+    user = User(username="testuser", email="test@example.com", role="admin")
     user.set_password("password")
     user.is_active = True
     db.session.add(user)

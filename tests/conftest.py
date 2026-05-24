@@ -898,8 +898,12 @@ def credit_note(app, invoice, user):
 
 
 @pytest.fixture
-def recurring_invoice(app, project, test_client):
-    """Create a recurring invoice template tied to project + client."""
+def recurring_invoice(app, project, test_client, user):
+    """Create a recurring invoice template tied to project + client.
+
+    created_by is required by the RecurringInvoice constructor since the
+    v5.6.x sync.
+    """
     from datetime import date, timedelta
 
     ri = RecurringInvoice(
@@ -908,8 +912,9 @@ def recurring_invoice(app, project, test_client):
         client_id=test_client.id,
         client_name=test_client.name,
         frequency="monthly",
-        interval=1,
         next_run_date=date.today() + timedelta(days=30),
+        created_by=user.id,
+        interval=1,
     )
     db.session.add(ri)
     db.session.commit()

@@ -1,12 +1,13 @@
-import pytest
-import uuid
-import tempfile
 import os
+import tempfile
+import uuid
+
+import pytest
 
 pytestmark = [pytest.mark.api, pytest.mark.integration]
 
 from app import create_app, db
-from app.models import User, Project, Task, ApiToken
+from app.models import ApiToken, Client, Project, User
 
 
 @pytest.fixture
@@ -51,7 +52,11 @@ def api_token(app, user):
 
 @pytest.fixture
 def project(app):
-    p = Project(name="Comments Project", status="active")
+    c = Client(name="Comments Client")
+    c.status = "active"
+    db.session.add(c)
+    db.session.flush()
+    p = Project(name="Comments Project", status="active", client_id=c.id)
     db.session.add(p)
     db.session.commit()
     return p
@@ -74,7 +79,11 @@ def test_comments_crud_project(client, api_token, project):
     assert len(r.get_json()["comments"]) >= 1
 
     # update
-    r = client.patch(f"/api/v1/comments/{c_id}", headers=_auth(api_token), json={"content": "Updated"})
+    r = client.patch(
+        f"/api/v1/comments/{c_id}",
+        headers=_auth(api_token),
+        json={"content": "Updated"},
+    )
     assert r.status_code == 200
     assert r.get_json()["comment"]["content"] == "Updated"
 

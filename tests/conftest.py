@@ -408,6 +408,27 @@ def sample_user(user):
 
 
 @pytest.fixture
+def sample_token(app, sample_user):
+    """Alias-style fixture for tests under tests/test_utils/ that expect a
+    ``sample_token`` returning a (token, plain_token) tuple.
+
+    Originally defined inside TestAuthenticateToken (test_api_auth_enhanced.py).
+    Promoted here so sibling classes (e.g., TestRequireApiToken) can reuse it.
+    """
+    from app.models import ApiToken
+
+    token, plain_token = ApiToken.create_token(
+        user_id=sample_user.id,
+        name="Test Token",
+        scopes="read:projects",
+        expires_days=30,
+    )
+    db.session.add(token)
+    db.session.commit()
+    return token, plain_token
+
+
+@pytest.fixture
 def sample_project(app, user, sample_client):
     """A simple Project tied to the sample_user and sample_client. Used by
     test files that build invoices / comments / time entries against a

@@ -19,7 +19,7 @@ def _api_headers(plain_token: str) -> dict:
     }
 
 
-def _second_project(client_id: int) -> Project:
+def _second_project(client_id: int, user_id: int) -> Project:
     p = Project(
         name="Second Timer Project",
         client_id=client_id,
@@ -27,6 +27,7 @@ def _second_project(client_id: int) -> Project:
         billable=True,
         hourly_rate=Decimal("80.00"),
         status="active",
+        created_by=user_id,
     )
     db.session.add(p)
     db.session.flush()
@@ -39,7 +40,7 @@ def _second_project(client_id: int) -> Project:
 )
 def test_single_timer_enforced_when_setting_on(app, client, user, project, api_token):
     _, plain_token = api_token
-    p2 = _second_project(project.client_id)
+    p2 = _second_project(project.client_id, user.id)
     db.session.commit()
 
     with app.app_context():
@@ -77,7 +78,7 @@ def test_multiple_timers_allowed_when_setting_off(
     app, client, user, project, api_token
 ):
     _, plain_token = api_token
-    p2 = _second_project(project.client_id)
+    p2 = _second_project(project.client_id, user.id)
     db.session.commit()
 
     with app.app_context():
@@ -111,7 +112,7 @@ def test_multiple_timers_allowed_when_setting_off(
 def test_setting_read_from_db_not_env(app, client, user, project, api_token):
     """DB single_active_timer=False must allow a second timer even if env default is restrictive."""
     _, plain_token = api_token
-    p2 = _second_project(project.client_id)
+    p2 = _second_project(project.client_id, user.id)
     db.session.commit()
 
     with app.app_context():
@@ -148,7 +149,7 @@ def test_both_web_and_api_routes_respect_setting(
     app, authenticated_client, user, project, api_token
 ):
     _, plain_token = api_token
-    p2 = _second_project(project.client_id)
+    p2 = _second_project(project.client_id, user.id)
     db.session.commit()
 
     with app.app_context():

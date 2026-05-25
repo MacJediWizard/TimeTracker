@@ -13,9 +13,7 @@ from app.models import User, ApiToken
 
 @pytest.fixture
 def app():
-    unique_db_path = os.path.join(
-        tempfile.gettempdir(), f"test_api_tax_currency_{uuid.uuid4().hex}.sqlite"
-    )
+    unique_db_path = os.path.join(tempfile.gettempdir(), f"test_api_tax_currency_{uuid.uuid4().hex}.sqlite")
 
     app = create_app(
         {
@@ -47,9 +45,7 @@ def admin_user(app):
 
 @pytest.fixture
 def admin_token(app, admin_user):
-    token, plain = ApiToken.create_token(
-        user_id=admin_user.id, name="Admin Token", scopes="admin:all,read:invoices"
-    )
+    token, plain = ApiToken.create_token(user_id=admin_user.id, name="Admin Token", scopes="admin:all,read:invoices")
     db.session.add(token)
     db.session.commit()
     return plain
@@ -59,22 +55,14 @@ def _auth(t):
     return {"Authorization": f"Bearer {t}", "Content-Type": "application/json"}
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Upstream pre-existing flake: exchange-rate POST returns 409 instead "
-        "of 201 on a fresh DB. Surfaced only after SECRET_KEY fix unblocked "
-        "the test from setup-ERROR. Tracked separately from #22."
-    ),
-    strict=False,
-)
 def test_tax_currency_flow(client, admin_token):
-    # create currency
-    r = client.post(
-        "/api/v1/currencies",
-        headers=_auth(admin_token),
-        json={"code": "USD", "name": "US Dollar", "symbol": "$"},
-    )
-    assert r.status_code == 201
+    # create currencies (both legs required for exchange-rate FK)
+    for payload in (
+        {"code": "USD", "name": "US Dollar", "symbol": "$"},
+        {"code": "EUR", "name": "Euro", "symbol": "€"},
+    ):
+        r = client.post("/api/v1/currencies", headers=_auth(admin_token), json=payload)
+        assert r.status_code == 201
 
     # list currencies
     r = client.get("/api/v1/currencies", headers=_auth(admin_token))
@@ -85,21 +73,12 @@ def test_tax_currency_flow(client, admin_token):
     r = client.post(
         "/api/v1/exchange-rates",
         headers=_auth(admin_token),
-        json={
-            "base_code": "EUR",
-            "quote_code": "USD",
-            "rate": 1.1,
-            "date": date.today().isoformat(),
-            "source": "test",
-        },
+        json={"base_code": "EUR", "quote_code": "USD", "rate": 1.1, "date": date.today().isoformat(), "source": "test"},
     )
     assert r.status_code == 201
 
     # list exchange rates
-    r = client.get(
-        "/api/v1/exchange-rates?base_code=EUR&quote_code=USD",
-        headers=_auth(admin_token),
-    )
+    r = client.get("/api/v1/exchange-rates?base_code=EUR&quote_code=USD", headers=_auth(admin_token))
     assert r.status_code == 200
 
     # create tax rule

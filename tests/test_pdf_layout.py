@@ -1,19 +1,14 @@
 """Tests for PDF layout customization functionality."""
 
 import json
+from unittest.mock import MagicMock, patch
 
 import pytest
 from datetime import date, timedelta
 from decimal import Decimal
 from app import db
-from app.models import Invoice, Settings
-from factories import (
-    UserFactory,
-    ClientFactory,
-    ProjectFactory,
-    InvoiceFactory,
-    InvoiceItemFactory,
-)
+from app.models import User, Project, Invoice, InvoiceItem, Settings, Client
+from factories import UserFactory, ClientFactory, ProjectFactory, InvoiceFactory, InvoiceItemFactory
 from flask import url_for
 
 
@@ -75,10 +70,7 @@ def sample_invoice(app, admin_user):
 
     # Add invoice item
     item = InvoiceItemFactory(
-        invoice_id=invoice.id,
-        description="Test Service",
-        quantity=Decimal("5.00"),
-        unit_price=Decimal("100.00"),
+        invoice_id=invoice.id, description="Test Service", quantity=Decimal("5.00"), unit_price=Decimal("100.00")
     )
     db.session.commit()
 
@@ -91,9 +83,7 @@ def test_pdf_layout_page_requires_admin(client, regular_user):
     """Test that PDF layout page requires admin access."""
     with client:
         # Login as regular user
-        client.post(
-            "/auth/login", data={"username": "regular", "password": "password123"}
-        )
+        client.post("/auth/login", data={"username": "regular", "password": "password123"})
 
         # Try to access PDF layout page
         response = client.get("/admin/pdf-layout")
@@ -119,19 +109,13 @@ def test_pdf_layout_save_custom_template(admin_authenticated_client, app):
     """Test saving custom PDF layout templates."""
     from app.models import InvoicePDFTemplate
 
-    custom_html = (
-        '<div class="custom-invoice"><h1>{{ invoice.invoice_number }}</h1></div>'
-    )
+    custom_html = '<div class="custom-invoice"><h1>{{ invoice.invoice_number }}</h1></div>'
     custom_css = ".custom-invoice { color: red; }"
 
     # Save custom template (A4 is default)
     response = admin_authenticated_client.post(
         "/admin/pdf-layout",
-        data={
-            "invoice_pdf_template_html": custom_html,
-            "invoice_pdf_template_css": custom_css,
-            "page_size": "A4",
-        },
+        data={"invoice_pdf_template_html": custom_html, "invoice_pdf_template_css": custom_css, "page_size": "A4"},
         follow_redirects=True,
     )
 
@@ -160,9 +144,7 @@ def test_pdf_layout_reset_to_defaults(admin_authenticated_client, app):
     db.session.commit()
 
     # Reset to defaults
-    response = admin_authenticated_client.post(
-        "/admin/pdf-layout/reset", follow_redirects=True
-    )
+    response = admin_authenticated_client.post("/admin/pdf-layout/reset", follow_redirects=True)
 
     assert response.status_code == 200
 
@@ -187,10 +169,18 @@ def test_pdf_layout_get_defaults(admin_authenticated_client):
     assert "css" in data
 
 
+def _assert_pdf_preview_response(response):
+    assert response.status_code == 200
+    assert response.data.startswith(b"%PDF")
+    assert len(response.data) > 100
+    mimetype = (response.mimetype or response.content_type or "").lower()
+    assert "pdf" in mimetype
+
+
 @pytest.mark.smoke
 @pytest.mark.admin
 def test_pdf_layout_preview(admin_authenticated_client, sample_invoice):
-    """Test PDF layout preview functionality."""
+    """Preview returns ReportLab PDF when saved/default template_json exists (issue #622)."""
     # Preview requires a saved template; save a minimal one first
     admin_authenticated_client.post(
         "/admin/pdf-layout",
@@ -211,13 +201,7 @@ def test_pdf_layout_preview(admin_authenticated_client, sample_invoice):
         },
     )
 
-    assert response.status_code == 200
-    # The preview endpoint returns a compiled PDF; assert the magic bytes
-    # rather than substring-matching plaintext (the rendered template
-    # content lives inside the ASCII85+FlateDecode-compressed stream and
-    # is not present in the raw bytes).
-    assert response.data.startswith(b"%PDF-")
-    assert len(response.data) > 500
+    _assert_pdf_preview_response(response)
 
 
 @pytest.mark.smoke
@@ -242,12 +226,7 @@ def test_pdf_layout_preview_prefers_form_template_json_over_database(
                 "y": 50,
                 "text": "DB_PREVIEW_MARKER_XYZ",
                 "width": 400,
-                "style": {
-                    "font": "Helvetica",
-                    "size": 12,
-                    "color": "#000000",
-                    "align": "left",
-                },
+                "style": {"font": "Helvetica", "size": 12, "color": "#000000", "align": "left"},
             }
         ],
         "styles": {"default": {"font": "Helvetica", "size": 10, "color": "#000000"}},
@@ -266,12 +245,7 @@ def test_pdf_layout_preview_prefers_form_template_json_over_database(
                 "y": 50,
                 "text": "FORM_PREVIEW_MARKER_XYZ",
                 "width": 400,
-                "style": {
-                    "font": "Helvetica",
-                    "size": 12,
-                    "color": "#000000",
-                    "align": "left",
-                },
+                "style": {"font": "Helvetica", "size": 12, "color": "#000000", "align": "left"},
             }
         ],
         "styles": {"default": {"font": "Helvetica", "size": 10, "color": "#000000"}},
@@ -282,35 +256,35 @@ def test_pdf_layout_preview_prefers_form_template_json_over_database(
         t.template_json = json.dumps(db_template)
         db.session.commit()
 
-    response = admin_authenticated_client.post(
-        "/admin/pdf-layout/preview",
-        data={
-            "html": "<div></div>",
-            "css": "",
-            "template_json": json.dumps(form_template),
-            "page_size": "A4",
-            "invoice_id": sample_invoice.id,
-        },
-    )
-    assert response.status_code == 200
-    # The preview endpoint returns a PDF; markers live inside the
-    # compressed content stream and are not extractable as plain bytes.
-    # The strongest portable assertion is: form-template render differs
-    # from DB-template render — proving the form override took effect.
-    assert response.data.startswith(b"%PDF-")
-    db_response = admin_authenticated_client.post(
-        "/admin/pdf-layout/preview",
-        data={
-            "html": "<div></div>",
-            "css": "",
-            "page_size": "A4",
-            "invoice_id": sample_invoice.id,
-        },
-    )
-    assert db_response.status_code == 200
-    assert db_response.data.startswith(b"%PDF-")
-    # Different template content → different compressed bytes
-    assert response.data != db_response.data
+    templates_used = []
+
+    def _renderer_factory(template_json, context, page_size):
+        templates_used.append(template_json)
+        marker = template_json["elements"][0]["text"]
+        mock = MagicMock()
+        mock.render_to_bytes.return_value = b"%PDF-1.4\n" + marker.encode() + (b" " * 100)
+        return mock
+
+    with patch(
+        "app.utils.pdf_generator_reportlab.ReportLabTemplateRenderer",
+        side_effect=_renderer_factory,
+    ):
+        response = admin_authenticated_client.post(
+            "/admin/pdf-layout/preview",
+            data={
+                "html": "<div></div>",
+                "css": "",
+                "template_json": json.dumps(form_template),
+                "page_size": "A4",
+                "invoice_id": sample_invoice.id,
+            },
+        )
+
+    _assert_pdf_preview_response(response)
+    assert len(templates_used) == 1
+    assert templates_used[0]["elements"][0]["text"] == "FORM_PREVIEW_MARKER_XYZ"
+    assert b"FORM_PREVIEW_MARKER_XYZ" in response.data
+    assert b"DB_PREVIEW_MARKER_XYZ" not in response.data
 
 
 @pytest.mark.smoke
@@ -324,10 +298,7 @@ def test_pdf_layout_preview_with_mock_invoice(admin_authenticated_client, app):
     # Test preview should still work with mock invoice
     response = admin_authenticated_client.post(
         "/admin/pdf-layout/preview",
-        data={
-            "html": "<h1>{{ invoice.invoice_number }}</h1>",
-            "css": "h1 { color: blue; }",
-        },
+        data={"html": "<h1>{{ invoice.invoice_number }}</h1>", "css": "h1 { color: blue; }"},
     )
 
     assert response.status_code == 200
@@ -349,15 +320,9 @@ def test_settings_pdf_template_defaults(app):
 
     # Should default to empty strings
     if not settings.invoice_pdf_template_html:
-        assert (
-            settings.invoice_pdf_template_html == ""
-            or settings.invoice_pdf_template_html is None
-        )
+        assert settings.invoice_pdf_template_html == "" or settings.invoice_pdf_template_html is None
     if not settings.invoice_pdf_template_css:
-        assert (
-            settings.invoice_pdf_template_css == ""
-            or settings.invoice_pdf_template_css is None
-        )
+        assert settings.invoice_pdf_template_css == "" or settings.invoice_pdf_template_css is None
 
 
 @pytest.mark.integration
@@ -428,9 +393,9 @@ def test_pdf_layout_navigation_link_exists(admin_authenticated_client, app):
         pdf_layout_url = url_for("admin.pdf_layout")
         # Check for various possible indicators of the PDF layout link
         assert (
-            "admin.pdf_layout" in html
-            or "pdf-layout" in html
-            or "PDF Templates" in html
+            "admin.pdf_layout" in html 
+            or "pdf-layout" in html 
+            or "PDF Templates" in html 
             or "pdf templates" in html.lower()
             or pdf_layout_url in html
             or "/admin/pdf-layout" in html
@@ -483,8 +448,7 @@ def test_pdf_layout_rate_limiting(admin_authenticated_client):
     # Make multiple rapid requests to preview endpoint
     for i in range(65):  # Exceeds the 60 per minute limit
         response = admin_authenticated_client.post(
-            "/admin/pdf-layout/preview",
-            data={"html": "<h1>Test</h1>", "css": "h1 { color: red; }"},
+            "/admin/pdf-layout/preview", data={"html": "<h1>Test</h1>", "css": "h1 { color: red; }"}
         )
 
         # After 60 requests, should be rate limited
@@ -568,12 +532,7 @@ def test_pdf_layout_save_and_restore_tables(app):
 
     # Minimal ReportLab template_json with two table elements
     template_json = {
-        "page": {
-            "size": "A4",
-            "width": 595,
-            "height": 842,
-            "margin": {"top": 20, "right": 20, "bottom": 20, "left": 20},
-        },
+        "page": {"size": "A4", "width": 595, "height": 842, "margin": {"top": 20, "right": 20, "bottom": 20, "left": 20}},
         "elements": [
             {
                 "type": "table",
@@ -581,30 +540,10 @@ def test_pdf_layout_save_and_restore_tables(app):
                 "y": 350,
                 "width": 515,
                 "columns": [
-                    {
-                        "width": 250,
-                        "header": "Description",
-                        "field": "description",
-                        "align": "left",
-                    },
-                    {
-                        "width": 70,
-                        "header": "Qty",
-                        "field": "quantity",
-                        "align": "center",
-                    },
-                    {
-                        "width": 110,
-                        "header": "Unit Price",
-                        "field": "unit_price",
-                        "align": "right",
-                    },
-                    {
-                        "width": 110,
-                        "header": "Total",
-                        "field": "total_amount",
-                        "align": "right",
-                    },
+                    {"width": 250, "header": "Description", "field": "description", "align": "left"},
+                    {"width": 70, "header": "Qty", "field": "quantity", "align": "center"},
+                    {"width": 110, "header": "Unit Price", "field": "unit_price", "align": "right"},
+                    {"width": 110, "header": "Total", "field": "total_amount", "align": "right"},
                 ],
                 "data": "{{ invoice.all_line_items }}",
                 "row_template": {
@@ -620,30 +559,10 @@ def test_pdf_layout_save_and_restore_tables(app):
                 "y": 450,
                 "width": 515,
                 "columns": [
-                    {
-                        "width": 200,
-                        "header": "Expense",
-                        "field": "title",
-                        "align": "left",
-                    },
-                    {
-                        "width": 100,
-                        "header": "Date",
-                        "field": "expense_date",
-                        "align": "center",
-                    },
-                    {
-                        "width": 105,
-                        "header": "Category",
-                        "field": "category",
-                        "align": "left",
-                    },
-                    {
-                        "width": 110,
-                        "header": "Amount",
-                        "field": "total_amount",
-                        "align": "right",
-                    },
+                    {"width": 200, "header": "Expense", "field": "title", "align": "left"},
+                    {"width": 100, "header": "Date", "field": "expense_date", "align": "center"},
+                    {"width": 105, "header": "Category", "field": "category", "align": "left"},
+                    {"width": 110, "header": "Amount", "field": "total_amount", "align": "right"},
                 ],
                 "data": "{{ invoice.expenses }}",
                 "row_template": {
@@ -662,7 +581,7 @@ def test_pdf_layout_save_and_restore_tables(app):
         template = InvoicePDFTemplate.get_template("A4")
         template.design_json = json.dumps(design_json)
         template.template_json = json.dumps(template_json)
-        template.template_html = '<div class="invoice-wrapper"><h1>Test</h1></div>'
+        template.template_html = "<div class=\"invoice-wrapper\"><h1>Test</h1></div>"
         template.template_css = "@page { size: A4; }"
         db.session.commit()
 
@@ -678,16 +597,8 @@ def test_pdf_layout_save_and_restore_tables(app):
             name = (c.get("attrs") or {}).get("name")
             if name in ("items-table", "expenses-table"):
                 names.append(name)
-        assert "items-table" in names, (
-            "design_json should contain items-table group name for restore"
-        )
-        assert "expenses-table" in names, (
-            "design_json should contain expenses-table group name for restore"
-        )
+        assert "items-table" in names, "design_json should contain items-table group name for restore"
+        assert "expenses-table" in names, "design_json should contain expenses-table group name for restore"
         tpl = json.loads(template.template_json)
-        table_elements = [
-            e for e in tpl.get("elements", []) if e.get("type") == "table"
-        ]
-        assert len(table_elements) >= 2, (
-            "template_json should contain at least two table elements for export"
-        )
+        table_elements = [e for e in tpl.get("elements", []) if e.get("type") == "table"]
+        assert len(table_elements) >= 2, "template_json should contain at least two table elements for export"

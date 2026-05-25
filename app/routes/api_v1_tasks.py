@@ -54,16 +54,8 @@ def get_task(task_id):
 
     from app.models import Task
 
-    # Task model has `assigned_user` (relationship) and `creator` — not
-    # `assignee` / `created_by_user`. Upstream commit appears to have
-    # been written against an older / renamed relationship set; correct
-    # the eager-load to match the actual model fields.
     task = (
-        Task.query.options(
-            joinedload(Task.project),
-            joinedload(Task.assigned_user),
-            joinedload(Task.creator),
-        )
+        Task.query.options(joinedload(Task.project), joinedload(Task.assigned_user), joinedload(Task.creator))
         .filter_by(id=task_id)
         .first_or_404()
     )

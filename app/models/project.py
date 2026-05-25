@@ -391,6 +391,7 @@ class Project(db.Model):
             "name": self.name,
             "code": self.code,
             "code_display": self.code_display,
+            "client_id": self.client_id,
             "client": self.client,
             "client_id": self.client_id,
             "description": self.description,

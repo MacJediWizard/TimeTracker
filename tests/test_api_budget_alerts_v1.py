@@ -1,13 +1,12 @@
-import os
-import tempfile
-import uuid
-
 import pytest
+import uuid
+import tempfile
+import os
 
 pytestmark = [pytest.mark.api, pytest.mark.integration]
 
 from app import create_app, db
-from app.models import ApiToken, Client, Project, User
+from app.models import User, Client, Project, ApiToken
 
 
 @pytest.fixture
@@ -45,9 +44,7 @@ def admin_user(app):
 @pytest.fixture
 def api_token(app, admin_user):
     token, plain = ApiToken.create_token(
-        user_id=admin_user.id,
-        name="Budget Token",
-        scopes="admin:all,read:budget_alerts,write:budget_alerts",
+        user_id=admin_user.id, name="Budget Token", scopes="admin:all,read:budget_alerts,write:budget_alerts"
     )
     db.session.add(token)
     db.session.commit()
@@ -56,11 +53,10 @@ def api_token(app, admin_user):
 
 @pytest.fixture
 def project(app):
-    c = Client(name="BA Client")
-    c.status = "active"
+    c = Client(name="BA Client", email="ba@example.com")
     db.session.add(c)
-    db.session.flush()
-    p = Project(name="BA Project", status="active", client_id=c.id)
+    db.session.commit()
+    p = Project(name="BA Project", client_id=c.id, status="active")
     db.session.add(p)
     db.session.commit()
     return p

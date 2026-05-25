@@ -11,7 +11,9 @@ import pytest
 
 # Set before app is imported so InstallationConfig uses a writable dir in tests (avoids /data on CI)
 if "INSTALLATION_CONFIG_DIR" not in os.environ:
-    os.environ["INSTALLATION_CONFIG_DIR"] = tempfile.mkdtemp(prefix="timetracker_install_")
+    os.environ["INSTALLATION_CONFIG_DIR"] = tempfile.mkdtemp(
+        prefix="timetracker_install_"
+    )
 
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -27,7 +29,9 @@ from app import create_app, db
 # SQLite has foreign keys disabled by default per-connection, which breaks
 # any test relying on ondelete="CASCADE" at the DB level.
 @event.listens_for(Engine, "connect")
-def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):  # pragma: no cover - infra hook
+def _enable_sqlite_foreign_keys(
+    dbapi_connection, connection_record
+):  # pragma: no cover - infra hook
     try:
         # Only act on sqlite connections. The DBAPI connection class name
         # check avoids importing sqlite3 at module import time on non-sqlite envs.
@@ -47,7 +51,9 @@ def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):  # pragma:
 # leads, projects, quotes), so SQLAlchemy can't order DROPs cleanly and any
 # drop_all() call would otherwise fail with "FOREIGN KEY constraint failed".
 @event.listens_for(Engine, "before_cursor_execute")
-def _disable_fk_for_drop(conn, cursor, statement, parameters, context, executemany):  # pragma: no cover - infra hook
+def _disable_fk_for_drop(
+    conn, cursor, statement, parameters, context, executemany
+):  # pragma: no cover - infra hook
     try:
         if not statement:
             return
@@ -156,7 +162,9 @@ def app_config():
 def app(app_config):
     """Create application for testing with function scope."""
     # Use a unique SQLite file per test function to avoid Windows file locking
-    unique_db_path = os.path.join(tempfile.gettempdir(), f"pytest_{uuid.uuid4().hex}.sqlite")
+    unique_db_path = os.path.join(
+        tempfile.gettempdir(), f"pytest_{uuid.uuid4().hex}.sqlite"
+    )
     config = dict(app_config)
     config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{unique_db_path}"
     app = create_app(config)
@@ -187,7 +195,9 @@ def app(app_config):
             # SQLite may raise OperationalError if indexes already exist
             # This can happen if db.create_all() is called multiple times
             error_msg = str(e).lower()
-            if "index" in error_msg and ("already exists" in error_msg or "duplicate" in error_msg):
+            if "index" in error_msg and (
+                "already exists" in error_msg or "duplicate" in error_msg
+            ):
                 # Index already exists - this is okay, but we need to ensure all tables are created
                 # Create tables individually to work around the issue
                 from sqlalchemy import inspect
@@ -225,7 +235,9 @@ def app(app_config):
             for table_name in missing_tables:
                 if table_name in db.metadata.tables:
                     try:
-                        db.metadata.tables[table_name].create(db.engine, checkfirst=True)
+                        db.metadata.tables[table_name].create(
+                            db.engine, checkfirst=True
+                        )
                     except Exception:
                         # Ignore errors - table might already exist or have dependency issues
                         pass
@@ -245,6 +257,9 @@ def app(app_config):
 
         seed_permissions()
         seed_roles(silent=True)
+        from app.utils.permissions_seed import migrate_legacy_users
+
+        migrate_legacy_users()
 
         # Create default settings
         settings = Settings()
@@ -299,6 +314,13 @@ def db_session(app):
 # ============================================================================
 
 
+def _assign_role_to_user(user, role_name: str) -> None:
+    """Attach a seeded system role to a user (idempotent)."""
+    role = Role.query.filter_by(name=role_name).first()
+    if role and role not in user.roles:
+        user.roles.append(role)
+
+
 @pytest.fixture
 def user(app):
     """Create a regular test user."""
@@ -313,6 +335,9 @@ def user(app):
             if not existing.check_password("password123"):
                 existing.set_password("password123")
                 db.session.commit()
+            if not existing.roles:
+                _assign_role_to_user(existing, "user")
+                db.session.commit()
             db.session.refresh(existing)
             return existing
     except Exception:
@@ -324,6 +349,8 @@ def user(app):
         user.is_active = True  # Set after creation
         user.set_password("password123")  # Set password for login endpoint
         db.session.add(user)
+        db.session.flush()
+        _assign_role_to_user(user, "user")
         db.session.commit()
 
         # Refresh to ensure all relationships are loaded and object stays in session
@@ -339,6 +366,8 @@ def user(app):
         user.is_active = True  # Set after creation
         user.set_password("password123")  # Set password for login endpoint
         db.session.add(user)
+        db.session.flush()
+        _assign_role_to_user(user, "user")
         db.session.commit()
 
         db.session.refresh(user)
@@ -523,6 +552,7 @@ def test_client(app, user):
         phone="+1 (555) 123-4567",
         address="123 Test Street, Test City, TC 12345",
         default_hourly_rate=Decimal("85.00"),
+        created_by=user.id,
     )
     client_model.status = "active"  # Set after creation
     if hasattr(Client, "created_by"):
@@ -533,7 +563,9 @@ def test_client(app, user):
     client_id = client_model.id
     db.session.commit()
     # Re-query to ensure we return a persistent instance without relying on refresh
-    persisted_client = Client.query.get(client_id) or Client.query.filter_by(id=client_id).first()
+    persisted_client = (
+        Client.query.get(client_id) or Client.query.filter_by(id=client_id).first()
+    )
     # Fallback to the original instance if re-query unexpectedly returns None
     return persisted_client or client_model
 
@@ -573,7 +605,10 @@ def project(app, test_client, user):
     except Exception:
         cid = None
     if not cid:
-        existing = Client.query.filter_by(name="Test Client Corp").first() or Client.query.first()
+        existing = (
+            Client.query.filter_by(name="Test Client Corp").first()
+            or Client.query.first()
+        )
         if existing:
             cid = existing.id
         else:
@@ -614,7 +649,10 @@ def multiple_projects(app, test_client):
     except Exception:
         cid = None
     if not cid:
-        existing = Client.query.filter_by(name="Test Client Corp").first() or Client.query.first()
+        existing = (
+            Client.query.filter_by(name="Test Client Corp").first()
+            or Client.query.first()
+        )
         if existing:
             cid = existing.id
         else:
@@ -900,11 +938,7 @@ def credit_note(app, invoice, user):
 
 @pytest.fixture
 def recurring_invoice(app, project, test_client, user):
-    """Create a recurring invoice template tied to project + client.
-
-    created_by is required by the RecurringInvoice constructor since the
-    v5.6.x sync.
-    """
+    """Create a recurring invoice template tied to project + client."""
     from datetime import date, timedelta
 
     ri = RecurringInvoice(
@@ -915,7 +949,6 @@ def recurring_invoice(app, project, test_client, user):
         frequency="monthly",
         next_run_date=date.today() + timedelta(days=30),
         created_by=user.id,
-        interval=1,
     )
     db.session.add(ri)
     db.session.commit()
@@ -965,7 +998,9 @@ def authenticated_client(client, user):
         except Exception:
             pass
 
-    client.post("/login", data=login_data, headers=headers or None, follow_redirects=True)
+    client.post(
+        "/login", data=login_data, headers=headers or None, follow_redirects=True
+    )
     return client
 
 
@@ -995,7 +1030,9 @@ def admin_authenticated_client(client, admin_user):
         except Exception:
             pass
 
-    client.post("/login", data=login_data, headers=headers or None, follow_redirects=True)
+    client.post(
+        "/login", data=login_data, headers=headers or None, follow_redirects=True
+    )
     return client
 
 
@@ -1085,12 +1122,16 @@ def scope_restricted_authenticated_client(client, scope_restricted_user):
 
         if current_app.config.get("WTF_CSRF_ENABLED"):
             resp = client.get("/auth/csrf-token")
-            token = (resp.get_json() or {}).get("csrf_token", "") if resp.is_json else ""
+            token = (
+                (resp.get_json() or {}).get("csrf_token", "") if resp.is_json else ""
+            )
             login_data["csrf_token"] = token
             headers["X-CSRFToken"] = token
     except Exception:
         pass
-    client.post("/login", data=login_data, headers=headers or None, follow_redirects=True)
+    client.post(
+        "/login", data=login_data, headers=headers or None, follow_redirects=True
+    )
     return client
 
 

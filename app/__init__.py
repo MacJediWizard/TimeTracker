@@ -176,13 +176,11 @@ def create_app(config=None):
     if config:
         app.config.update(config)
 
-    # Production safety: refuse to start with default SECRET_KEY.
-    # Tests that pass TESTING=True are exempt — they signal an
-    # ephemeral, isolated app context and don't need a real secret.
+    # Production safety: refuse to start with default SECRET_KEY (skip under TESTING)
     if (
-        app.config.get("FLASK_ENV") == "production"
+        not app.config.get("TESTING")
+        and app.config.get("FLASK_ENV") == "production"
         and app.config.get("SECRET_KEY") == "dev-secret-key-change-in-production"
-        and not app.config.get("TESTING")
     ):
         raise ValueError(
             "SECRET_KEY must be set explicitly in production. "
@@ -194,13 +192,7 @@ def create_app(config=None):
     try:
         # In tests, proactively clear POSTGRES_* env hints to avoid accidental overrides
         if app.config.get("TESTING"):
-            for var in (
-                "POSTGRES_DB",
-                "POSTGRES_USER",
-                "POSTGRES_PASSWORD",
-                "POSTGRES_HOST",
-                "DATABASE_URL",
-            ):
+            for var in ("POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_HOST", "DATABASE_URL"):
                 try:
                     os.environ.pop(var, None)
                 except Exception:
@@ -391,11 +383,7 @@ def create_app(config=None):
             app.config["BABEL_TRANSLATION_DIRECTORIES"] = os.pathsep.join(abs_dirs)
         # Optional: best-effort compile missing/stale .mo files (Python-only, incremental).
         # Disabled by default for faster startup; compile in Docker build instead.
-        if os.getenv("TT_COMPILE_TRANSLATIONS_ON_STARTUP", "false").strip().lower() in (
-            "1",
-            "true",
-            "yes",
-        ):
+        if os.getenv("TT_COMPILE_TRANSLATIONS_ON_STARTUP", "false").strip().lower() in ("1", "true", "yes"):
             from app.utils.i18n import ensure_translations_compiled
 
             for d in abs_dirs:
@@ -631,11 +619,7 @@ def create_app(config=None):
             # Record Prometheus metrics
             endpoint = request.endpoint or "unknown"
             REQUEST_LATENCY.labels(endpoint=endpoint).observe(latency)
-            REQUEST_COUNT.labels(
-                method=request.method,
-                endpoint=endpoint,
-                http_status=response.status_code,
-            ).inc()
+            REQUEST_COUNT.labels(method=request.method, endpoint=endpoint, http_status=response.status_code).inc()
         except Exception:
             pass
 
@@ -839,10 +823,7 @@ def create_app(config=None):
                         path=app.config.get("CSRF_COOKIE_PATH", "/"),
                         domain=app.config.get("CSRF_COOKIE_DOMAIN") or None,
                         secure=bool(
-                            app.config.get(
-                                "CSRF_COOKIE_SECURE",
-                                app.config.get("SESSION_COOKIE_SECURE", False),
-                            )
+                            app.config.get("CSRF_COOKIE_SECURE", app.config.get("SESSION_COOKIE_SECURE", False))
                         ),
                         httponly=bool(app.config.get("CSRF_COOKIE_HTTPONLY", False)),
                         samesite=app.config.get("CSRF_COOKIE_SAMESITE", "Lax"),
@@ -857,10 +838,7 @@ def create_app(config=None):
         # Prefer HTML flow for classic form posts regardless of Accept header quirks
         try:
             mimetype, _ = parse_options_header(request.headers.get("Content-Type", ""))
-            is_classic_form = mimetype in (
-                "application/x-www-form-urlencoded",
-                "multipart/form-data",
-            )
+            is_classic_form = mimetype in ("application/x-www-form-urlencoded", "multipart/form-data")
         except Exception:
             is_classic_form = False
 
@@ -887,15 +865,9 @@ def create_app(config=None):
 
         if request.method == "POST" and (is_classic_form or (request.form and not request.is_json)):
             try:
-                flash(
-                    _("Your session expired or the page was open too long. Please try again."),
-                    "warning",
-                )
+                flash(_("Your session expired or the page was open too long. Please try again."), "warning")
             except Exception:
-                flash(
-                    "Your session expired or the page was open too long. Please try again.",
-                    "warning",
-                )
+                flash("Your session expired or the page was open too long. Please try again.", "warning")
 
             # Redirect back to a safe same-origin referrer if available, else to dashboard
             dest = url_for("main.dashboard")
@@ -925,15 +897,9 @@ def create_app(config=None):
 
         # Default to HTML-friendly behavior
         try:
-            flash(
-                _("Your session expired or the page was open too long. Please try again."),
-                "warning",
-            )
+            flash(_("Your session expired or the page was open too long. Please try again."), "warning")
         except Exception:
-            flash(
-                "Your session expired or the page was open too long. Please try again.",
-                "warning",
-            )
+            flash("Your session expired or the page was open too long. Please try again.", "warning")
         dest = url_for("main.dashboard")
         try:
             ref = request.referrer

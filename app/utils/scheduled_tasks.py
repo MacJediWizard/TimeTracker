@@ -20,12 +20,7 @@ from app.models import (
 from app.services.integration_service import IntegrationService
 from app.services.scheduled_report_service import ScheduledReportService
 from app.utils.budget_forecasting import check_budget_alerts
-from app.utils.email import (
-    send_overdue_invoice_notification,
-    send_quote_expired_notification,
-    send_remind_to_log_email,
-    send_weekly_summary,
-)
+from app.utils.email import send_overdue_invoice_notification, send_remind_to_log_email, send_weekly_summary
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +93,9 @@ def send_weekly_summaries():
 
             # Get users who want weekly summaries
             users = User.query.filter_by(
-                is_active=True, email_notifications=True, notification_weekly_summary=True
+                is_active=True,
+                email_notifications=True,
+                notification_weekly_summary=True,
             ).all()
 
             logger.info(f"Found {len(users)} users with weekly summaries enabled")
@@ -134,7 +131,10 @@ def send_weekly_summaries():
                         if entry.project:
                             project_name = entry.project.name
                             if project_name not in projects_map:
-                                projects_map[project_name] = {"name": project_name, "hours": 0}
+                                projects_map[project_name] = {
+                                    "name": project_name,
+                                    "hours": 0,
+                                }
                             projects_map[project_name]["hours"] += entry.duration_hours
 
                     projects_data = sorted(projects_map.values(), key=lambda x: x["hours"], reverse=True)
@@ -249,7 +249,11 @@ def generate_recurring_invoices():
                         try:
                             from app.utils.email import send_invoice_email
 
-                            send_invoice_email(invoice, invoice.client_email, sender_user=recurring.creator)
+                            send_invoice_email(
+                                invoice,
+                                invoice.client_email,
+                                sender_user=recurring.creator,
+                            )
                             emails_sent += 1
                             logger.info(f"Auto-sent invoice {invoice.invoice_number} to {invoice.client_email}")
                         except Exception as e:
@@ -409,6 +413,36 @@ def register_scheduled_tasks(scheduler, app=None):
             replace_existing=True,
         )
         logger.info("Registered budget alerts check task")
+
+        # Reconcile stuck e-signature requests every 15 minutes (#22)
+        def reconcile_esignature_requests_with_app():
+            """Wrapper that uses the captured app instance."""
+            app_instance = app
+            if app_instance is None:
+                try:
+                    app_instance = current_app._get_current_object()
+                except RuntimeError:
+                    logger.error("No app instance available for e-signature reconciliation")
+                    return
+            with app_instance.app_context():
+                from app.services.timesheet_signoff_service import TimesheetSignoffService
+
+                touched = TimesheetSignoffService.reconcile_stuck_requests()
+                if touched:
+                    logger.info(
+                        "E-signature reconciliation: updated %s stuck requests",
+                        touched,
+                    )
+
+        scheduler.add_job(
+            func=reconcile_esignature_requests_with_app,
+            trigger="cron",
+            minute="*/15",
+            id="reconcile_esignature_requests",
+            name="Reconcile stuck e-signature requests",
+            replace_existing=True,
+        )
+        logger.info("Registered e-signature reconciliation task")
 
         # Generate recurring invoices daily at 8 AM
         # Create a closure that captures the app instance
@@ -817,7 +851,9 @@ def _deliver_push_to_subscriptions(user, subscriptions, note) -> int:
                 subscription_info={"endpoint": sub.endpoint, "keys": sub.keys or {}},
                 data=_json.dumps(body),
                 vapid_private_key=vapid_private,
-                vapid_claims={"sub": f"mailto:{vapid_claims_email}" if vapid_claims_email else "mailto:noreply@example.invalid"},
+                vapid_claims={
+                    "sub": f"mailto:{vapid_claims_email}" if vapid_claims_email else "mailto:noreply@example.invalid"
+                },
             )
             try:
                 sub.update_last_used()
@@ -903,7 +939,11 @@ def process_remind_to_log():
                 sent += 1
                 logger.info("Sent remind-to-log email to %s", user.username)
             except Exception as e:
-                logger.error("Failed to process remind-to-log for user %s: %s", getattr(user, "username", user.id), e)
+                logger.error(
+                    "Failed to process remind-to-log for user %s: %s",
+                    getattr(user, "username", user.id),
+                    e,
+                )
         return sent
     except Exception as e:
         logger.error("Error in process_remind_to_log: %s", e)
@@ -1128,7 +1168,11 @@ def sync_integrations():
         if errors:
             logger.warning(f"Integration sync errors: {', '.join(errors)}")
 
-        return {"synced": synced_count, "total": len(active_integrations), "errors": errors}
+        return {
+            "synced": synced_count,
+            "total": len(active_integrations),
+            "errors": errors,
+        }
 
     except Exception as e:
         logger.error(f"Error in integration sync task: {e}", exc_info=True)

@@ -1,4 +1,3 @@
-import json
 import secrets
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -43,6 +42,14 @@ class Client(db.Model):
 
     # Custom fields for flexible data storage (e.g., debtor_number, ERP IDs, etc.)
     custom_fields = db.Column(db.JSON, nullable=True)
+
+    # Timesheet signoff defaults (e-signature integration)
+    signoff_email = db.Column(db.String(255), nullable=True)
+    signoff_template_id = db.Column(
+        db.Integer,
+        db.ForeignKey("timesheet_signoff_templates.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     # Relationships
     projects = db.relationship("Project", backref="client_obj", lazy="dynamic", cascade="all, delete-orphan")
@@ -339,7 +346,12 @@ class Client(db.Model):
             .all()
         )
 
-        return {"client": self, "projects": projects, "invoices": invoices, "time_entries": time_entries}
+        return {
+            "client": self,
+            "projects": projects,
+            "invoices": invoices,
+            "time_entries": time_entries,
+        }
 
     def generate_password_setup_token(self, expires_hours=24):
         """Generate a secure token for password setup/reset"""

@@ -1,0 +1,391 @@
+{% extends "base.html" %}
+{% from "components/ui.html" import page_header %}
+
+{% set is_edit = template is not none %}
+{% set form_action = url_for('signoff_templates.edit_template', template_id=template.id) if is_edit else url_for('signoff_templates.new_template') %}
+{% set preview_action = url_for('signoff_templates.preview_template', template_id=template.id) if is_edit else None %}
+
+{% macro fv(key, fallback) -%}
+    {%- if form_data and form_data.get(key) is not none -%}{{ form_data[key] }}
+    {%- elif is_edit -%}{{ template[key] if template[key] is not none else fallback }}
+    {%- else -%}{{ fallback }}
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro fbool(key, default=false) -%}
+    {%- if form_data is not none -%}{{ 'checked' if form_data.get(key) else '' }}
+    {%- elif is_edit -%}{{ 'checked' if template[key] else '' }}
+    {%- elif default -%}checked
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro fcolumns(col) -%}
+    {%- if form_data and form_data.get('columns_to_show') is not none -%}{{ 'checked' if col in form_data['columns_to_show'] else '' }}
+    {%- elif is_edit -%}{{ 'checked' if col in (template.columns_to_show or []) else '' }}
+    {%- elif col in ['time','duration','project','task','notes'] -%}checked
+    {%- endif -%}
+{%- endmacro %}
+
+{% block content %}
+{% set breadcrumbs = [
+    {'text': _('Admin'), 'url': url_for('admin.admin_dashboard')},
+    {'text': _('Signoff Templates'), 'url': url_for('signoff_templates.list_templates')},
+    {'text': (template.name if is_edit else _('New Template'))}
+] %}
+
+{{ page_header(
+    icon_class='fas fa-signature',
+    title_text=(_('Edit Template') if is_edit else _('New Signoff Template')),
+    subtitle_text=(template.name if is_edit else _('Define how a client-facing signoff PDF looks')),
+    breadcrumbs=breadcrumbs
+) }}
+
+<form method="post" action="{{ form_action }}" id="signoff-template-form">
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    <!-- LEFT COLUMN — Identity + Branding -->
+    <div class="lg:col-span-1 space-y-6">
+
+      <!-- Identity -->
+      <section class="bg-card-light dark:bg-card-dark p-6 rounded-xl border border-border-light dark:border-border-dark shadow-sm">
+        <h2 class="text-lg font-semibold mb-4">{{ _('Identity') }}</h2>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium mb-1">{{ _('Name') }} <span class="text-red-600">*</span></label>
+            <input type="text" name="name" required
+                   value="{{ fv('name', '') }}"
+                   class="w-full px-3 py-2 border border-border-light dark:border-border-dark rounded-lg bg-background-light dark:bg-background-dark">
+          </div>
+          <div>
+            <label class="inline-flex items-center">
+              <input type="checkbox" name="is_default" {{ fbool('is_default') }}
+                     class="rounded border-border-light dark:border-border-dark">
+              <span class="ml-2 text-sm">{{ _('Default template (used when a client has none assigned)') }}</span>
+            </label>
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">{{ _('Signature block heading') }}</label>
+            <input type="text" name="signature_block_label"
+                   value="{{ fv('signature_block_label', 'Approved by Project Manager') }}"
+                   class="w-full px-3 py-2 border border-border-light dark:border-border-dark rounded-lg bg-background-light dark:bg-background-dark">
+          </div>
+        </div>
+      </section>
+
+      <!-- Colors -->
+      <section class="bg-card-light dark:bg-card-dark p-6 rounded-xl border border-border-light dark:border-border-dark shadow-sm">
+        <h2 class="text-lg font-semibold mb-4">{{ _('Colors') }}</h2>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium mb-1">{{ _('Primary (accent line, totals bar)') }}</label>
+            <div class="flex items-center gap-2">
+              <input type="color" name="primary_color_hex"
+                     value="{{ fv('primary_color_hex', '#c41e3a') }}"
+                     class="w-12 h-10 rounded cursor-pointer">
+              <input type="text" name="primary_color_hex_text"
+                     value="{{ fv('primary_color_hex', '#c41e3a') }}"
+                     class="flex-1 px-3 py-2 border border-border-light dark:border-border-dark rounded-lg bg-background-light dark:bg-background-dark font-mono text-sm"
+                     readonly>
+            </div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">{{ _('Accent (table header, body text)') }}</label>
+            <div class="flex items-center gap-2">
+              <input type="color" name="accent_color_hex"
+                     value="{{ fv('accent_color_hex', '#1a1a1a') }}"
+                     class="w-12 h-10 rounded cursor-pointer">
+              <input type="text" name="accent_color_hex_text"
+                     value="{{ fv('accent_color_hex', '#1a1a1a') }}"
+                     class="flex-1 px-3 py-2 border border-border-light dark:border-border-dark rounded-lg bg-background-light dark:bg-background-dark font-mono text-sm"
+                     readonly>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Branding assets — logos + fonts -->
+      <section class="bg-card-light dark:bg-card-dark p-6 rounded-xl border border-border-light dark:border-border-dark shadow-sm">
+        <h2 class="text-lg font-semibold mb-4">{{ _('Logo') }}</h2>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium mb-1">{{ _('Select logo') }}</label>
+            <select name="logo_asset_id" class="w-full px-3 py-2 border border-border-light dark:border-border-dark rounded-lg bg-background-light dark:bg-background-dark">
+              <option value="">{{ _('(none — show company wordmark)') }}</option>
+              {% for a in assets.logos %}
+                <option value="{{ a.id }}" {% if (form_data and form_data.get('logo_asset_id') == a.id) or (is_edit and template.logo_asset_id == a.id) %}selected{% endif %}>{{ a.name }} ({{ a.original_filename }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">{{ _('Upload new logo (PNG, JPG, SVG)') }}</label>
+            <div class="flex gap-2">
+              <input type="file" id="logo-upload" accept=".png,.jpg,.jpeg,.svg,.webp" class="flex-1 text-sm">
+              <button type="button" onclick="uploadAsset('logo', 'logo-upload', 'logo_asset_id')" class="px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">{{ _('Upload') }}</button>
+            </div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">{{ _('Max height (PDF points)') }}</label>
+            <input type="number" name="logo_max_height_pt" step="1" min="8" max="120"
+                   value="{{ fv('logo_max_height_pt', 32.0) }}"
+                   class="w-full px-3 py-2 border border-border-light dark:border-border-dark rounded-lg bg-background-light dark:bg-background-dark">
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">{{ _('Opacity (0.0 – 1.0)') }}</label>
+            <input type="number" name="logo_opacity" step="0.05" min="0" max="1"
+                   value="{{ fv('logo_opacity', 1.0) }}"
+                   class="w-full px-3 py-2 border border-border-light dark:border-border-dark rounded-lg bg-background-light dark:bg-background-dark">
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">{{ _('Position') }}</label>
+            <select name="logo_position" class="w-full px-3 py-2 border border-border-light dark:border-border-dark rounded-lg bg-background-light dark:bg-background-dark">
+              {% set pos = fv('logo_position', 'left') %}
+              <option value="left" {% if pos == 'left' %}selected{% endif %}>{{ _('Left') }}</option>
+              <option value="center" {% if pos == 'center' %}selected{% endif %}>{{ _('Center') }}</option>
+              <option value="right" {% if pos == 'right' %}selected{% endif %}>{{ _('Right') }}</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- RIGHT COLUMN — Content + Fonts + Save -->
+    <div class="lg:col-span-2 space-y-6">
+
+      <!-- Content -->
+      <section class="bg-card-light dark:bg-card-dark p-6 rounded-xl border border-border-light dark:border-border-dark shadow-sm">
+        <h2 class="text-lg font-semibold mb-4">{{ _('Content') }}</h2>
+
+        <div class="mb-4">
+          <label class="block text-sm font-medium mb-1">{{ _('Intro text (Markdown)') }}</label>
+          <textarea name="intro_markdown" rows="4"
+                    class="w-full px-3 py-2 border border-border-light dark:border-border-dark rounded-lg bg-background-light dark:bg-background-dark font-mono text-sm">{{ fv('intro_markdown', '') }}</textarea>
+          <p class="text-xs text-text-muted-light dark:text-text-muted-dark mt-1">{{ _('Appears above the entries table.') }}</p>
+        </div>
+
+        <div class="mb-4">
+          <label class="block text-sm font-medium mb-2">{{ _('Columns to show') }}</label>
+          <div class="grid grid-cols-2 gap-2">
+            {% for col, label in [('time','Time'),('duration','Duration'),('project','Project'),('task','Task'),('notes','Notes'),('billable','Billable')] %}
+              <label class="inline-flex items-center">
+                <input type="checkbox" name="columns_to_show" value="{{ col }}" {{ fcolumns(col) }}
+                       class="rounded border-border-light dark:border-border-dark">
+                <span class="ml-2 text-sm">{{ _(label) }}</span>
+              </label>
+            {% endfor %}
+          </div>
+          <p class="text-xs text-text-muted-light dark:text-text-muted-dark mt-1">{{ _('Engineer is always shown in the header card, never as a column (one PDF = one engineer).') }}</p>
+        </div>
+
+        <div class="mb-4 space-y-2">
+          <label class="inline-flex items-center">
+            <input type="checkbox" name="show_billable" {{ fbool('show_billable') }}
+                   class="rounded border-border-light dark:border-border-dark">
+            <span class="ml-2 text-sm">{{ _('Show billable column') }}</span>
+          </label>
+          <br>
+          <label class="inline-flex items-center">
+            <input type="checkbox" name="show_daily_totals" {{ fbool('show_daily_totals', default=true) }}
+                   class="rounded border-border-light dark:border-border-dark">
+            <span class="ml-2 text-sm">{{ _('Show daily totals row under each date') }}</span>
+          </label>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-1">{{ _('Terms / legal text (Markdown)') }}</label>
+          <textarea name="terms_markdown" rows="4"
+                    class="w-full px-3 py-2 border border-border-light dark:border-border-dark rounded-lg bg-background-light dark:bg-background-dark font-mono text-sm">{{ fv('terms_markdown', '') }}</textarea>
+          <p class="text-xs text-text-muted-light dark:text-text-muted-dark mt-1">{{ _('Appears above the signature block on the last page.') }}</p>
+        </div>
+      </section>
+
+      <!-- Fonts -->
+      <section class="bg-card-light dark:bg-card-dark p-6 rounded-xl border border-border-light dark:border-border-dark shadow-sm">
+        <h2 class="text-lg font-semibold mb-4">{{ _('Fonts') }}</h2>
+        <p class="text-sm text-text-muted-light dark:text-text-muted-dark mb-4">{{ _('Body font covers paragraphs and table cells; display font covers titles and section headers. Upload TTF/OTF files below, then select per variant.') }}</p>
+
+        <div class="mb-4">
+          <label class="block text-sm font-medium mb-1">{{ _('Upload new font (TTF / OTF)') }}</label>
+          <div class="flex gap-2 items-center">
+            <input type="text" id="font-upload-name" placeholder="{{ _('Font name (e.g. Roboto)') }}"
+                   class="px-3 py-2 border border-border-light dark:border-border-dark rounded-lg bg-background-light dark:bg-background-dark text-sm">
+            <input type="file" id="font-upload" accept=".ttf,.otf" class="flex-1 text-sm">
+            <button type="button" onclick="uploadFont()" class="px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">{{ _('Upload') }}</button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Body font -->
+          <div class="border border-border-light dark:border-border-dark rounded-lg p-4">
+            <h3 class="font-semibold mb-3">{{ _('Body Font') }}</h3>
+            <div class="space-y-3">
+              <div>
+                <label class="block text-xs font-medium mb-1">{{ _('Family name (for the PDF)') }}</label>
+                <input type="text" name="body_font_name"
+                       value="{{ fv('body_font_name', '') }}"
+                       placeholder="Roboto"
+                       class="w-full px-3 py-1.5 border border-border-light dark:border-border-dark rounded bg-background-light dark:bg-background-dark text-sm">
+              </div>
+              {% for variant, label in [('body_font_regular_asset_id', 'Regular'), ('body_font_bold_asset_id', 'Bold'), ('body_font_italic_asset_id', 'Italic'), ('body_font_bold_italic_asset_id', 'Bold Italic')] %}
+                <div>
+                  <label class="block text-xs font-medium mb-1">{{ _(label) }}</label>
+                  <select name="{{ variant }}" class="w-full px-3 py-1.5 border border-border-light dark:border-border-dark rounded bg-background-light dark:bg-background-dark text-sm font-variant-select">
+                    <option value="">{{ _('— not set —') }}</option>
+                    {% for f in assets.fonts %}
+                      <option value="{{ f.id }}" {% if (form_data and form_data.get(variant) == f.id) or (is_edit and template[variant] == f.id) %}selected{% endif %}>{{ f.name }} ({{ f.original_filename }})</option>
+                    {% endfor %}
+                  </select>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+
+          <!-- Display font -->
+          <div class="border border-border-light dark:border-border-dark rounded-lg p-4">
+            <h3 class="font-semibold mb-3">{{ _('Display Font (titles/headers)') }}</h3>
+            <div class="space-y-3">
+              <div>
+                <label class="block text-xs font-medium mb-1">{{ _('Family name (for the PDF)') }}</label>
+                <input type="text" name="display_font_name"
+                       value="{{ fv('display_font_name', '') }}"
+                       placeholder="Orbitron"
+                       class="w-full px-3 py-1.5 border border-border-light dark:border-border-dark rounded bg-background-light dark:bg-background-dark text-sm">
+              </div>
+              {% for variant, label in [('display_font_regular_asset_id', 'Regular'), ('display_font_bold_asset_id', 'Bold')] %}
+                <div>
+                  <label class="block text-xs font-medium mb-1">{{ _(label) }}</label>
+                  <select name="{{ variant }}" class="w-full px-3 py-1.5 border border-border-light dark:border-border-dark rounded bg-background-light dark:bg-background-dark text-sm font-variant-select">
+                    <option value="">{{ _('— not set —') }}</option>
+                    {% for f in assets.fonts %}
+                      <option value="{{ f.id }}" {% if (form_data and form_data.get(variant) == f.id) or (is_edit and template[variant] == f.id) %}selected{% endif %}>{{ f.name }} ({{ f.original_filename }})</option>
+                    {% endfor %}
+                  </select>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Actions -->
+      <section class="bg-card-light dark:bg-card-dark p-6 rounded-xl border border-border-light dark:border-border-dark shadow-sm">
+        <div class="flex flex-wrap gap-3 justify-between">
+          <div class="flex gap-3">
+            <button type="submit" class="px-5 py-2 bg-primary text-white rounded-lg hover:bg-primary/90">
+              <i class="fas fa-save mr-2"></i>{{ _('Save') }}
+            </button>
+            <a href="{{ url_for('signoff_templates.list_templates') }}" class="px-5 py-2 border border-border-light dark:border-border-dark rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800">
+              {{ _('Cancel') }}
+            </a>
+          </div>
+          {% if is_edit %}
+          <button type="button" onclick="previewInline()" class="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+            <i class="fas fa-file-pdf mr-2"></i>{{ _('Preview with current form state') }}
+          </button>
+          {% endif %}
+        </div>
+      </section>
+
+    </div>
+  </div>
+</form>
+
+<script>
+// Sync color picker → readonly text mirror so the hex is visible
+document.addEventListener('DOMContentLoaded', () => {
+  for (const pair of [['primary_color_hex', 'primary_color_hex_text'], ['accent_color_hex', 'accent_color_hex_text']]) {
+    const picker = document.querySelector(`input[name="${pair[0]}"]`);
+    const text = document.querySelector(`input[name="${pair[1]}"]`);
+    if (picker && text) {
+      picker.addEventListener('input', () => { text.value = picker.value; });
+    }
+  }
+});
+
+async function uploadAsset(kind, inputId, selectName) {
+  const input = document.getElementById(inputId);
+  if (!input.files || input.files.length === 0) {
+    alert("Pick a file first.");
+    return;
+  }
+  const fd = new FormData();
+  fd.append('kind', kind);
+  fd.append('file', input.files[0]);
+  fd.append('name', input.files[0].name.replace(/\.[^.]+$/, ''));
+  const resp = await fetch("{{ url_for('signoff_templates.upload_branding_asset') }}", {
+    method: 'POST', body: fd, credentials: 'same-origin'
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({error: 'upload failed'}));
+    alert(`Upload failed: ${err.error || resp.status}`);
+    return;
+  }
+  const data = await resp.json();
+  // Insert into the matching select(s) and select it
+  const selects = selectName === 'logo_asset_id'
+    ? [document.querySelector(`select[name="${selectName}"]`)]
+    : Array.from(document.querySelectorAll('.font-variant-select'));
+  for (const sel of selects) {
+    const opt = document.createElement('option');
+    opt.value = data.id;
+    opt.textContent = `${data.name} (${data.original_filename})`;
+    sel.appendChild(opt);
+  }
+  // For logo, auto-select the new one
+  if (selectName === 'logo_asset_id') {
+    document.querySelector(`select[name="${selectName}"]`).value = data.id;
+  }
+  input.value = '';
+}
+
+async function uploadFont() {
+  const nameInput = document.getElementById('font-upload-name');
+  const fileInput = document.getElementById('font-upload');
+  if (!fileInput.files || fileInput.files.length === 0) {
+    alert("Pick a font file first.");
+    return;
+  }
+  const fd = new FormData();
+  fd.append('kind', 'font_ttf');
+  fd.append('file', fileInput.files[0]);
+  fd.append('name', nameInput.value || fileInput.files[0].name.replace(/\.[^.]+$/, ''));
+  const resp = await fetch("{{ url_for('signoff_templates.upload_branding_asset') }}", {
+    method: 'POST', body: fd, credentials: 'same-origin'
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({error: 'upload failed'}));
+    alert(`Upload failed: ${err.error || resp.status}`);
+    return;
+  }
+  const data = await resp.json();
+  for (const sel of document.querySelectorAll('.font-variant-select')) {
+    const opt = document.createElement('option');
+    opt.value = data.id;
+    opt.textContent = `${data.name} (${data.original_filename})`;
+    sel.appendChild(opt);
+  }
+  nameInput.value = '';
+  fileInput.value = '';
+}
+
+{% if is_edit %}
+function previewInline() {
+  const form = document.getElementById('signoff-template-form');
+  const fd = new FormData(form);
+  // POST to preview URL — server renders PDF with current form state
+  fetch("{{ preview_action }}", {
+    method: 'POST', body: fd, credentials: 'same-origin'
+  }).then(async (resp) => {
+    if (!resp.ok) {
+      alert(`Preview failed: ${resp.status}`);
+      return;
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+  });
+}
+{% endif %}
+</script>
+{% endblock %}

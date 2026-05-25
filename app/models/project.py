@@ -30,7 +30,12 @@ class Project(db.Model):
     # Archiving metadata
     archived_at = db.Column(db.DateTime, nullable=True, index=True)
     archived_by = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_by = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_by = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     archived_reason = db.Column(db.Text, nullable=True)
     # Gantt chart bar color (hex e.g. #3b82f6)
     color = db.Column(db.String(7), nullable=True)
@@ -100,7 +105,7 @@ class Project(db.Model):
         self.created_by = created_by
 
     def __repr__(self):
-        return f'<Project {self.name} ({self.client_obj.name if self.client_obj else "Unknown Client"})>'
+        return f"<Project {self.name} ({self.client_obj.name if self.client_obj else 'Unknown Client'})>"
 
     @property
     def client(self):
@@ -160,7 +165,11 @@ class Project(db.Model):
 
         total_seconds = (
             db.session.query(db.func.sum(TimeEntry.duration_seconds))
-            .filter(TimeEntry.project_id == self.id, TimeEntry.end_time.isnot(None), TimeEntry.billable == True)
+            .filter(
+                TimeEntry.project_id == self.id,
+                TimeEntry.end_time.isnot(None),
+                TimeEntry.billable == True,
+            )
             .scalar()
             or 0
         )
@@ -258,7 +267,10 @@ class Project(db.Model):
 
         query = (
             db.session.query(
-                User.id, User.username, User.full_name, db.func.sum(TimeEntry.duration_seconds).label("total_seconds")
+                User.id,
+                User.username,
+                User.full_name,
+                db.func.sum(TimeEntry.duration_seconds).label("total_seconds"),
             )
             .join(TimeEntry)
             .filter(TimeEntry.project_id == self.id, TimeEntry.end_time.isnot(None))
@@ -380,6 +392,7 @@ class Project(db.Model):
             "code": self.code,
             "code_display": self.code_display,
             "client": self.client,
+            "client_id": self.client_id,
             "description": self.description,
             "billable": self.billable,
             "hourly_rate": float(self.hourly_rate) if self.hourly_rate else None,

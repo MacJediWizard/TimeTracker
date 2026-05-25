@@ -65,7 +65,9 @@ def dashboard():
     cap_start = start or (today - timedelta(days=today.weekday()))
     cap_end = end or (cap_start + timedelta(days=6))
     capacity = service.capacity_report(
-        start_date=cap_start, end_date=cap_end, team_user_ids=None if current_user.is_admin else [current_user.id]
+        start_date=cap_start,
+        end_date=cap_end,
+        team_user_ids=None if current_user.is_admin else [current_user.id],
     )
 
     balances = service.get_leave_balance(selected_user_id)
@@ -76,6 +78,11 @@ def dashboard():
     users = []
     if current_user.is_admin:
         users = User.query.order_by(User.username.asc()).all()
+
+    # Signoff state for the workforce dashboard (#22). Built per-render so
+    # the "Send for approval" UI degrades gracefully when DocuSeal is not
+    # configured (button becomes a Configure-DocuSeal link).
+    signoff_state = _build_signoff_state(periods)
 
     # Accumulated overtime (YTD) for selected user and overtime leave type for "Take as paid leave"
     selected_user = User.query.get(selected_user_id)
@@ -102,7 +109,46 @@ def dashboard():
         cap_end=cap_end,
         overtime_ytd_hours=overtime_ytd_hours,
         overtime_leave_type_id=overtime_leave_type_id,
+        signoff_state=signoff_state,
     )
+
+
+def _build_signoff_state(periods):
+    """Assemble the context the workforce template needs for the signoff
+    surfaces. Cheap enough to run on every dashboard render; the heavy
+    work (test_connection) is gated by integration presence."""
+    from app.models.client import Client
+    from app.models.timesheet_signoff_request import TimesheetSignoffRequest
+    from app.models.timesheet_signoff_template import TimesheetSignoffTemplate
+    from app.services.timesheet_signoff_service import TimesheetSignoffService
+
+    connector = TimesheetSignoffService.get_esignature_connector()
+    period_ids = [p.id for p in periods] if periods else []
+    requests_for_periods = []
+    if period_ids:
+        requests_for_periods = (
+            TimesheetSignoffRequest.query.filter(TimesheetSignoffRequest.timesheet_period_id.in_(period_ids))
+            .order_by(TimesheetSignoffRequest.created_at.desc())
+            .all()
+        )
+
+    clients = Client.query.filter_by(status="active").order_by(Client.name.asc()).all()
+    templates = (
+        TimesheetSignoffTemplate.query.filter_by(archived_at=None)
+        .order_by(
+            TimesheetSignoffTemplate.is_default.desc(),
+            TimesheetSignoffTemplate.name.asc(),
+        )
+        .all()
+    )
+
+    return {
+        "connector_available": connector is not None,
+        "configure_url": url_for("admin.admin_dashboard"),
+        "requests": requests_for_periods,
+        "clients": clients,
+        "templates": templates,
+    }
 
 
 @workforce_bp.route("/workforce/periods/create", methods=["POST"])
@@ -405,7 +451,13 @@ def create_holiday():
         flash(_("Name and date range are required"), "error")
         return redirect(url_for("workforce.dashboard"))
 
-    holiday = CompanyHoliday(name=name, start_date=start, end_date=end, region=request.form.get("region"), enabled=True)
+    holiday = CompanyHoliday(
+        name=name,
+        start_date=start,
+        end_date=end,
+        region=request.form.get("region"),
+        enabled=True,
+    )
     db.session.add(holiday)
     db.session.commit()
     flash(_("Holiday created"), "success")

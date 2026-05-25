@@ -96,6 +96,9 @@
                             {% endif %}
                         </div>
                     </div>
+                    {% if signoff_state is defined %}
+                        {% include "workforce/_signoff_actions.html" %}
+                    {% endif %}
                 </div>
                 {% else %}
                 <p class="text-sm text-text-muted-light dark:text-text-muted-dark">{{ _('No timesheet periods yet.') }}</p>
@@ -300,6 +303,100 @@
     </div>
     {% endif %}
 </div>
+
+{# Signoff modal — opened by the "Send for approval" button on each period card. #}
+{% if signoff_state is defined and signoff_state.connector_available %}
+<div id="signoff-modal" class="hidden fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+  <div class="bg-card-light dark:bg-card-dark rounded-xl shadow-xl w-full max-w-lg p-6 border border-border-light dark:border-border-dark">
+    <div class="flex justify-between items-start mb-4">
+      <div>
+        <h3 class="text-lg font-semibold">{{ _('Send timesheet for client approval') }}</h3>
+        <p class="text-sm text-text-muted-light dark:text-text-muted-dark" id="signoff-modal-period"></p>
+      </div>
+      <button type="button" onclick="closeSignoffModal()" class="text-text-muted-light dark:text-text-muted-dark hover:text-red-600">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    <form method="post" id="signoff-modal-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium mb-1">{{ _('Client') }} <span class="text-red-600">*</span></label>
+          <select name="client_id" id="signoff-modal-client" required class="w-full px-3 py-2 border border-border-light dark:border-border-dark rounded-lg bg-background-light dark:bg-background-dark">
+            <option value="">{{ _('-- pick a client --') }}</option>
+            {% for c in signoff_state.clients %}
+              <option value="{{ c.id }}"
+                      data-signoff-email="{{ c.signoff_email or '' }}"
+                      data-template-id="{{ c.signoff_template_id or '' }}">
+                {{ c.name }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">{{ _('Signer email') }} <span class="text-red-600">*</span></label>
+          <input type="email" name="signer_email" id="signoff-modal-email" required
+                 class="w-full px-3 py-2 border border-border-light dark:border-border-dark rounded-lg bg-background-light dark:bg-background-dark">
+          <p class="text-xs text-text-muted-light dark:text-text-muted-dark mt-1">{{ _('Pre-fills from the client default; override per-request if a different manager signs for this engineer.') }}</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">{{ _('Signer name') }}</label>
+          <input type="text" name="signer_name"
+                 class="w-full px-3 py-2 border border-border-light dark:border-border-dark rounded-lg bg-background-light dark:bg-background-dark">
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">{{ _('Template') }}</label>
+          <select name="template_id" id="signoff-modal-template"
+                  class="w-full px-3 py-2 border border-border-light dark:border-border-dark rounded-lg bg-background-light dark:bg-background-dark">
+            <option value="">{{ _('Use client default / global default') }}</option>
+            {% for t in signoff_state.templates %}
+              <option value="{{ t.id }}">{{ t.name }}{% if t.is_default %} ({{ _('default') }}){% endif %}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 mt-6">
+        <button type="button" onclick="closeSignoffModal()" class="px-4 py-2 border border-border-light dark:border-border-dark rounded-lg">{{ _('Cancel') }}</button>
+        <button type="submit" class="px-5 py-2 bg-primary text-white rounded-lg hover:bg-primary/90">
+          <i class="fas fa-paper-plane mr-1"></i>{{ _('Send') }}
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+function openSignoffModal(periodId, periodStart, periodEnd) {
+  const modal = document.getElementById('signoff-modal');
+  const form = document.getElementById('signoff-modal-form');
+  form.action = "{{ url_for('signoff.send_signoff', period_id=0) }}".replace('/0/', '/' + periodId + '/');
+  document.getElementById('signoff-modal-period').textContent = periodStart + ' — ' + periodEnd;
+  document.getElementById('signoff-modal-email').value = '';
+  document.getElementById('signoff-modal-client').value = '';
+  document.getElementById('signoff-modal-template').value = '';
+  modal.classList.remove('hidden');
+}
+function closeSignoffModal() {
+  document.getElementById('signoff-modal').classList.add('hidden');
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const clientSelect = document.getElementById('signoff-modal-client');
+  const emailInput = document.getElementById('signoff-modal-email');
+  const tplSelect = document.getElementById('signoff-modal-template');
+  if (!clientSelect) return;
+  clientSelect.addEventListener('change', () => {
+    const opt = clientSelect.options[clientSelect.selectedIndex];
+    if (!opt) return;
+    if (opt.dataset.signoffEmail && !emailInput.value) {
+      emailInput.value = opt.dataset.signoffEmail;
+    }
+    if (opt.dataset.templateId && !tplSelect.value) {
+      tplSelect.value = opt.dataset.templateId;
+    }
+  });
+});
+</script>
+{% endif %}
+
 {% block scripts_extra %}
 <script>
 (function() {

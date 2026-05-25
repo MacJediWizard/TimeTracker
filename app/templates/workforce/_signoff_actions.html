@@ -1,0 +1,53 @@
+{# Signoff actions partial — included per-period from workforce/dashboard.html.
+   Expects: p (TimesheetPeriod), signoff_state (dict with keys:
+     'connector_available' bool, 'configure_url' str,
+     'requests' list of TimesheetSignoffRequest for this period,
+     'clients' list of Client, 'templates' list of TimesheetSignoffTemplate). #}
+
+{% set period_signoffs = signoff_state.requests | selectattr('timesheet_period_id', 'equalto', p.id) | list %}
+
+<div class="mt-2 pt-2 border-t border-border-light dark:border-border-dark">
+  {# Existing signoff status badges + downloads #}
+  {% if period_signoffs %}
+    <div class="flex flex-wrap items-center gap-2 mb-2">
+      {% for so in period_signoffs %}
+        {% set status_val = so.status.value if so.status is defined and so.status.value is defined else (so.status | string) %}
+        {% set client_name = so.client.name if so.client else 'Client #' ~ so.client_id %}
+        <span class="inline-flex items-center gap-2 px-2 py-1 rounded-full text-xs font-medium
+          {% if status_val == 'signed' %}bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300
+          {% elif status_val == 'declined' %}bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300
+          {% elif status_val == 'expired' %}bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300
+          {% elif status_val == 'cancelled' %}bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400
+          {% elif status_val in ('sent', 'viewed') %}bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300
+          {% else %}bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400{% endif %}">
+          <i class="fas fa-signature"></i>
+          {{ client_name }} — {{ _(status_val) }}
+          {% if status_val == 'signed' and so.esignature_request_id %}
+            <a href="{{ url_for('signoff.download_signed_pdf', request_id=so.id) }}" title="{{ _('Signed PDF') }}" class="ml-1 underline"><i class="fas fa-file-pdf"></i></a>
+            <a href="{{ url_for('signoff.download_coc', request_id=so.id) }}" title="{{ _('Certificate of Completion') }}" class="underline"><i class="fas fa-certificate"></i></a>
+          {% endif %}
+          {% if status_val in ('sent', 'viewed') %}
+            <form method="post" action="{{ url_for('signoff.cancel_signoff', request_id=so.id) }}" class="inline" onsubmit="return confirm('{{ _('Cancel this signoff request?') }}');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="ml-1 underline text-xs">{{ _('Cancel') }}</button>
+            </form>
+          {% endif %}
+        </span>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {# Send-for-approval button — always visible, behaviour depends on connector availability #}
+  {% if signoff_state.connector_available %}
+    <button type="button" onclick="openSignoffModal({{ p.id }}, '{{ p.period_start }}', '{{ p.period_end }}')"
+            class="btn btn-sm btn-primary">
+      <i class="fas fa-paper-plane mr-1"></i>{{ _('Send to client for approval') }}
+    </button>
+  {% else %}
+    <a href="{{ signoff_state.configure_url }}"
+       class="btn btn-sm btn-secondary"
+       title="{{ _('DocuSeal is not configured for this instance') }}">
+      <i class="fas fa-plug mr-1"></i>{{ _('Configure DocuSeal to enable signoff') }}
+    </a>
+  {% endif %}
+</div>

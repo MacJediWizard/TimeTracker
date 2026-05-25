@@ -6,6 +6,7 @@ Registers all available connectors with the IntegrationService.
 from app.integrations.activitywatch import ActivityWatchConnector
 from app.integrations.asana import AsanaConnector
 from app.integrations.caldav_calendar import CalDAVCalendarConnector
+from app.integrations.esignature.docuseal import DocuSealConnector
 from app.integrations.github import GitHubConnector
 from app.integrations.gitlab import GitLabConnector
 from app.integrations.google_calendar import GoogleCalendarConnector
@@ -36,6 +37,7 @@ def register_connectors():
     IntegrationService.register_connector("gitlab", GitLabConnector)
     IntegrationService.register_connector("quickbooks", QuickBooksConnector)
     IntegrationService.register_connector("xero", XeroConnector)
+    IntegrationService.register_connector("docuseal", DocuSealConnector)
 
 
 # Auto-register on import

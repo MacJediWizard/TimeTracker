@@ -4,13 +4,17 @@ Tests for enhanced UI features
 
 import os
 
+import pytest
 from flask import url_for
 
 
 class TestEnhancedUI:
     """Test enhanced UI components and features"""
 
-    @pytest.mark.xfail(reason="PG-only flake; tracked upstream as drytrix/TimeTracker#650", strict=False)
+    @pytest.mark.xfail(
+        reason="PG-only flake; tracked upstream as drytrix/TimeTracker#650",
+        strict=False,
+    )
     def test_enhanced_css_loaded(self, authenticated_client):
         """Test that enhanced UI CSS is loaded"""
         response = authenticated_client.get(url_for("main.dashboard"))
@@ -41,7 +45,10 @@ class TestEnhancedUI:
         assert response.status_code == 200
         assert b"toast-notifications.js" in response.data
 
-    @pytest.mark.xfail(reason="PG-only flake; tracked upstream as drytrix/TimeTracker#650", strict=False)
+    @pytest.mark.xfail(
+        reason="PG-only flake; tracked upstream as drytrix/TimeTracker#650",
+        strict=False,
+    )
     def test_set_submit_button_loading_available(self, authenticated_client):
         """Test that setSubmitButtonLoading helper is provided by enhanced-ui.js"""
         response = authenticated_client.get(url_for("main.dashboard"))
@@ -49,7 +56,10 @@ class TestEnhancedUI:
         assert b"enhanced-ui.js" in response.data
         assert b"setSubmitButtonLoading" in response.data
 
-    @pytest.mark.xfail(reason="PG-only flake; tracked upstream as drytrix/TimeTracker#650", strict=False)
+    @pytest.mark.xfail(
+        reason="PG-only flake; tracked upstream as drytrix/TimeTracker#650",
+        strict=False,
+    )
     def test_filter_ajax_error_toast_message_in_enhanced_ui(self, authenticated_client):
         """Test that enhanced-ui.js shows consistent error toast on filter failure"""
         response = authenticated_client.get(url_for("projects.list_projects"))
@@ -63,7 +73,6 @@ class TestComponentLibrary:
 
     def test_ui_components_file_exists(self):
         """Test that ui.html component file exists"""
-        import os
 
         component_path = "app/templates/components/ui.html"
         assert os.path.exists(component_path)
@@ -218,14 +227,12 @@ class TestPWA:
 
     def test_service_worker_exists(self):
         """Test that service worker source file exists"""
-        import os
 
         sw_path = "app/static/js/sw.js"
         assert os.path.exists(sw_path)
 
     def test_manifest_exists(self):
         """Test that manifest file exists"""
-        import os
 
         manifest_path = "app/static/manifest.json"
         assert os.path.exists(manifest_path)
@@ -251,7 +258,9 @@ class TestAccessibility:
         """Test that skip to content link is present"""
         response = authenticated_client.get(url_for("main.dashboard"))
         assert response.status_code == 200
-        assert b"Skip to content" in response.data or b"dashboard" in response.data.lower()
+        assert (
+            b"Skip to content" in response.data or b"dashboard" in response.data.lower()
+        )
 
     def test_aria_labels_present(self, authenticated_client):
         """Test that ARIA labels are present"""
@@ -318,7 +327,11 @@ class TestResponsiveDesign:
         """Test that mobile navigation button exists"""
         response = authenticated_client.get(url_for("main.dashboard"))
         assert response.status_code == 200
-        assert b"mobileSidebarBtn" in response.data or b"lg:hidden" in response.data or response.status_code == 200
+        assert (
+            b"mobileSidebarBtn" in response.data
+            or b"lg:hidden" in response.data
+            or response.status_code == 200
+        )
 
 
 class TestStaticFiles:
@@ -326,30 +339,25 @@ class TestStaticFiles:
 
     def test_enhanced_ui_css_exists(self):
         """Test enhanced-ui.css exists"""
-        import os
 
         assert os.path.exists("app/static/enhanced-ui.css")
 
     def test_enhanced_ui_js_exists(self):
         """Test enhanced-ui.js exists"""
-        import os
 
         assert os.path.exists("app/static/enhanced-ui.js")
 
     def test_charts_js_exists(self):
         """Test charts.js exists"""
-        import os
 
         assert os.path.exists("app/static/charts.js")
 
     def test_onboarding_js_exists(self):
         """Test onboarding.js exists"""
-        import os
 
         assert os.path.exists("app/static/onboarding.js")
 
     def test_service_worker_js_exists(self):
         """Test PWA service worker source exists"""
-        import os
 
         assert os.path.exists("app/static/js/sw.js")

@@ -5,6 +5,7 @@ Revises: 139_keyboard_shortcuts
 Create Date: 2026-03-16
 
 """
+
 from alembic import op
 import sqlalchemy as sa
 
@@ -32,6 +33,11 @@ def upgrade():
         sa.ForeignKeyConstraint(["client_id"], ["clients.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "client_id",
+            "user_id",
+            name="uq_client_portal_dashboard_pref_client_user",
+        ),
     )
     op.create_index(
         op.f("ix_client_portal_dashboard_preferences_client_id"),
@@ -44,11 +50,6 @@ def upgrade():
         "client_portal_dashboard_preferences",
         ["user_id"],
         unique=False,
-    )
-    op.create_unique_constraint(
-        "uq_client_portal_dashboard_pref_client_user",
-        "client_portal_dashboard_preferences",
-        ["client_id", "user_id"],
     )
 
 

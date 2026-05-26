@@ -42,18 +42,52 @@ def upgrade():
     bind = op.get_bind()
     inspector = inspect(bind)
 
+    is_sqlite = bind.dialect.name == "sqlite"
+
     if not _table_has_column(inspector, "clients", "created_by"):
-        op.add_column(
-            "clients",
-            sa.Column("created_by", sa.Integer(), sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True),
-        )
+        if is_sqlite:
+            with op.batch_alter_table("clients") as batch_op:
+                batch_op.add_column(
+                    sa.Column(
+                        "created_by",
+                        sa.Integer(),
+                        sa.ForeignKey("users.id", ondelete="SET NULL"),
+                        nullable=True,
+                    )
+                )
+        else:
+            op.add_column(
+                "clients",
+                sa.Column(
+                    "created_by",
+                    sa.Integer(),
+                    sa.ForeignKey("users.id", ondelete="SET NULL"),
+                    nullable=True,
+                ),
+            )
         op.create_index("ix_clients_created_by", "clients", ["created_by"], unique=False)
 
     if not _table_has_column(inspector, "projects", "created_by"):
-        op.add_column(
-            "projects",
-            sa.Column("created_by", sa.Integer(), sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True),
-        )
+        if is_sqlite:
+            with op.batch_alter_table("projects") as batch_op:
+                batch_op.add_column(
+                    sa.Column(
+                        "created_by",
+                        sa.Integer(),
+                        sa.ForeignKey("users.id", ondelete="SET NULL"),
+                        nullable=True,
+                    )
+                )
+        else:
+            op.add_column(
+                "projects",
+                sa.Column(
+                    "created_by",
+                    sa.Integer(),
+                    sa.ForeignKey("users.id", ondelete="SET NULL"),
+                    nullable=True,
+                ),
+            )
         op.create_index("ix_projects_created_by", "projects", ["created_by"], unique=False)
 
     _seed_own_scope_permissions(bind)
@@ -77,9 +111,7 @@ def _seed_own_scope_permissions(connection):
         ("delete_all_clients", "Delete all clients", "clients"),
     ]
     for name, description, category in perm_defs:
-        exists = connection.execute(
-            sa.text("SELECT id FROM permissions WHERE name = :name"), {"name": name}
-        ).fetchone()
+        exists = connection.execute(sa.text("SELECT id FROM permissions WHERE name = :name"), {"name": name}).fetchone()
         if not exists:
             connection.execute(
                 sa.text(
@@ -127,22 +159,19 @@ def _update_system_roles(connection):
         role_id = role_row[0]
         for perm_name in perm_names:
             perm_row = connection.execute(
-                sa.text("SELECT id FROM permissions WHERE name = :name"), {"name": perm_name}
+                sa.text("SELECT id FROM permissions WHERE name = :name"),
+                {"name": perm_name},
             ).fetchone()
             if not perm_row:
                 continue
             perm_id = perm_row[0]
             exists = connection.execute(
-                sa.text(
-                    "SELECT 1 FROM role_permissions WHERE role_id = :role_id AND permission_id = :perm_id"
-                ),
+                sa.text("SELECT 1 FROM role_permissions WHERE role_id = :role_id AND permission_id = :perm_id"),
                 {"role_id": role_id, "perm_id": perm_id},
             ).fetchone()
             if not exists:
                 connection.execute(
-                    sa.text(
-                        "INSERT INTO role_permissions (role_id, permission_id) VALUES (:role_id, :perm_id)"
-                    ),
+                    sa.text("INSERT INTO role_permissions (role_id, permission_id) VALUES (:role_id, :perm_id)"),
                     {"role_id": role_id, "perm_id": perm_id},
                 )
 
@@ -155,14 +184,13 @@ def _update_system_roles(connection):
         role_id = role_row[0]
         for perm_name in _LEGACY_VIEW_PERMS_TO_REMOVE:
             perm_row = connection.execute(
-                sa.text("SELECT id FROM permissions WHERE name = :name"), {"name": perm_name}
+                sa.text("SELECT id FROM permissions WHERE name = :name"),
+                {"name": perm_name},
             ).fetchone()
             if not perm_row:
                 continue
             connection.execute(
-                sa.text(
-                    "DELETE FROM role_permissions WHERE role_id = :role_id AND permission_id = :perm_id"
-                ),
+                sa.text("DELETE FROM role_permissions WHERE role_id = :role_id AND permission_id = :perm_id"),
                 {"role_id": role_id, "perm_id": perm_row[0]},
             )
 
@@ -178,21 +206,18 @@ def downgrade():
         role_id = role_row[0]
         for perm_name in _LEGACY_VIEW_PERMS_TO_REMOVE:
             perm_row = bind.execute(
-                sa.text("SELECT id FROM permissions WHERE name = :name"), {"name": perm_name}
+                sa.text("SELECT id FROM permissions WHERE name = :name"),
+                {"name": perm_name},
             ).fetchone()
             if not perm_row:
                 continue
             exists = bind.execute(
-                sa.text(
-                    "SELECT 1 FROM role_permissions WHERE role_id = :role_id AND permission_id = :perm_id"
-                ),
+                sa.text("SELECT 1 FROM role_permissions WHERE role_id = :role_id AND permission_id = :perm_id"),
                 {"role_id": role_id, "perm_id": perm_row[0]},
             ).fetchone()
             if not exists:
                 bind.execute(
-                    sa.text(
-                        "INSERT INTO role_permissions (role_id, permission_id) VALUES (:role_id, :perm_id)"
-                    ),
+                    sa.text("INSERT INTO role_permissions (role_id, permission_id) VALUES (:role_id, :perm_id)"),
                     {"role_id": role_id, "perm_id": perm_row[0]},
                 )
 

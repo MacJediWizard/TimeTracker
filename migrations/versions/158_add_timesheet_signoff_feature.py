@@ -202,7 +202,9 @@ def upgrade():
                     "signoff_template_id",
                     sa.Integer(),
                     sa.ForeignKey(
-                        "timesheet_signoff_templates.id", ondelete="SET NULL"
+                        "timesheet_signoff_templates.id",
+                        ondelete="SET NULL",
+                        name="fk_clients_signoff_template_id",
                     ),
                     nullable=True,
                 )
@@ -245,9 +247,7 @@ def upgrade():
             ),
         )
     if not _has_index("esignature_requests", "ix_esignature_external_id"):
-        op.create_index(
-            "ix_esignature_external_id", "esignature_requests", ["external_id"]
-        )
+        op.create_index("ix_esignature_external_id", "esignature_requests", ["external_id"])
     if not _has_index("esignature_requests", "ix_esignature_target"):
         op.create_index(
             "ix_esignature_target",

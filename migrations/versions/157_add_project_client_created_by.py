@@ -51,7 +51,11 @@ def upgrade():
                     sa.Column(
                         "created_by",
                         sa.Integer(),
-                        sa.ForeignKey("users.id", ondelete="SET NULL"),
+                        sa.ForeignKey(
+                            "users.id",
+                            ondelete="SET NULL",
+                            name="fk_clients_created_by_users",
+                        ),
                         nullable=True,
                     )
                 )
@@ -61,7 +65,11 @@ def upgrade():
                 sa.Column(
                     "created_by",
                     sa.Integer(),
-                    sa.ForeignKey("users.id", ondelete="SET NULL"),
+                    sa.ForeignKey(
+                        "users.id",
+                        ondelete="SET NULL",
+                        name="fk_clients_created_by_users",
+                    ),
                     nullable=True,
                 ),
             )
@@ -74,7 +82,11 @@ def upgrade():
                     sa.Column(
                         "created_by",
                         sa.Integer(),
-                        sa.ForeignKey("users.id", ondelete="SET NULL"),
+                        sa.ForeignKey(
+                            "users.id",
+                            ondelete="SET NULL",
+                            name="fk_projects_created_by_users",
+                        ),
                         nullable=True,
                     )
                 )
@@ -84,7 +96,11 @@ def upgrade():
                 sa.Column(
                     "created_by",
                     sa.Integer(),
-                    sa.ForeignKey("users.id", ondelete="SET NULL"),
+                    sa.ForeignKey(
+                        "users.id",
+                        ondelete="SET NULL",
+                        name="fk_projects_created_by_users",
+                    ),
                     nullable=True,
                 ),
             )

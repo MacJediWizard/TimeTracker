@@ -98,8 +98,8 @@ from .warehouse_stock import WarehouseStock
 from .webhook import Webhook, WebhookDelivery
 from .weekly_time_goal import WeeklyTimeGoal
 from .workday_session import WorkdaySession
-from .working_time_violation import WorkingTimeViolation
 from .workflow import WorkflowExecution, WorkflowRule
+from .working_time_violation import WorkingTimeViolation
 
 __all__ = [
     "User",

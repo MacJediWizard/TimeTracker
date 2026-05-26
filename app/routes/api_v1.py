@@ -390,7 +390,11 @@ def bulk_approve_time_entries():
     approval_ids = data.get("approval_ids", [])
     if not approval_ids:
         return error_response("approval_ids required", status_code=400)
-    result = service.bulk_approve(approval_ids=approval_ids, approver_id=g.api_user.id, comment=data.get("comment"))
+    result = service.bulk_approve(
+        approval_ids=approval_ids,
+        approver_id=g.api_user.id,
+        comment=data.get("comment"),
+    )
     return jsonify(result)
 
 
@@ -430,7 +434,12 @@ def list_per_diems():
         "prev_page": pagination.page - 1 if pagination.has_prev else None,
     }
 
-    return jsonify({"per_diems": [p.to_dict() for p in pagination.items], "pagination": pagination_dict})
+    return jsonify(
+        {
+            "per_diems": [p.to_dict() for p in pagination.items],
+            "pagination": pagination_dict,
+        }
+    )
 
 
 @api_v1_bp.route("/per-diems/<int:pd_id>", methods=["GET"])
@@ -460,7 +469,14 @@ def create_per_diem():
       - PerDiem
     """
     data = request.get_json() or {}
-    required = ["trip_purpose", "start_date", "end_date", "country", "full_day_rate", "half_day_rate"]
+    required = [
+        "trip_purpose",
+        "start_date",
+        "end_date",
+        "country",
+        "full_day_rate",
+        "half_day_rate",
+    ]
     missing = [f for f in required if not data.get(f)]
     if missing:
         return jsonify({"error": f"Missing required fields: {', '.join(missing)}"}), 400
@@ -514,18 +530,39 @@ def update_per_diem(pd_id):
         return forbidden_response("Access denied")
 
     data = request.get_json() or {}
-    for field in ("trip_purpose", "description", "country", "city", "currency_code", "status", "notes"):
+    for field in (
+        "trip_purpose",
+        "description",
+        "country",
+        "city",
+        "currency_code",
+        "status",
+        "notes",
+    ):
         if field in data:
             setattr(pd, field, data[field])
-    for numfield in ("full_days", "half_days", "breakfast_provided", "lunch_provided", "dinner_provided"):
+    for numfield in (
+        "full_days",
+        "half_days",
+        "breakfast_provided",
+        "lunch_provided",
+        "dinner_provided",
+    ):
         if numfield in data:
             try:
                 setattr(pd, numfield, int(data[numfield]))
             except (ValueError, TypeError):
                 return validation_error_response(
-                    {numfield: ["Invalid value."]}, message="Invalid value for " + numfield
+                    {numfield: ["Invalid value."]},
+                    message="Invalid value for " + numfield,
                 )
-    for ratefield in ("full_day_rate", "half_day_rate", "breakfast_deduction", "lunch_deduction", "dinner_deduction"):
+    for ratefield in (
+        "full_day_rate",
+        "half_day_rate",
+        "breakfast_deduction",
+        "lunch_deduction",
+        "dinner_deduction",
+    ):
         if ratefield in data:
             try:
                 from decimal import Decimal
@@ -533,7 +570,8 @@ def update_per_diem(pd_id):
                 setattr(pd, ratefield, Decimal(str(data[ratefield])))
             except (ValueError, TypeError, InvalidOperation):
                 return validation_error_response(
-                    {ratefield: ["Invalid value."]}, message="Invalid value for " + ratefield
+                    {ratefield: ["Invalid value."]},
+                    message="Invalid value for " + ratefield,
                 )
     if "start_date" in data:
         parsed = _parse_date(data["start_date"])
@@ -594,7 +632,12 @@ def list_per_diem_rates():
         "prev_page": pagination.page - 1 if pagination.has_prev else None,
     }
 
-    return jsonify({"rates": [r.to_dict() for r in pagination.items], "pagination": pagination_dict})
+    return jsonify(
+        {
+            "rates": [r.to_dict() for r in pagination.items],
+            "pagination": pagination_dict,
+        }
+    )
 
 
 @api_v1_bp.route("/per-diem-rates", methods=["POST"])
@@ -676,7 +719,12 @@ def list_budget_alerts():
         "prev_page": pagination.page - 1 if pagination.has_prev else None,
     }
 
-    return jsonify({"alerts": [a.to_dict() for a in pagination.items], "pagination": pagination_dict})
+    return jsonify(
+        {
+            "alerts": [a.to_dict() for a in pagination.items],
+            "pagination": pagination_dict,
+        }
+    )
 
 
 @api_v1_bp.route("/budget-alerts", methods=["POST"])
@@ -688,7 +736,14 @@ def create_budget_alert():
       - BudgetAlerts
     """
     data = request.get_json() or {}
-    required = ["project_id", "alert_type", "budget_consumed_percent", "budget_amount", "consumed_amount", "message"]
+    required = [
+        "project_id",
+        "alert_type",
+        "budget_consumed_percent",
+        "budget_amount",
+        "consumed_amount",
+        "message",
+    ]
     missing = [f for f in required if not data.get(f)]
     if missing:
         return jsonify({"error": f"Missing required fields: {', '.join(missing)}"}), 400
@@ -830,7 +885,15 @@ def update_calendar_event(event_id):
         return forbidden_response("Access denied")
 
     data = request.get_json() or {}
-    for field in ("title", "description", "location", "event_type", "color", "is_private", "reminder_minutes"):
+    for field in (
+        "title",
+        "description",
+        "location",
+        "event_type",
+        "color",
+        "is_private",
+        "reminder_minutes",
+    ):
         if field in data:
             setattr(ev, field, data[field])
     if "start_time" in data:
@@ -927,7 +990,15 @@ def update_kanban_column(col_id):
     col = KanbanColumn.query.filter_by(id=col_id).first_or_404()
 
     data = request.get_json() or {}
-    for field in ("key", "label", "icon", "color", "position", "is_active", "is_complete_state"):
+    for field in (
+        "key",
+        "label",
+        "icon",
+        "color",
+        "position",
+        "is_active",
+        "is_complete_state",
+    ):
         if field in data:
             setattr(col, field, data[field])
     db.session.commit()
@@ -1003,7 +1074,12 @@ def list_saved_filters():
         "prev_page": pagination.page - 1 if pagination.has_prev else None,
     }
 
-    return jsonify({"filters": [f.to_dict() for f in pagination.items], "pagination": pagination_dict})
+    return jsonify(
+        {
+            "filters": [f.to_dict() for f in pagination.items],
+            "pagination": pagination_dict,
+        }
+    )
 
 
 @api_v1_bp.route("/saved-filters/<int:filter_id>", methods=["GET"])
@@ -1124,7 +1200,12 @@ def list_time_entry_templates():
         "prev_page": pagination.page - 1 if pagination.has_prev else None,
     }
 
-    return jsonify({"templates": [t.to_dict() for t in pagination.items], "pagination": pagination_dict})
+    return jsonify(
+        {
+            "templates": [t.to_dict() for t in pagination.items],
+            "pagination": pagination_dict,
+        }
+    )
 
 
 @api_v1_bp.route("/time-entry-templates/<int:tpl_id>", methods=["GET"])
@@ -1284,7 +1365,11 @@ def create_comment():
     if (not project_id and not task_id) or (project_id and task_id):
         return jsonify({"error": "Provide either project_id or task_id"}), 400
     cmt = Comment(
-        content=content, user_id=g.api_user.id, project_id=project_id, task_id=task_id, parent_id=data.get("parent_id")
+        content=content,
+        user_id=g.api_user.id,
+        project_id=project_id,
+        task_id=task_id,
+        parent_id=data.get("parent_id"),
     )
     db.session.add(cmt)
     db.session.commit()
@@ -1341,7 +1426,15 @@ def list_quotes():
         "prev_page": page - 1 if page > 1 else None,
     }
 
-    return jsonify({"quotes": [q.to_dict() for q in paginated_quotes], "pagination": pagination_dict}), 200
+    return (
+        jsonify(
+            {
+                "quotes": [q.to_dict() for q in paginated_quotes],
+                "pagination": pagination_dict,
+            }
+        ),
+        200,
+    )
 
 
 @api_v1_bp.route("/quotes/<int:quote_id>", methods=["GET"])
@@ -1491,7 +1584,10 @@ def update_quote(quote_id):
             update_kwargs["valid_until"] = valid_until
 
     result = quote_service.update_quote(
-        quote_id=quote_id, user_id=g.api_user.id, is_admin=g.api_user.is_admin, **update_kwargs
+        quote_id=quote_id,
+        user_id=g.api_user.id,
+        is_admin=g.api_user.is_admin,
+        **update_kwargs,
     )
 
     if not result.get("success"):
@@ -1588,7 +1684,11 @@ def update_comment(comment_id):
     from sqlalchemy.orm import joinedload
 
     cmt = (
-        Comment.query.options(joinedload(Comment.author), joinedload(Comment.project), joinedload(Comment.task))
+        Comment.query.options(
+            joinedload(Comment.author),
+            joinedload(Comment.project),
+            joinedload(Comment.task),
+        )
         .filter_by(id=comment_id)
         .first_or_404()
     )
@@ -1618,7 +1718,11 @@ def delete_comment(comment_id):
     from sqlalchemy.orm import joinedload
 
     cmt = (
-        Comment.query.options(joinedload(Comment.author), joinedload(Comment.project), joinedload(Comment.task))
+        Comment.query.options(
+            joinedload(Comment.author),
+            joinedload(Comment.project),
+            joinedload(Comment.task),
+        )
         .filter_by(id=comment_id)
         .first_or_404()
     )
@@ -1661,7 +1765,12 @@ def list_client_notes(client_id):
         "prev_page": pagination.page - 1 if pagination.has_prev else None,
     }
 
-    return jsonify({"notes": [n.to_dict() for n in pagination.items], "pagination": pagination_dict})
+    return jsonify(
+        {
+            "notes": [n.to_dict() for n in pagination.items],
+            "pagination": pagination_dict,
+        }
+    )
 
 
 @api_v1_bp.route("/clients/<int:client_id>/notes", methods=["POST"])
@@ -1676,7 +1785,10 @@ def create_client_note(client_id):
     if not content:
         return jsonify({"error": "content is required"}), 400
     note = ClientNote(
-        content=content, user_id=g.api_user.id, client_id=client_id, is_important=bool(data.get("is_important", False))
+        content=content,
+        user_id=g.api_user.id,
+        client_id=client_id,
+        is_important=bool(data.get("is_important", False)),
     )
     db.session.add(note)
     db.session.commit()
@@ -1791,7 +1903,12 @@ def list_project_costs(project_id):
         "prev_page": pagination.page - 1 if pagination.has_prev else None,
     }
 
-    return jsonify({"costs": [c.to_dict() for c in pagination.items], "pagination": pagination_dict})
+    return jsonify(
+        {
+            "costs": [c.to_dict() for c in pagination.items],
+            "pagination": pagination_dict,
+        }
+    )
 
 
 @api_v1_bp.route("/projects/<int:project_id>/costs", methods=["POST"])
@@ -2123,7 +2240,15 @@ def create_exchange_rate():
     )
     db.session.add(er)
     db.session.commit()
-    return jsonify({"message": "Exchange rate created successfully", "exchange_rate": {"id": er.id}}), 201
+    return (
+        jsonify(
+            {
+                "message": "Exchange rate created successfully",
+                "exchange_rate": {"id": er.id},
+            }
+        ),
+        201,
+    )
 
 
 @api_v1_bp.route("/exchange-rates/<int:rate_id>", methods=["PUT", "PATCH"])
@@ -2386,7 +2511,12 @@ def list_recurring_invoices():
         "prev_page": pagination.page - 1 if pagination.has_prev else None,
     }
 
-    return jsonify({"recurring_invoices": [ri.to_dict() for ri in pagination.items], "pagination": pagination_dict})
+    return jsonify(
+        {
+            "recurring_invoices": [ri.to_dict() for ri in pagination.items],
+            "pagination": pagination_dict,
+        }
+    )
 
 
 @api_v1_bp.route("/recurring-invoices/<int:ri_id>", methods=["GET"])
@@ -2413,7 +2543,14 @@ def create_recurring_invoice():
       - RecurringInvoices
     """
     data = request.get_json() or {}
-    required = ["name", "project_id", "client_id", "client_name", "frequency", "next_run_date"]
+    required = [
+        "name",
+        "project_id",
+        "client_id",
+        "client_name",
+        "frequency",
+        "next_run_date",
+    ]
     missing = [f for f in required if not data.get(f)]
     if missing:
         return jsonify({"error": f"Missing required fields: {', '.join(missing)}"}), 400
@@ -2447,7 +2584,15 @@ def create_recurring_invoice():
     )
     db.session.add(ri)
     db.session.commit()
-    return jsonify({"message": "Recurring invoice created successfully", "recurring_invoice": ri.to_dict()}), 201
+    return (
+        jsonify(
+            {
+                "message": "Recurring invoice created successfully",
+                "recurring_invoice": ri.to_dict(),
+            }
+        ),
+        201,
+    )
 
 
 @api_v1_bp.route("/recurring-invoices/<int:ri_id>", methods=["PUT", "PATCH"])
@@ -2463,10 +2608,23 @@ def update_recurring_invoice(ri_id):
     )
 
     data = request.get_json() or {}
-    for field in ("name", "client_name", "client_email", "client_address", "notes", "terms", "currency_code"):
+    for field in (
+        "name",
+        "client_name",
+        "client_email",
+        "client_address",
+        "notes",
+        "terms",
+        "currency_code",
+    ):
         if field in data:
             setattr(ri, field, data[field])
-    if "frequency" in data and data["frequency"] in ("daily", "weekly", "monthly", "yearly"):
+    if "frequency" in data and data["frequency"] in (
+        "daily",
+        "weekly",
+        "monthly",
+        "yearly",
+    ):
         ri.frequency = data["frequency"]
     if "interval" in data:
         try:
@@ -2495,7 +2653,12 @@ def update_recurring_invoice(ri_id):
         except (ValueError, TypeError, InvalidOperation):
             return validation_error_response({"tax_rate": ["Invalid value."]}, message="Invalid tax_rate")
     db.session.commit()
-    return jsonify({"message": "Recurring invoice updated successfully", "recurring_invoice": ri.to_dict()})
+    return jsonify(
+        {
+            "message": "Recurring invoice updated successfully",
+            "recurring_invoice": ri.to_dict(),
+        }
+    )
 
 
 @api_v1_bp.route("/recurring-invoices/<int:ri_id>", methods=["DELETE"])
@@ -2730,8 +2893,14 @@ def report_summary():
     from sqlalchemy.orm import joinedload
 
     query = TimeEntry.query.options(
-        joinedload(TimeEntry.project), joinedload(TimeEntry.user), joinedload(TimeEntry.task)
-    ).filter(TimeEntry.end_time.isnot(None), TimeEntry.start_time >= start_dt, TimeEntry.start_time <= end_dt)
+        joinedload(TimeEntry.project),
+        joinedload(TimeEntry.user),
+        joinedload(TimeEntry.task),
+    ).filter(
+        TimeEntry.end_time.isnot(None),
+        TimeEntry.start_time >= start_dt,
+        TimeEntry.start_time <= end_dt,
+    )
 
     # Filter by user
     user_id = request.args.get("user_id", type=int)
@@ -2901,7 +3070,12 @@ def list_webhooks():
     # Paginate
     result = paginate_query(query)
 
-    return jsonify({"webhooks": [w.to_dict() for w in result["items"]], "pagination": result["pagination"]})
+    return jsonify(
+        {
+            "webhooks": [w.to_dict() for w in result["items"]],
+            "pagination": result["pagination"],
+        }
+    )
 
 
 @api_v1_bp.route("/webhooks", methods=["POST"])
@@ -2972,7 +3146,15 @@ def create_webhook():
     db.session.add(webhook)
     db.session.commit()
 
-    return jsonify({"webhook": webhook.to_dict(include_secret=True), "message": "Webhook created successfully"}), 201
+    return (
+        jsonify(
+            {
+                "webhook": webhook.to_dict(include_secret=True),
+                "message": "Webhook created successfully",
+            }
+        ),
+        201,
+    )
 
 
 @api_v1_bp.route("/webhooks/<int:webhook_id>", methods=["GET"])
@@ -3050,7 +3232,10 @@ def update_webhook(webhook_id):
             if not parsed.scheme or not parsed.netloc:
                 return validation_error_response({"url": ["Invalid URL format."]}, message="Invalid URL format")
             if parsed.scheme not in ["http", "https"]:
-                return validation_error_response({"url": ["URL must use http or https."]}, message="Invalid URL format")
+                return validation_error_response(
+                    {"url": ["URL must use http or https."]},
+                    message="Invalid URL format",
+                )
         except (ValueError, AttributeError, TypeError):
             return validation_error_response({"url": ["Invalid URL format."]}, message="Invalid URL format")
         webhook.url = data["url"]
@@ -3171,7 +3356,12 @@ def list_webhook_deliveries(webhook_id):
     # Paginate
     result = paginate_query(query)
 
-    return jsonify({"deliveries": [d.to_dict() for d in result["items"]], "pagination": result["pagination"]})
+    return jsonify(
+        {
+            "deliveries": [d.to_dict() for d in result["items"]],
+            "pagination": result["pagination"],
+        }
+    )
 
 
 @api_v1_bp.route("/webhooks/events", methods=["GET"])
@@ -3212,7 +3402,13 @@ def list_stock_items_api():
 
     if search:
         like = f"%{search}%"
-        query = query.filter(or_(StockItem.sku.ilike(like), StockItem.name.ilike(like), StockItem.barcode.ilike(like)))
+        query = query.filter(
+            or_(
+                StockItem.sku.ilike(like),
+                StockItem.name.ilike(like),
+                StockItem.barcode.ilike(like),
+            )
+        )
 
     if category:
         query = query.filter_by(category=category)
@@ -3351,7 +3547,14 @@ def get_stock_availability_api(item_id):
             }
         )
 
-    return jsonify({"item_id": item_id, "item_sku": item.sku, "item_name": item.name, "availability": availability})
+    return jsonify(
+        {
+            "item_id": item_id,
+            "item_sku": item.sku,
+            "item_name": item.name,
+            "availability": availability,
+        }
+    )
 
 
 @api_v1_bp.route("/inventory/warehouses", methods=["GET"])
@@ -3767,7 +3970,8 @@ def create_transfer_api():
         missing.append("quantity")
     if missing:
         return validation_error_response(
-            {f: ["Required"] for f in missing}, "Missing required fields: " + ", ".join(missing)
+            {f: ["Required"] for f in missing},
+            "Missing required fields: " + ", ".join(missing),
         )
 
     try:
@@ -3838,7 +4042,10 @@ def create_transfer_api():
                 "message": "Stock transfer completed successfully",
                 "reference_id": transfer_ref_id,
                 "transfers": [
-                    {"movement_id": out_movement.id, "movement": out_movement.to_dict()},
+                    {
+                        "movement_id": out_movement.id,
+                        "movement": out_movement.to_dict(),
+                    },
                     {"movement_id": in_movement.id, "movement": in_movement.to_dict()},
                 ],
             }
@@ -4274,7 +4481,12 @@ def create_purchase_order_api():
         db.session.commit()
 
         return (
-            jsonify({"message": "Purchase order created successfully", "purchase_order": purchase_order.to_dict()}),
+            jsonify(
+                {
+                    "message": "Purchase order created successfully",
+                    "purchase_order": purchase_order.to_dict(),
+                }
+            ),
             201,
         )
     except IntegrityError:
@@ -4358,7 +4570,12 @@ def update_purchase_order_api(po_id):
             purchase_order.calculate_totals()
 
         db.session.commit()
-        return jsonify({"message": "Purchase order updated successfully", "purchase_order": purchase_order.to_dict()})
+        return jsonify(
+            {
+                "message": "Purchase order updated successfully",
+                "purchase_order": purchase_order.to_dict(),
+            }
+        )
     except IntegrityError:
         db.session.rollback()
         current_app.logger.exception("Purchase order update conflict or integrity error")
@@ -4444,7 +4661,12 @@ def receive_purchase_order_api(po_id):
         db.session.commit()
 
         return (
-            jsonify({"message": "Purchase order received successfully", "purchase_order": purchase_order.to_dict()}),
+            jsonify(
+                {
+                    "message": "Purchase order received successfully",
+                    "purchase_order": purchase_order.to_dict(),
+                }
+            ),
             200,
         )
     except Exception as e:
@@ -4613,7 +4835,12 @@ def submit_timesheet_period(period_id):
     result = WorkforceGovernanceService().submit_period(period_id=period_id, actor_id=g.api_user.id)
     if not result.get("success"):
         return jsonify({"error": result.get("message", "Could not submit period")}), 400
-    return jsonify({"message": "Timesheet period submitted", "timesheet_period": result["period"].to_dict()})
+    return jsonify(
+        {
+            "message": "Timesheet period submitted",
+            "timesheet_period": result["period"].to_dict(),
+        }
+    )
 
 
 @api_v1_bp.route("/timesheet-periods/<int:period_id>/approve", methods=["POST"])
@@ -4630,7 +4857,12 @@ def approve_timesheet_period(period_id):
     )
     if not result.get("success"):
         return jsonify({"error": result.get("message", "Could not approve period")}), 400
-    return jsonify({"message": "Timesheet period approved", "timesheet_period": result["period"].to_dict()})
+    return jsonify(
+        {
+            "message": "Timesheet period approved",
+            "timesheet_period": result["period"].to_dict(),
+        }
+    )
 
 
 @api_v1_bp.route("/timesheet-periods/<int:period_id>/reject", methods=["POST"])
@@ -4649,7 +4881,12 @@ def reject_timesheet_period(period_id):
     result = WorkforceGovernanceService().reject_period(period_id=period_id, approver_id=g.api_user.id, reason=reason)
     if not result.get("success"):
         return jsonify({"error": result.get("message", "Could not reject period")}), 400
-    return jsonify({"message": "Timesheet period rejected", "timesheet_period": result["period"].to_dict()})
+    return jsonify(
+        {
+            "message": "Timesheet period rejected",
+            "timesheet_period": result["period"].to_dict(),
+        }
+    )
 
 
 @api_v1_bp.route("/timesheet-periods/<int:period_id>/close", methods=["POST"])
@@ -4666,7 +4903,12 @@ def close_timesheet_period(period_id):
     )
     if not result.get("success"):
         return jsonify({"error": result.get("message", "Could not close period")}), 400
-    return jsonify({"message": "Timesheet period closed", "timesheet_period": result["period"].to_dict()})
+    return jsonify(
+        {
+            "message": "Timesheet period closed",
+            "timesheet_period": result["period"].to_dict(),
+        }
+    )
 
 
 @api_v1_bp.route("/timesheet-periods/<int:period_id>", methods=["DELETE"])
@@ -4835,7 +5077,15 @@ def create_time_off_request_api():
     )
     if not result.get("success"):
         return jsonify({"error": result.get("message", "Could not create request")}), 400
-    return jsonify({"message": "Time-off request created", "time_off_request": result["request"].to_dict()}), 201
+    return (
+        jsonify(
+            {
+                "message": "Time-off request created",
+                "time_off_request": result["request"].to_dict(),
+            }
+        ),
+        201,
+    )
 
 
 @api_v1_bp.route("/time-off/requests/<int:request_id>/approve", methods=["POST"])
@@ -4848,11 +5098,19 @@ def approve_time_off_request_api(request_id):
 
     data = request.get_json() or {}
     result = WorkforceGovernanceService().review_leave_request(
-        request_id=request_id, reviewer_id=g.api_user.id, approve=True, comment=data.get("comment")
+        request_id=request_id,
+        reviewer_id=g.api_user.id,
+        approve=True,
+        comment=data.get("comment"),
     )
     if not result.get("success"):
         return jsonify({"error": result.get("message", "Could not approve request")}), 400
-    return jsonify({"message": "Time-off request approved", "time_off_request": result["request"].to_dict()})
+    return jsonify(
+        {
+            "message": "Time-off request approved",
+            "time_off_request": result["request"].to_dict(),
+        }
+    )
 
 
 @api_v1_bp.route("/time-off/requests/<int:request_id>/reject", methods=["POST"])
@@ -4865,11 +5123,19 @@ def reject_time_off_request_api(request_id):
 
     data = request.get_json() or {}
     result = WorkforceGovernanceService().review_leave_request(
-        request_id=request_id, reviewer_id=g.api_user.id, approve=False, comment=data.get("comment")
+        request_id=request_id,
+        reviewer_id=g.api_user.id,
+        approve=False,
+        comment=data.get("comment"),
     )
     if not result.get("success"):
         return jsonify({"error": result.get("message", "Could not reject request")}), 400
-    return jsonify({"message": "Time-off request rejected", "time_off_request": result["request"].to_dict()})
+    return jsonify(
+        {
+            "message": "Time-off request rejected",
+            "time_off_request": result["request"].to_dict(),
+        }
+    )
 
 
 @api_v1_bp.route("/time-off/requests/<int:request_id>", methods=["DELETE"])
@@ -4931,7 +5197,11 @@ def create_holiday_api():
         return jsonify({"error": "name, start_date and end_date are required"}), 400
 
     holiday = CompanyHoliday(
-        name=name, start_date=start, end_date=end, region=data.get("region"), enabled=bool(data.get("enabled", True))
+        name=name,
+        start_date=start,
+        end_date=end,
+        region=data.get("region"),
+        enabled=bool(data.get("enabled", True)),
     )
     db.session.add(holiday)
     db.session.commit()

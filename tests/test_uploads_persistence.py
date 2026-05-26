@@ -4,12 +4,14 @@ This module tests that uploaded files (logos and avatars) persist correctly
 across application restarts and container rebuilds when using Docker volumes.
 """
 
-import pytest
-import os
 import io
-from app import db
-from app.models import User, Settings
+import os
+
+import pytest
 from PIL import Image
+
+from app import db
+from app.models import Settings, User
 
 # ============================================================================
 # Fixtures

@@ -52,6 +52,7 @@ def register_all_blueprints(app, logger=None):
     from app.routes.api import api_bp
     from app.routes.api_docs import api_docs_bp, swaggerui_blueprint
     from app.routes.api_v1 import api_v1_bp
+
     # importlib avoids shadowing the Flask `app` parameter (plain `import app.routes...` binds local `app`)
     from importlib import import_module
 

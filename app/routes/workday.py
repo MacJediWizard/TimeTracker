@@ -61,13 +61,10 @@ def workday_history():
 
     from app.models import WorkdaySession
 
-    query = (
-        WorkdaySession.query.filter(
-            WorkdaySession.user_id == current_user.id,
-            WorkdaySession.start_time >= datetime.combine(start_date, datetime.min.time()),
-        )
-        .order_by(WorkdaySession.start_time.desc())
-    )
+    query = WorkdaySession.query.filter(
+        WorkdaySession.user_id == current_user.id,
+        WorkdaySession.start_time >= datetime.combine(start_date, datetime.min.time()),
+    ).order_by(WorkdaySession.start_time.desc())
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
 
     return render_template(
@@ -91,9 +88,7 @@ def violation_justify(violation_id):
 
     if request.method == "POST":
         justification = request.form.get("justification", "").strip()
-        result = WorkingTimeLimitService().submit_justification(
-            violation_id, current_user.id, justification
-        )
+        result = WorkingTimeLimitService().submit_justification(violation_id, current_user.id, justification)
         if result["success"]:
             flash(_("Thank you. Your justification has been submitted."), "success")
             return redirect(url_for("workday.violations_list"))
@@ -116,7 +111,9 @@ def admin_working_time_list():
     if status_filter and status_filter != "all":
         query = query.filter_by(status=status_filter)
     violations = query.order_by(WorkingTimeViolation.created_at.desc()).limit(200).all()
-    users = {u.id: u for u in User.query.filter(User.id.in_({v.user_id for v in violations})).all()} if violations else {}
+    users = (
+        {u.id: u for u in User.query.filter(User.id.in_({v.user_id for v in violations})).all()} if violations else {}
+    )
 
     return render_template(
         "workday/admin_violations.html",

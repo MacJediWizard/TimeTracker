@@ -303,7 +303,7 @@ jobs:
           # Start container
           CONTAINER_ID=$(docker run -d --name test-container \
             -p 8080:8080 \
-            -e DATABASE_URL="sqlite:////app/test.db" \
+            -e DATABASE_URL="sqlite:////tmp/test.db" \
             -e SECRET_KEY="test-secret-key-for-ci-only-$(openssl rand -hex 32)" \
             -e FLASK_ENV="development" \
             timetracker-test:pr-${{ github.event.pull_request.number || 'dev' }})

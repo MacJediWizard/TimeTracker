@@ -2,8 +2,9 @@
 
 import pytest
 from flask import url_for
-from app.models import AuditLog, User, Project
+
 from app import db
+from app.models import AuditLog, Project, User
 
 
 class TestAuditLogRoutes:
@@ -42,6 +43,7 @@ class TestAuditLogRoutes:
                     entity_name=project.name,
                 )
 
+                db.session.commit()
             # Login as admin
             with client.session_transaction() as sess:
                 sess["_user_id"] = str(admin_user.id)
@@ -88,6 +90,7 @@ class TestAuditLogRoutes:
                     entity_name=test_project.name,
                 )
 
+                db.session.commit()
             # Login as admin
             with client.session_transaction() as sess:
                 sess["_user_id"] = str(admin_user.id)
@@ -107,6 +110,7 @@ class TestAuditLogRoutes:
                 entity_name=test_project.name,
             )
 
+            db.session.commit()
             # Login as admin
             with client.session_transaction() as sess:
                 sess["_user_id"] = str(admin_user.id)
@@ -131,6 +135,7 @@ class TestAuditLogRoutes:
                 entity_name=test_project.name,
             )
 
+            db.session.commit()
             # Login as admin
             with client.session_transaction() as sess:
                 sess["_user_id"] = str(admin_user.id)
@@ -150,6 +155,7 @@ class TestAuditLogRoutes:
                 entity_name=test_project.name,
             )
 
+            db.session.commit()
             # Login as admin
             with client.session_transaction() as sess:
                 sess["_user_id"] = str(admin_user.id)
@@ -169,6 +175,7 @@ class TestAuditLogRoutes:
                 entity_name=test_project.name,
             )
 
+            db.session.commit()
             # Login as admin
             with client.session_transaction() as sess:
                 sess["_user_id"] = str(admin_user.id)

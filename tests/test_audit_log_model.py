@@ -1,9 +1,11 @@
 """Tests for AuditLog model"""
 
-import pytest
 from datetime import datetime
-from app.models import AuditLog, User, Project
+
+import pytest
+
 from app import db
+from app.models import AuditLog, Project, User
 
 
 class TestAuditLogModel:
@@ -45,6 +47,7 @@ class TestAuditLogModel:
                 change_description="Updated project name",
             )
 
+            db.session.commit()
             audit_log = AuditLog.query.filter_by(
                 user_id=test_user.id, entity_type="Project", entity_id=test_project.id, field_name="name"
             ).first()
@@ -73,6 +76,7 @@ class TestAuditLogModel:
                 entity_name=test_project.name,
             )
 
+            db.session.commit()
             audit_log = AuditLog.query.filter_by(
                 entity_type="Project", entity_id=test_project.id, field_name="updated_at"
             ).first()
@@ -101,6 +105,7 @@ class TestAuditLogModel:
                     entity_name=test_project.name,
                 )
 
+                db.session.commit()
             # Get audit logs for this entity
             logs = AuditLog.get_for_entity("Project", test_project.id, limit=3)
 
@@ -124,6 +129,7 @@ class TestAuditLogModel:
                     entity_name=test_project.name,
                 )
 
+                db.session.commit()
             # Get audit logs for this user
             logs = AuditLog.get_for_user(test_user.id, limit=3)
 
@@ -141,6 +147,7 @@ class TestAuditLogModel:
                 entity_id=test_project.id,
                 entity_name=test_project.name,
             )
+            db.session.commit()
             AuditLog.log_change(
                 user_id=test_user.id,
                 action="updated",
@@ -151,6 +158,7 @@ class TestAuditLogModel:
                 new_value="New",
                 entity_name=test_project.name,
             )
+            db.session.commit()
             AuditLog.log_change(
                 user_id=test_user.id,
                 action="deleted",
@@ -159,6 +167,7 @@ class TestAuditLogModel:
                 entity_name=test_project.name,
             )
 
+            db.session.commit()
             # Filter by action
             created_logs = AuditLog.get_recent(action="created", limit=10)
             assert len(created_logs) == 1

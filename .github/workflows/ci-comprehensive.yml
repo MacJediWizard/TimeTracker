@@ -111,6 +111,7 @@ jobs:
       
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
+        continue-on-error: true
         with:
           files: ./coverage.xml
           flags: unit-${{ matrix.test-group }}
@@ -177,6 +178,7 @@ jobs:
       
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
+        continue-on-error: true
         with:
           files: ./coverage.xml
           flags: integration
@@ -482,6 +484,7 @@ jobs:
       
       - name: Upload full coverage
         uses: codecov/codecov-action@v4
+        continue-on-error: true
         with:
           files: ./coverage.xml
           flags: full-suite

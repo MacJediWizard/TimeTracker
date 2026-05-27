@@ -2,10 +2,8 @@
 
 from datetime import datetime
 
-import pytest
-
 from app import db
-from app.models import AuditLog, Project, User
+from app.models import AuditLog
 
 
 class TestAuditLogModel:
@@ -49,7 +47,10 @@ class TestAuditLogModel:
 
             db.session.commit()
             audit_log = AuditLog.query.filter_by(
-                user_id=test_user.id, entity_type="Project", entity_id=test_project.id, field_name="name"
+                user_id=test_user.id,
+                entity_type="Project",
+                entity_id=test_project.id,
+                field_name="name",
             ).first()
 
             assert audit_log is not None
@@ -78,7 +79,9 @@ class TestAuditLogModel:
 
             db.session.commit()
             audit_log = AuditLog.query.filter_by(
-                entity_type="Project", entity_id=test_project.id, field_name="updated_at"
+                entity_type="Project",
+                entity_id=test_project.id,
+                field_name="updated_at",
             ).first()
 
             assert audit_log is not None
@@ -168,8 +171,10 @@ class TestAuditLogModel:
             )
 
             db.session.commit()
-            # Filter by action
-            created_logs = AuditLog.get_recent(action="created", limit=10)
+            # Filter by action — scope to Project so fixture-driven creates
+            # (User/Client/Project/Settings) on PostgreSQL don't pollute the
+            # count.
+            created_logs = AuditLog.get_recent(action="created", entity_type="Project", limit=10)
             assert len(created_logs) == 1
             assert created_logs[0].action == "created"
 
@@ -206,19 +211,28 @@ class TestAuditLogModel:
         """Test icon and color methods"""
         with app.app_context():
             created_log = AuditLog(
-                user_id=test_user.id, action="created", entity_type="Project", entity_id=test_project.id
+                user_id=test_user.id,
+                action="created",
+                entity_type="Project",
+                entity_id=test_project.id,
             )
             assert "green" in created_log.get_icon()
             assert created_log.get_color() == "green"
 
             updated_log = AuditLog(
-                user_id=test_user.id, action="updated", entity_type="Project", entity_id=test_project.id
+                user_id=test_user.id,
+                action="updated",
+                entity_type="Project",
+                entity_id=test_project.id,
             )
             assert "blue" in updated_log.get_icon()
             assert updated_log.get_color() == "blue"
 
             deleted_log = AuditLog(
-                user_id=test_user.id, action="deleted", entity_type="Project", entity_id=test_project.id
+                user_id=test_user.id,
+                action="deleted",
+                entity_type="Project",
+                entity_id=test_project.id,
             )
             assert "red" in deleted_log.get_icon()
             assert deleted_log.get_color() == "red"

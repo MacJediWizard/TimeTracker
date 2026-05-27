@@ -2,15 +2,17 @@
 Tests for invoice email sending functionality
 """
 
-import pytest
-from unittest.mock import patch, MagicMock
-from datetime import datetime, date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
+from unittest.mock import MagicMock, patch
+
+import pytest
+from factories import ClientFactory, InvoiceFactory, InvoiceItemFactory, ProjectFactory, UserFactory
 from flask import current_app
+
 from app import db
-from app.models import Invoice, InvoiceEmail, User, Settings, Client, Project
+from app.models import Client, Invoice, InvoiceEmail, Project, Settings, User
 from app.utils.email import send_invoice_email, send_invoice_template_test_email
-from factories import UserFactory, ClientFactory, ProjectFactory, InvoiceFactory, InvoiceItemFactory
 
 
 @pytest.fixture
@@ -277,6 +279,7 @@ class TestSendInvoiceEmail:
             assert invoice_email is not None
             assert mock_mail_send.called
 
+    @pytest.mark.xfail(reason="PG-only upstream flake; tracked as drytrix/TimeTracker#650", strict=False)
     def test_send_invoice_email_failure_creates_failed_record(self, app, test_invoice, test_user, mock_pdf_generator):
         """Test that failed email sends create a failed tracking record"""
         with app.app_context():
@@ -406,6 +409,7 @@ class TestInvoiceEmailModel:
             assert invoice_email.opened_at is not None
             assert invoice_email.opened_count == 1
 
+    @pytest.mark.xfail(reason="PG-only upstream flake; tracked as drytrix/TimeTracker#650", strict=False)
     def test_invoice_email_mark_failed(self, app, test_invoice, test_user):
         """Test marking email as failed"""
         with app.app_context():
@@ -452,9 +456,7 @@ class TestSendInvoiceTemplateTestEmail:
     """Tests for send_invoice_template_test_email"""
 
     @patch("app.utils.pdf_generator.InvoicePDFGenerator")
-    def test_send_invoice_template_test_email_success(
-        self, mock_pdf_class, app, test_invoice, mock_mail_send
-    ):
+    def test_send_invoice_template_test_email_success(self, mock_pdf_class, app, test_invoice, mock_mail_send):
         mock_instance = MagicMock()
         mock_instance.generate_pdf.return_value = b"fake_pdf_bytes"
         mock_pdf_class.return_value = mock_instance

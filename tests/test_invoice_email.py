@@ -2,16 +2,22 @@
 Tests for invoice email sending functionality
 """
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 import pytest
-from factories import ClientFactory, InvoiceFactory, InvoiceItemFactory, ProjectFactory, UserFactory
+from factories import (
+    ClientFactory,
+    InvoiceFactory,
+    InvoiceItemFactory,
+    ProjectFactory,
+    UserFactory,
+)
 from flask import current_app
 
 from app import db
-from app.models import Client, Invoice, InvoiceEmail, Project, Settings, User
+from app.models import InvoiceEmail
 from app.utils.email import send_invoice_email, send_invoice_template_test_email
 
 
@@ -36,7 +42,10 @@ def test_client(app):
 def test_project(app, test_client):
     """Create a test project"""
     project = ProjectFactory(
-        name="Test Project", client_id=test_client.id, billable=True, hourly_rate=Decimal("100.00")
+        name="Test Project",
+        client_id=test_client.id,
+        billable=True,
+        hourly_rate=Decimal("100.00"),
     )
     db.session.commit()
     return project
@@ -57,18 +66,17 @@ def test_invoice(app, test_user, test_project, test_client):
         subtotal=Decimal("1000.00"),
         tax_rate=Decimal("20.00"),
         tax_amount=Decimal("200.00"),
-        total_amount=Decimal("1200.00"),
         currency_code="EUR",
     )
+    invoice.total_amount = Decimal("1200.00")
     db.session.commit()
 
-    # Add invoice item
+    # Add invoice item (total_amount is auto-computed in InvoiceItem.__init__)
     item = InvoiceItemFactory(
         invoice_id=invoice.id,
         description="Test Service",
         quantity=Decimal("10.00"),
         unit_price=Decimal("100.00"),
-        total_amount=Decimal("1000.00"),
     )
     db.session.commit()
 
@@ -103,7 +111,9 @@ class TestSendInvoiceEmail:
             current_app.config["MAIL_DEFAULT_SENDER"] = "noreply@test.com"
 
             success, invoice_email, message = send_invoice_email(
-                invoice=test_invoice, recipient_email="client@test.com", sender_user=test_user
+                invoice=test_invoice,
+                recipient_email="client@test.com",
+                sender_user=test_user,
             )
 
             assert success is True
@@ -159,7 +169,9 @@ class TestSendInvoiceEmail:
                     mock_fallback.return_value = mock_fallback_instance
 
                     success, invoice_email, message = send_invoice_email(
-                        invoice=test_invoice, recipient_email="client@test.com", sender_user=test_user
+                        invoice=test_invoice,
+                        recipient_email="client@test.com",
+                        sender_user=test_user,
                     )
 
                     assert success is False
@@ -172,7 +184,9 @@ class TestSendInvoiceEmail:
             current_app.config["MAIL_SERVER"] = None
 
             success, invoice_email, message = send_invoice_email(
-                invoice=test_invoice, recipient_email="client@test.com", sender_user=test_user
+                invoice=test_invoice,
+                recipient_email="client@test.com",
+                sender_user=test_user,
             )
 
             # Should still attempt to send but may fail gracefully
@@ -191,7 +205,9 @@ class TestSendInvoiceEmail:
             initial_count = InvoiceEmail.query.filter_by(invoice_id=test_invoice.id).count()
 
             success, invoice_email, message = send_invoice_email(
-                invoice=test_invoice, recipient_email="client@test.com", sender_user=test_user
+                invoice=test_invoice,
+                recipient_email="client@test.com",
+                sender_user=test_user,
             )
 
             assert success is True
@@ -218,7 +234,9 @@ class TestSendInvoiceEmail:
             db.session.commit()
 
             success, invoice_email, message = send_invoice_email(
-                invoice=test_invoice, recipient_email="client@test.com", sender_user=test_user
+                invoice=test_invoice,
+                recipient_email="client@test.com",
+                sender_user=test_user,
             )
 
             assert success is True
@@ -240,7 +258,9 @@ class TestSendInvoiceEmail:
             db.session.commit()
 
             success, invoice_email, message = send_invoice_email(
-                invoice=test_invoice, recipient_email="client@test.com", sender_user=test_user
+                invoice=test_invoice,
+                recipient_email="client@test.com",
+                sender_user=test_user,
             )
 
             assert success is True
@@ -279,7 +299,10 @@ class TestSendInvoiceEmail:
             assert invoice_email is not None
             assert mock_mail_send.called
 
-    @pytest.mark.xfail(reason="PG-only upstream flake; tracked as drytrix/TimeTracker#650", strict=False)
+    @pytest.mark.xfail(
+        reason="PG-only upstream flake; tracked as drytrix/TimeTracker#650",
+        strict=False,
+    )
     def test_send_invoice_email_failure_creates_failed_record(self, app, test_invoice, test_user, mock_pdf_generator):
         """Test that failed email sends create a failed tracking record"""
         with app.app_context():
@@ -291,7 +314,9 @@ class TestSendInvoiceEmail:
                 mock_send.side_effect = Exception("SMTP connection failed")
 
                 success, invoice_email, message = send_invoice_email(
-                    invoice=test_invoice, recipient_email="client@test.com", sender_user=test_user
+                    invoice=test_invoice,
+                    recipient_email="client@test.com",
+                    sender_user=test_user,
                 )
 
                 assert success is False
@@ -333,7 +358,11 @@ class TestInvoiceEmailRoutes:
             current_app.config["MAIL_SERVER"] = "smtp.test.com"
             current_app.config["MAIL_DEFAULT_SENDER"] = "noreply@test.com"
 
-            send_invoice_email(invoice=test_invoice, recipient_email="client@test.com", sender_user=test_user)
+            send_invoice_email(
+                invoice=test_invoice,
+                recipient_email="client@test.com",
+                sender_user=test_user,
+            )
 
         # Then get history
         response = client.get(f"/invoices/{test_invoice.id}/email-history")
@@ -355,14 +384,19 @@ class TestInvoiceEmailRoutes:
             current_app.config["MAIL_DEFAULT_SENDER"] = "noreply@test.com"
 
             success, invoice_email, _ = send_invoice_email(
-                invoice=test_invoice, recipient_email="client@test.com", sender_user=test_user
+                invoice=test_invoice,
+                recipient_email="client@test.com",
+                sender_user=test_user,
             )
 
             if success and invoice_email:
                 # Then resend it
                 response = client.post(
                     f"/invoices/{test_invoice.id}/resend-email/{invoice_email.id}",
-                    data={"recipient_email": "client@test.com", "csrf_token": "test_token"},
+                    data={
+                        "recipient_email": "client@test.com",
+                        "csrf_token": "test_token",
+                    },
                 )
 
                 # Should return success (may need to handle CSRF token properly)
@@ -409,7 +443,10 @@ class TestInvoiceEmailModel:
             assert invoice_email.opened_at is not None
             assert invoice_email.opened_count == 1
 
-    @pytest.mark.xfail(reason="PG-only upstream flake; tracked as drytrix/TimeTracker#650", strict=False)
+    @pytest.mark.xfail(
+        reason="PG-only upstream flake; tracked as drytrix/TimeTracker#650",
+        strict=False,
+    )
     def test_invoice_email_mark_failed(self, app, test_invoice, test_user):
         """Test marking email as failed"""
         with app.app_context():

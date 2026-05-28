@@ -479,7 +479,7 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}
           INSTALLATION_CONFIG_DIR: ${{ github.workspace }}/.test_installation_config
         run: |
-          pytest -v -n auto --cov=app --cov-report=xml --cov-report=html --cov-report=term-missing \
+          pytest -v -n auto --cov=app --cov-report=xml --timeout=120 \
                  --cov-fail-under=35 --junitxml=junit.xml --maxfail=5
       
       - name: Upload full coverage

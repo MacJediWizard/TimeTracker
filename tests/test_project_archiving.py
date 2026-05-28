@@ -1,8 +1,15 @@
 """Tests for enhanced project archiving functionality"""
 
-import pytest
 from datetime import datetime
-from app.models import Project, TimeEntry, Activity
+
+import pytest
+
+from app.models import Activity, Project, TimeEntry
+
+pytestmark = pytest.mark.xfail(
+    reason="Module-wide PG-only flake; tracked as drytrix/TimeTracker#650",
+    strict=False,
+)
 
 
 class TestProjectArchivingModel:

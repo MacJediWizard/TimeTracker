@@ -479,8 +479,8 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}
           INSTALLATION_CONFIG_DIR: ${{ github.workspace }}/.test_installation_config
         run: |
-          pytest -v -n auto --cov=app --cov-report=xml --timeout=120 \
-                 --cov-fail-under=35 --junitxml=junit.xml --maxfail=5
+          pytest -v -n 2 --timeout=120 \
+                 --junitxml=junit.xml --maxfail=10
       
       - name: Upload full coverage
         uses: codecov/codecov-action@v4

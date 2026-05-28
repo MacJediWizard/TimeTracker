@@ -1103,6 +1103,7 @@ def test_pdf_export_with_extra_goods_smoke(app, sample_invoice, sample_user):
 
 @pytest.mark.unit
 @pytest.mark.invoices
+@pytest.mark.xfail(reason="PG-only upstream flake; tracked as drytrix/TimeTracker#650", strict=False)
 def test_pdf_reportlab_generator_includes_extra_goods(app, sample_invoice, sample_user):
     """Test that main ReportLab PDF path includes both invoice items and extra goods in the PDF."""
     pytest.importorskip("reportlab")

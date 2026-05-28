@@ -7,6 +7,8 @@ Run this to check if logo is properly configured and can be embedded in PDFs
 import os
 import sys
 
+import pytest
+
 # Add app to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 

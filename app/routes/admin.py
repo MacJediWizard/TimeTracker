@@ -647,8 +647,14 @@ def allowed_logo_file(filename):
 
 
 def get_upload_folder():
-    """Get the upload folder path for logos"""
-    upload_folder = os.path.join(current_app.root_path, "static", "uploads", "logos")
+    """Get the upload folder path for logos.
+
+    Honors a LOGO_UPLOAD_FOLDER override in app config so tests can point
+    every code path at an isolated tmp dir (avoids cross-talk under
+    pytest-xdist when multiple workers upload simultaneously).
+    """
+    override = current_app.config.get("LOGO_UPLOAD_FOLDER")
+    upload_folder = override or os.path.join(current_app.root_path, "static", "uploads", "logos")
     try:
         os.makedirs(upload_folder, exist_ok=True)
         current_app.logger.info(f"Logo upload folder ensured: {upload_folder}")

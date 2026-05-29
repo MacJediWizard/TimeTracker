@@ -92,7 +92,11 @@ class Settings(db.Model):
     invoice_prefix = db.Column(db.String(50), default="INV", nullable=False)
     invoice_number_pattern = db.Column(db.String(120), default=DEFAULT_INVOICE_PATTERN, nullable=False)
     invoice_start_number = db.Column(db.Integer, default=1000, nullable=False)
-    invoice_terms = db.Column(db.Text, default="Payment is due within 30 days of invoice date.", nullable=False)
+    invoice_terms = db.Column(
+        db.Text,
+        default="Payment is due within 30 days of invoice date.",
+        nullable=False,
+    )
     invoice_notes = db.Column(db.Text, default="Thank you for your business!", nullable=False)
 
     # Peppol e-invoicing (optional; can be configured via WebUI or env)
@@ -350,14 +354,20 @@ class Settings(db.Model):
         return None
 
     def get_logo_path(self):
-        """Get the full file system path for the company logo"""
+        """Get the full file system path for the company logo.
+
+        Honors LOGO_UPLOAD_FOLDER on the Flask app config so tests can
+        redirect uploads to an isolated directory (the matching override
+        also lives in app/routes/admin.get_upload_folder).
+        """
         if not self.company_logo_filename:
             return None
 
         try:
             from flask import current_app
 
-            upload_folder = os.path.join(current_app.root_path, "static", "uploads", "logos")
+            override = current_app.config.get("LOGO_UPLOAD_FOLDER")
+            upload_folder = override or os.path.join(current_app.root_path, "static", "uploads", "logos")
             return os.path.join(upload_folder, self.company_logo_filename)
         except RuntimeError:
             # current_app not available (e.g., during testing or initialization)
@@ -481,7 +491,11 @@ class Settings(db.Model):
             )
             tenant_id = getattr(self, "outlook_calendar_tenant_id", "") or os.getenv("OUTLOOK_TENANT_ID", "")
             client_secret = decrypt_if_needed(client_secret_raw) if include_secrets else ""
-            return {"client_id": client_id, "client_secret": client_secret, "tenant_id": tenant_id}
+            return {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "tenant_id": tenant_id,
+            }
 
         elif provider == "microsoft_teams":
             client_id = getattr(self, "microsoft_teams_client_id", "") or os.getenv("MICROSOFT_TEAMS_CLIENT_ID", "")
@@ -490,7 +504,11 @@ class Settings(db.Model):
             )
             tenant_id = getattr(self, "microsoft_teams_tenant_id", "") or os.getenv("MICROSOFT_TEAMS_TENANT_ID", "")
             client_secret = decrypt_if_needed(client_secret_raw) if include_secrets else ""
-            return {"client_id": client_id, "client_secret": client_secret, "tenant_id": tenant_id}
+            return {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "tenant_id": tenant_id,
+            }
 
         elif provider == "asana":
             client_id = getattr(self, "asana_client_id", "") or os.getenv("ASANA_CLIENT_ID", "")
@@ -511,7 +529,11 @@ class Settings(db.Model):
                 "GITLAB_INSTANCE_URL", "https://gitlab.com"
             )
             client_secret = decrypt_if_needed(client_secret_raw) if include_secrets else ""
-            return {"client_id": client_id, "client_secret": client_secret, "instance_url": instance_url}
+            return {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "instance_url": instance_url,
+            }
 
         elif provider == "quickbooks":
             client_id = getattr(self, "quickbooks_client_id", "") or os.getenv("QUICKBOOKS_CLIENT_ID", "")
@@ -713,7 +735,9 @@ class Settings(db.Model):
                     "hypothesisId": "D",
                 }
                 log_path = os.path.join(
-                    os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".cursor", "debug.log"
+                    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                    ".cursor",
+                    "debug.log",
                 )
                 with open(log_path, "a", encoding="utf-8") as f:
                     f.write(json.dumps(log_data) + "\n")

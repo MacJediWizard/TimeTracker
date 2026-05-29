@@ -93,10 +93,7 @@ def send_signoff(period_id: int):
         template = TimesheetSignoffService.resolve_template_for_client(client)
     if not template:
         flash(
-            _(
-                "No signoff template is configured. Create one in "
-                "Admin → Signoff Templates first."
-            ),
+            _("No signoff template is configured. Create one in " "Admin → Signoff Templates first."),
             "error",
         )
         return redirect(url_for("workforce.dashboard"))
@@ -180,11 +177,7 @@ def download_signed_pdf(request_id: int):
     if period and not _can_act_on_period(period):
         abort(403)
 
-    esig = (
-        ESignatureRequest.query.get(signoff.esignature_request_id)
-        if signoff.esignature_request_id
-        else None
-    )
+    esig = ESignatureRequest.query.get(signoff.esignature_request_id) if signoff.esignature_request_id else None
     if not esig or not esig.signed_document_path:
         abort(404)
     path = Path(esig.signed_document_path)
@@ -194,9 +187,7 @@ def download_signed_pdf(request_id: int):
         path,
         mimetype="application/pdf",
         as_attachment=True,
-        download_name=(
-            f"timesheet-{signoff.period_start}-{signoff.period_end}-signed.pdf"
-        ),
+        download_name=(f"timesheet-{signoff.period_start}-{signoff.period_end}-signed.pdf"),
     )
 
 
@@ -208,11 +199,7 @@ def download_coc(request_id: int):
     if period and not _can_act_on_period(period):
         abort(403)
 
-    esig = (
-        ESignatureRequest.query.get(signoff.esignature_request_id)
-        if signoff.esignature_request_id
-        else None
-    )
+    esig = ESignatureRequest.query.get(signoff.esignature_request_id) if signoff.esignature_request_id else None
     if not esig or not esig.audit_certificate_path:
         abort(404)
     path = Path(esig.audit_certificate_path)
@@ -222,7 +209,5 @@ def download_coc(request_id: int):
         path,
         mimetype="application/pdf",
         as_attachment=True,
-        download_name=(
-            f"timesheet-{signoff.period_start}-{signoff.period_end}-coc.pdf"
-        ),
+        download_name=(f"timesheet-{signoff.period_start}-{signoff.period_end}-coc.pdf"),
     )

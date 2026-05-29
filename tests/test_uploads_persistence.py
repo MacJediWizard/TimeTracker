@@ -77,23 +77,24 @@ def uploads_dir(app):
 
 
 @pytest.fixture
-def cleanup_test_files(app):
-    """Clean up only logo files created during this test (safe under pytest-xdist)."""
-    with app.app_context():
-        upload_folder = os.path.join(app.root_path, "static", "uploads", "logos")
-        before = set(os.listdir(upload_folder)) if os.path.isdir(upload_folder) else set()
-    yield
-    with app.app_context():
-        if not os.path.isdir(upload_folder):
-            return
-        for filename in set(os.listdir(upload_folder)) - before:
-            if filename.startswith("test_") or filename.startswith("company_logo_"):
-                try:
-                    os.remove(os.path.join(upload_folder, filename))
-                except OSError:
-                    # Best-effort cleanup in teardown: ignore files that were removed
-                    # concurrently or are temporarily inaccessible.
-                    pass
+def cleanup_test_files(app, tmp_path, monkeypatch):
+    """Isolate the logo upload folder to this test only.
+
+    The previous implementation tracked filenames before-yield and removed
+    only the delta during teardown. That isn't safe under pytest-xdist
+    because parallel workers share the same `app/static/uploads/logos`
+    directory: one worker's cleanup deletes another worker's freshly
+    uploaded file. Redirect get_upload_folder() to a per-test tmp_path
+    instead so every test sees its own filesystem and no cross-talk.
+    """
+    isolated = tmp_path / "logos"
+    isolated.mkdir(parents=True, exist_ok=True)
+
+    # Both app.routes.admin.get_upload_folder and Settings.get_logo_path
+    # consult app.config["LOGO_UPLOAD_FOLDER"], so this single override
+    # routes every upload + lookup through the isolated tmp dir.
+    monkeypatch.setitem(app.config, "LOGO_UPLOAD_FOLDER", str(isolated))
+    yield isolated
 
 
 # ============================================================================

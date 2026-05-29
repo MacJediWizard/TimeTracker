@@ -3,11 +3,13 @@ Test suite for calendar routes and endpoints.
 Tests calendar views, event CRUD operations, and API endpoints.
 """
 
-import pytest
 import json
 from datetime import datetime, timedelta
-from app.models import CalendarEvent, Task
+
+import pytest
+
 from app import db
+from app.models import CalendarEvent, Task
 
 # ============================================================================
 # Calendar View Routes

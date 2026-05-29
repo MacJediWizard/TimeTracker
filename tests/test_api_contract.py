@@ -10,8 +10,9 @@ import pytest
 pytestmark = [pytest.mark.api, pytest.mark.integration]
 
 import json
+
 from app import db
-from app.models import User, Project, Client, ApiToken
+from app.models import ApiToken, Client, Project, User
 
 
 @pytest.fixture

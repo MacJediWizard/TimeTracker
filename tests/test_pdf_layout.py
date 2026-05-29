@@ -1,21 +1,16 @@
 """Tests for PDF layout customization functionality."""
 
 import json
+from datetime import date, timedelta
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 import pytest
-from datetime import date, timedelta
-from decimal import Decimal
-from app import db
-from app.models import User, Project, Invoice, InvoiceItem, Settings, Client
-from factories import (
-    UserFactory,
-    ClientFactory,
-    ProjectFactory,
-    InvoiceFactory,
-    InvoiceItemFactory,
-)
+from factories import ClientFactory, InvoiceFactory, InvoiceItemFactory, ProjectFactory, UserFactory
 from flask import url_for
+
+from app import db
+from app.models import Client, Invoice, InvoiceItem, Project, Settings, User
 
 
 @pytest.fixture
@@ -529,6 +524,7 @@ def test_pdf_layout_with_invoice_items_loop(app, sample_invoice):
 def test_pdf_layout_save_and_restore_tables(app):
     """Test that a layout with items table and expenses table in design_json/template_json persists and loads correctly."""
     import json
+
     from app.models import InvoicePDFTemplate
 
     # Minimal Konva stage design_json with items-table and expenses-table group names (as saved by the editor fix)

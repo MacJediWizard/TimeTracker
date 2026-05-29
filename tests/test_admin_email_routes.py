@@ -2,9 +2,10 @@
 Tests for admin email routes
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 from flask import url_for
-from unittest.mock import patch, MagicMock
 
 
 class TestAdminEmailRoutes:
@@ -160,8 +161,8 @@ class TestAdminEmailRoutes:
 @pytest.fixture
 def regular_user(app):
     """Create a regular user"""
-    from app.models import User
     from app import db
+    from app.models import User
 
     with app.app_context():
         user = User(username="regular_user", role="user")
@@ -176,8 +177,8 @@ def regular_user(app):
 @pytest.fixture
 def admin_user(app):
     """Create an admin user"""
-    from app.models import User
     from app import db
+    from app.models import User
 
     with app.app_context():
         user = User(username="admin", role="admin")

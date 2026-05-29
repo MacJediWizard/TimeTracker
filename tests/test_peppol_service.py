@@ -172,6 +172,7 @@ def test_peppol_service_generic_transport_uses_identifier_validation(app, monkey
 def test_as4_message_payload_is_gzip_compressed():
     """AS4 message builder now gzip-compresses the payload to match the SOAP header declaration."""
     import gzip
+
     from app.integrations.peppol_as4 import build_as4_message
 
     message_bytes = build_as4_message(

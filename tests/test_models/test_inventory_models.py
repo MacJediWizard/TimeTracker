@@ -4,20 +4,21 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.models]
 
-from decimal import Decimal
 from datetime import datetime, timedelta
+from decimal import Decimal
+
 from app import db
 from app.models import (
-    Warehouse,
+    Client,
+    Project,
+    ProjectStockAllocation,
     StockItem,
-    WarehouseStock,
+    StockLot,
     StockMovement,
     StockReservation,
-    ProjectStockAllocation,
-    StockLot,
     User,
-    Project,
-    Client,
+    Warehouse,
+    WarehouseStock,
 )
 
 

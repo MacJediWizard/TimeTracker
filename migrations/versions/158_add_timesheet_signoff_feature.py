@@ -247,7 +247,9 @@ def upgrade():
             ),
         )
     if not _has_index("esignature_requests", "ix_esignature_external_id"):
-        op.create_index("ix_esignature_external_id", "esignature_requests", ["external_id"])
+        op.create_index(
+            "ix_esignature_external_id", "esignature_requests", ["external_id"]
+        )
     if not _has_index("esignature_requests", "ix_esignature_target"):
         op.create_index(
             "ix_esignature_target",

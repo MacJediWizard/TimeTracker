@@ -1,8 +1,8 @@
 import pytest
 from flask import url_for
 
-from app.models import Settings, User
 from app import db
+from app.models import Settings, User
 
 
 class TestSystemUiFlags:

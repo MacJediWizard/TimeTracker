@@ -5,9 +5,9 @@ Test script for multi-select filter functionality
 Tests both Kanban and Tasks views with various filter combinations
 """
 
-import sys
-import os
 import io
+import os
+import sys
 
 # Set UTF-8 encoding for Windows console
 if sys.platform == "win32":

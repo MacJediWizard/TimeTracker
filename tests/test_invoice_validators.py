@@ -3,10 +3,10 @@
 import pytest
 
 from app.utils.invoice_validators import (
-    validate_ubl_wellformed,
-    validate_ubl_peppol_bis3,
-    validate_cii_wellformed,
     validate_cii_en16931,
+    validate_cii_wellformed,
+    validate_ubl_peppol_bis3,
+    validate_ubl_wellformed,
 )
 
 # ---- UBL well-formedness ----

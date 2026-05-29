@@ -6,10 +6,9 @@ when typing in input fields, textareas, or other editable elements.
 """
 
 import pytest
-from flask import url_for
 
 from app import db
-from app.models import Client, Project, User
+from app.models import Project
 
 
 class TestKeyboardShortcutsInputFix:
@@ -54,7 +53,12 @@ class TestKeyboardShortcutsInputFix:
     def test_create_task_with_trigger_in_name(self):
         """Test creating a task with shortcut trigger keys in the name."""
         # First create a project
-        project = Project(name="Test Project", description="Test", client_id=self.test_client.id, status="active")
+        project = Project(
+            name="Test Project",
+            description="Test",
+            client_id=self.test_client.id,
+            status="active",
+        )
         db.session.add(project)
         db.session.commit()
 
@@ -115,19 +119,22 @@ class TestKeyboardShortcutsJavaScriptLogic:
 
     def test_istyping_method_exists(self):
         """
-        Documentation test: Verify isTyping/isTypingContext methods exist.
+        Documentation test: Verify the isTyping helper exists.
 
-        The keyboard shortcut files should have methods to detect
-        when user is typing in an input field:
-        - keyboard-shortcuts.js: isTyping()
-        - keyboard-shortcuts-enhanced.js: isTypingContext()
-        - keyboard-shortcuts-advanced.js: isTyping()
+        The shared implementation lives in typing-utils.js and is exposed via
+        window.TimeTracker.isTyping. The other keyboard-shortcuts files
+        delegate to it.
         """
-        # Read the JavaScript files with UTF-8 encoding
-        with open("app/static/keyboard-shortcuts.js", "r", encoding="utf-8") as f:
+        with open("app/static/typing-utils.js", "r", encoding="utf-8") as f:
             content = f.read()
-            assert "isTyping" in content, "isTyping method not found in keyboard-shortcuts.js"
-            assert "tagName === 'input'" in content or 'tagname === "input"' in content.lower()
+            assert "function isTyping" in content
+            assert "tagName" in content
+            assert "'input'" in content or '"input"' in content
+
+        # The keyboard-shortcuts.js wrapper must reference the shared helper.
+        with open("app/static/keyboard-shortcuts.js", "r", encoding="utf-8") as f:
+            ks_content = f.read()
+            assert "isTyping" in ks_content
 
         with open("app/static/keyboard-shortcuts-enhanced.js", "r", encoding="utf-8") as f:
             content = f.read()
@@ -136,7 +143,7 @@ class TestKeyboardShortcutsJavaScriptLogic:
 
         with open("app/static/keyboard-shortcuts-advanced.js", "r", encoding="utf-8") as f:
             content = f.read()
-            assert "isTyping" in content, "isTyping method not found in keyboard-shortcuts-advanced.js"
+            assert "isTyping" in content
 
     def test_input_check_before_sequences(self):
         """
@@ -181,10 +188,9 @@ class TestKeyboardShortcutsJavaScriptLogic:
         """
         Documentation test: Verify contentEditable elements are handled.
 
-        The isTyping check should also cover contentEditable elements,
-        not just input and textarea.
+        Implementation lives in typing-utils.js (shared helper).
         """
-        with open("app/static/keyboard-shortcuts.js", "r", encoding="utf-8") as f:
+        with open("app/static/typing-utils.js", "r", encoding="utf-8") as f:
             content = f.read()
             assert "isContentEditable" in content or "contentEditable" in content
 
@@ -192,27 +198,25 @@ class TestKeyboardShortcutsJavaScriptLogic:
         """
         Documentation test: Verify rich text editors are detected.
 
-        The isTyping check should detect popular rich text editors like:
-        - Toast UI Editor (used in this project)
-        - TinyMCE
-        - Quill
-        - CodeMirror
+        Selectors live in typing-utils.js (shared helper used by every
+        keyboard-shortcut bundle via window.TimeTracker.isTyping).
         """
-        with open("app/static/keyboard-shortcuts.js", "r", encoding="utf-8") as f:
+        with open("app/static/typing-utils.js", "r", encoding="utf-8") as f:
             content = f.read()
-            # Should check for Toast UI Editor
-            assert "toastui-editor" in content.lower(), "Toast UI Editor detection not found"
-            # Should check for other popular editors
+            assert "toastui-editor" in content.lower(), "Toast UI Editor detection not found in typing-utils.js"
             assert "CodeMirror" in content or "codemirror" in content.lower()
             assert "closest" in content, "Should use closest() to check parent elements"
 
-        with open("app/static/keyboard-shortcuts-enhanced.js", "r", encoding="utf-8") as f:
-            content = f.read()
-            assert "toastui-editor" in content.lower(), "Toast UI Editor detection not found in enhanced"
-
-        with open("app/static/keyboard-shortcuts-advanced.js", "r", encoding="utf-8") as f:
-            content = f.read()
-            assert "toastui-editor" in content.lower(), "Toast UI Editor detection not found in advanced"
+        # Both keyboard-shortcut bundles must delegate to the shared helper;
+        # confirm the bridge call rather than asking each file to repeat the
+        # selector list (which would duplicate detection logic).
+        for js_path in (
+            "app/static/keyboard-shortcuts-enhanced.js",
+            "app/static/keyboard-shortcuts-advanced.js",
+        ):
+            with open(js_path, "r", encoding="utf-8") as f:
+                ks_content = f.read()
+                assert "isTyping" in ks_content, f"isTyping bridge not found in {js_path}"
 
 
 class TestKeyboardShortcutsBugScenarios:

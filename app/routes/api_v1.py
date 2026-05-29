@@ -295,7 +295,10 @@ def get_time_entry_approval(approval_id):
 
     service = TimeApprovalService()
     approver_ids = service._get_approvers_for_entry(approval.time_entry)
-    if approval.requested_by != g.api_user.id and (approval.approved_by or 0) != g.api_user.id:
+    if (
+        approval.requested_by != g.api_user.id
+        and (approval.approved_by or 0) != g.api_user.id
+    ):
         if g.api_user.id not in approver_ids and not g.api_user.is_admin:
             return forbidden_response("Access denied")
     return jsonify({"approval": approval.to_dict()})
@@ -312,7 +315,9 @@ def approve_time_entry(approval_id):
 
     service = TimeApprovalService()
     data = request.get_json(silent=True) or {}
-    result = service.approve(approval_id=approval_id, approver_id=g.api_user.id, comment=data.get("comment"))
+    result = service.approve(
+        approval_id=approval_id, approver_id=g.api_user.id, comment=data.get("comment")
+    )
     if not result.get("success"):
         return error_response(result.get("message", "Approval failed"), status_code=400)
     return jsonify(result)
@@ -332,9 +337,13 @@ def reject_time_entry(approval_id):
     reason = data.get("reason") or data.get("rejection_reason")
     if not reason:
         return error_response("Rejection reason required", status_code=400)
-    result = service.reject(approval_id=approval_id, approver_id=g.api_user.id, reason=reason)
+    result = service.reject(
+        approval_id=approval_id, approver_id=g.api_user.id, reason=reason
+    )
     if not result.get("success"):
-        return error_response(result.get("message", "Rejection failed"), status_code=400)
+        return error_response(
+            result.get("message", "Rejection failed"), status_code=400
+        )
     return jsonify(result)
 
 
@@ -350,7 +359,9 @@ def cancel_time_entry_approval(approval_id):
     service = TimeApprovalService()
     result = service.cancel_approval(approval_id=approval_id, user_id=g.api_user.id)
     if not result.get("success"):
-        return error_response(result.get("message", "Cancellation failed"), status_code=400)
+        return error_response(
+            result.get("message", "Cancellation failed"), status_code=400
+        )
     return jsonify(result)
 
 
@@ -452,7 +463,11 @@ def get_per_diem(pd_id):
     """
     from sqlalchemy.orm import joinedload
 
-    pd = PerDiem.query.options(joinedload(PerDiem.user)).filter_by(id=pd_id).first_or_404()
+    pd = (
+        PerDiem.query.options(joinedload(PerDiem.user))
+        .filter_by(id=pd_id)
+        .first_or_404()
+    )
 
     if not g.api_user.is_admin and pd.user_id != g.api_user.id:
         return forbidden_response("Access denied")
@@ -511,7 +526,9 @@ def create_per_diem():
     pd.recalculate_amount()
     db.session.add(pd)
     db.session.commit()
-    return jsonify({"message": "Per diem created successfully", "per_diem": pd.to_dict()}), 201
+    return jsonify(
+        {"message": "Per diem created successfully", "per_diem": pd.to_dict()}
+    ), 201
 
 
 @api_v1_bp.route("/per-diems/<int:pd_id>", methods=["PUT", "PATCH"])
@@ -524,7 +541,11 @@ def update_per_diem(pd_id):
     """
     from sqlalchemy.orm import joinedload
 
-    pd = PerDiem.query.options(joinedload(PerDiem.user)).filter_by(id=pd_id).first_or_404()
+    pd = (
+        PerDiem.query.options(joinedload(PerDiem.user))
+        .filter_by(id=pd_id)
+        .first_or_404()
+    )
 
     if not g.api_user.is_admin and pd.user_id != g.api_user.id:
         return forbidden_response("Access denied")
@@ -583,7 +604,9 @@ def update_per_diem(pd_id):
             pd.end_date = parsed
     pd.recalculate_amount()
     db.session.commit()
-    return jsonify({"message": "Per diem updated successfully", "per_diem": pd.to_dict()})
+    return jsonify(
+        {"message": "Per diem updated successfully", "per_diem": pd.to_dict()}
+    )
 
 
 @api_v1_bp.route("/per-diems/<int:pd_id>", methods=["DELETE"])
@@ -596,7 +619,11 @@ def delete_per_diem(pd_id):
     """
     from sqlalchemy.orm import joinedload
 
-    pd = PerDiem.query.options(joinedload(PerDiem.user)).filter_by(id=pd_id).first_or_404()
+    pd = (
+        PerDiem.query.options(joinedload(PerDiem.user))
+        .filter_by(id=pd_id)
+        .first_or_404()
+    )
 
     if not g.api_user.is_admin and pd.user_id != g.api_user.id:
         return forbidden_response("Access denied")
@@ -679,7 +706,9 @@ def create_per_diem_rate():
     )
     db.session.add(rate)
     db.session.commit()
-    return jsonify({"message": "Per diem rate created successfully", "rate": rate.to_dict()}), 201
+    return jsonify(
+        {"message": "Per diem rate created successfully", "rate": rate.to_dict()}
+    ), 201
 
 
 # ==================== Budget Alerts ====================
@@ -758,7 +787,9 @@ def create_budget_alert():
     )
     db.session.add(alert)
     db.session.commit()
-    return jsonify({"message": "Budget alert created successfully", "alert": alert.to_dict()}), 201
+    return jsonify(
+        {"message": "Budget alert created successfully", "alert": alert.to_dict()}
+    ), 201
 
 
 @api_v1_bp.route("/budget-alerts/<int:alert_id>/ack", methods=["POST"])
@@ -771,7 +802,11 @@ def acknowledge_budget_alert(alert_id):
     """
     from sqlalchemy.orm import joinedload
 
-    alert = BudgetAlert.query.options(joinedload(BudgetAlert.project)).filter_by(id=alert_id).first_or_404()
+    alert = (
+        BudgetAlert.query.options(joinedload(BudgetAlert.project))
+        .filter_by(id=alert_id)
+        .first_or_404()
+    )
 
     alert.acknowledge(g.api_user.id)
     return jsonify({"message": "Alert acknowledged"})
@@ -823,7 +858,11 @@ def get_calendar_event(event_id):
     """
     from sqlalchemy.orm import joinedload
 
-    ev = CalendarEvent.query.options(joinedload(CalendarEvent.user)).filter_by(id=event_id).first_or_404()
+    ev = (
+        CalendarEvent.query.options(joinedload(CalendarEvent.user))
+        .filter_by(id=event_id)
+        .first_or_404()
+    )
 
     if not g.api_user.is_admin and ev.user_id != g.api_user.id:
         return forbidden_response("Access denied")
@@ -866,7 +905,9 @@ def create_calendar_event():
     )
     db.session.add(ev)
     db.session.commit()
-    return jsonify({"message": "Event created successfully", "event": ev.to_dict()}), 201
+    return jsonify(
+        {"message": "Event created successfully", "event": ev.to_dict()}
+    ), 201
 
 
 @api_v1_bp.route("/calendar/events/<int:event_id>", methods=["PUT", "PATCH"])
@@ -879,7 +920,11 @@ def update_calendar_event(event_id):
     """
     from sqlalchemy.orm import joinedload
 
-    ev = CalendarEvent.query.options(joinedload(CalendarEvent.user)).filter_by(id=event_id).first_or_404()
+    ev = (
+        CalendarEvent.query.options(joinedload(CalendarEvent.user))
+        .filter_by(id=event_id)
+        .first_or_404()
+    )
 
     if not g.api_user.is_admin and ev.user_id != g.api_user.id:
         return forbidden_response("Access denied")
@@ -918,7 +963,11 @@ def delete_calendar_event(event_id):
     """
     from sqlalchemy.orm import joinedload
 
-    ev = CalendarEvent.query.options(joinedload(CalendarEvent.user)).filter_by(id=event_id).first_or_404()
+    ev = (
+        CalendarEvent.query.options(joinedload(CalendarEvent.user))
+        .filter_by(id=event_id)
+        .first_or_404()
+    )
 
     if not g.api_user.is_admin and ev.user_id != g.api_user.id:
         return forbidden_response("Access denied")
@@ -974,7 +1023,9 @@ def create_kanban_column():
     )
     db.session.add(col)
     db.session.commit()
-    return jsonify({"message": "Column created successfully", "column": col.to_dict()}), 201
+    return jsonify(
+        {"message": "Column created successfully", "column": col.to_dict()}
+    ), 201
 
 
 @api_v1_bp.route("/kanban/columns/<int:col_id>", methods=["PUT", "PATCH"])
@@ -1122,7 +1173,9 @@ def create_saved_filter():
     )
     db.session.add(sf)
     db.session.commit()
-    return jsonify({"message": "Saved filter created successfully", "filter": sf.to_dict()}), 201
+    return jsonify(
+        {"message": "Saved filter created successfully", "filter": sf.to_dict()}
+    ), 201
 
 
 @api_v1_bp.route("/saved-filters/<int:filter_id>", methods=["PUT", "PATCH"])
@@ -1145,7 +1198,9 @@ def update_saved_filter(filter_id):
         if field in data:
             setattr(sf, field, data[field])
     db.session.commit()
-    return jsonify({"message": "Saved filter updated successfully", "filter": sf.to_dict()})
+    return jsonify(
+        {"message": "Saved filter updated successfully", "filter": sf.to_dict()}
+    )
 
 
 @api_v1_bp.route("/saved-filters/<int:filter_id>", methods=["DELETE"])
@@ -1184,7 +1239,9 @@ def list_time_entry_templates():
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 50, type=int)
 
-    query = TimeEntryTemplate.query.options(joinedload(TimeEntryTemplate.user), joinedload(TimeEntryTemplate.project))
+    query = TimeEntryTemplate.query.options(
+        joinedload(TimeEntryTemplate.user), joinedload(TimeEntryTemplate.project)
+    )
     query = query.filter(TimeEntryTemplate.user_id == g.api_user.id)
     query = query.order_by(TimeEntryTemplate.created_at.desc())
 
@@ -1219,7 +1276,9 @@ def get_time_entry_template(tpl_id):
     from sqlalchemy.orm import joinedload
 
     tpl = (
-        TimeEntryTemplate.query.options(joinedload(TimeEntryTemplate.user), joinedload(TimeEntryTemplate.project))
+        TimeEntryTemplate.query.options(
+            joinedload(TimeEntryTemplate.user), joinedload(TimeEntryTemplate.project)
+        )
         .filter_by(id=tpl_id)
         .first_or_404()
     )
@@ -1256,7 +1315,9 @@ def create_time_entry_template():
     )
     db.session.add(tpl)
     db.session.commit()
-    return jsonify({"message": "Template created successfully", "template": tpl.to_dict()}), 201
+    return jsonify(
+        {"message": "Template created successfully", "template": tpl.to_dict()}
+    ), 201
 
 
 @api_v1_bp.route("/time-entry-templates/<int:tpl_id>", methods=["PUT", "PATCH"])
@@ -1270,7 +1331,9 @@ def update_time_entry_template(tpl_id):
     from sqlalchemy.orm import joinedload
 
     tpl = (
-        TimeEntryTemplate.query.options(joinedload(TimeEntryTemplate.user), joinedload(TimeEntryTemplate.project))
+        TimeEntryTemplate.query.options(
+            joinedload(TimeEntryTemplate.user), joinedload(TimeEntryTemplate.project)
+        )
         .filter_by(id=tpl_id)
         .first_or_404()
     )
@@ -1292,7 +1355,9 @@ def update_time_entry_template(tpl_id):
         if field in data:
             setattr(tpl, field, data[field])
     db.session.commit()
-    return jsonify({"message": "Template updated successfully", "template": tpl.to_dict()})
+    return jsonify(
+        {"message": "Template updated successfully", "template": tpl.to_dict()}
+    )
 
 
 @api_v1_bp.route("/time-entry-templates/<int:tpl_id>", methods=["DELETE"])
@@ -1306,7 +1371,9 @@ def delete_time_entry_template(tpl_id):
     from sqlalchemy.orm import joinedload
 
     tpl = (
-        TimeEntryTemplate.query.options(joinedload(TimeEntryTemplate.user), joinedload(TimeEntryTemplate.project))
+        TimeEntryTemplate.query.options(
+            joinedload(TimeEntryTemplate.user), joinedload(TimeEntryTemplate.project)
+        )
         .filter_by(id=tpl_id)
         .first_or_404()
     )
@@ -1373,7 +1440,9 @@ def create_comment():
     )
     db.session.add(cmt)
     db.session.commit()
-    return jsonify({"message": "Comment created successfully", "comment": cmt.to_dict()}), 201
+    return jsonify(
+        {"message": "Comment created successfully", "comment": cmt.to_dict()}
+    ), 201
 
 
 @api_v1_bp.route("/quotes", methods=["GET"])
@@ -1493,10 +1562,16 @@ def create_quote():
         title=title,
         created_by=g.api_user.id,
         description=data.get("description"),
-        total_amount=Decimal(str(data.get("total_amount", 0))) if data.get("total_amount") else None,
-        hourly_rate=Decimal(str(data.get("hourly_rate"))) if data.get("hourly_rate") else None,
+        total_amount=Decimal(str(data.get("total_amount", 0)))
+        if data.get("total_amount")
+        else None,
+        hourly_rate=Decimal(str(data.get("hourly_rate")))
+        if data.get("hourly_rate")
+        else None,
         estimated_hours=data.get("estimated_hours"),
-        tax_rate=Decimal(str(data.get("tax_rate", 0))) if data.get("tax_rate") else None,
+        tax_rate=Decimal(str(data.get("tax_rate", 0)))
+        if data.get("tax_rate")
+        else None,
         currency_code=data.get("currency_code", "EUR"),
         valid_until=valid_until,
     )
@@ -1515,14 +1590,22 @@ def create_quote():
         sid = item_data.get("stock_item_id")
         wid = item_data.get("warehouse_id")
         try:
-            stock_item_id = int(sid) if sid is not None and str(sid).strip() != "" else None
+            stock_item_id = (
+                int(sid) if sid is not None and str(sid).strip() != "" else None
+            )
         except (TypeError, ValueError):
             stock_item_id = None
         try:
-            warehouse_id = int(wid) if wid is not None and str(wid).strip() != "" else None
+            warehouse_id = (
+                int(wid) if wid is not None and str(wid).strip() != "" else None
+            )
         except (TypeError, ValueError):
             warehouse_id = None
-        line_dt = _parse_date(item_data.get("line_date")) if item_data.get("line_date") else None
+        line_dt = (
+            _parse_date(item_data.get("line_date"))
+            if item_data.get("line_date")
+            else None
+        )
         item = QuoteItem(
             quote_id=quote.id,
             description=item_data.get("description", ""),
@@ -1543,7 +1626,9 @@ def create_quote():
     quote.calculate_totals()
     db.session.commit()
 
-    return jsonify({"message": "Quote created successfully", "quote": quote.to_dict()}), 201
+    return jsonify(
+        {"message": "Quote created successfully", "quote": quote.to_dict()}
+    ), 201
 
 
 @api_v1_bp.route("/quotes/<int:quote_id>", methods=["PUT", "PATCH"])
@@ -1569,7 +1654,9 @@ def update_quote(quote_id):
     if "title" in data:
         update_kwargs["title"] = data["title"].strip()
     if "description" in data:
-        update_kwargs["description"] = data["description"].strip() if data["description"] else None
+        update_kwargs["description"] = (
+            data["description"].strip() if data["description"] else None
+        )
     if "tax_rate" in data:
         update_kwargs["tax_rate"] = Decimal(str(data["tax_rate"]))
     if "currency_code" in data:
@@ -1609,14 +1696,22 @@ def update_quote(quote_id):
             sid = item_data.get("stock_item_id")
             wid = item_data.get("warehouse_id")
             try:
-                stock_item_id = int(sid) if sid is not None and str(sid).strip() != "" else None
+                stock_item_id = (
+                    int(sid) if sid is not None and str(sid).strip() != "" else None
+                )
             except (TypeError, ValueError):
                 stock_item_id = None
             try:
-                warehouse_id = int(wid) if wid is not None and str(wid).strip() != "" else None
+                warehouse_id = (
+                    int(wid) if wid is not None and str(wid).strip() != "" else None
+                )
             except (TypeError, ValueError):
                 warehouse_id = None
-            line_dt = _parse_date(item_data.get("line_date")) if item_data.get("line_date") else None
+            line_dt = (
+                _parse_date(item_data.get("line_date"))
+                if item_data.get("line_date")
+                else None
+            )
             item = QuoteItem(
                 quote_id=quote.id,
                 description=item_data.get("description", ""),
@@ -1637,7 +1732,9 @@ def update_quote(quote_id):
         quote.calculate_totals()
         db.session.commit()
 
-    return jsonify({"message": "Quote updated successfully", "quote": quote.to_dict()}), 200
+    return jsonify(
+        {"message": "Quote updated successfully", "quote": quote.to_dict()}
+    ), 200
 
 
 @api_v1_bp.route("/quotes/<int:quote_id>", methods=["DELETE"])
@@ -1704,7 +1801,9 @@ def update_comment(comment_id):
         cmt.edit_content(new_content, g.api_user)
     except PermissionError:
         return forbidden_response("Access denied")
-    return jsonify({"message": "Comment updated successfully", "comment": cmt.to_dict()})
+    return jsonify(
+        {"message": "Comment updated successfully", "comment": cmt.to_dict()}
+    )
 
 
 @api_v1_bp.route("/comments/<int:comment_id>", methods=["DELETE"])
@@ -1749,7 +1848,9 @@ def list_client_notes(client_id):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 50, type=int)
 
-    query = ClientNote.query.options(joinedload(ClientNote.client), joinedload(ClientNote.author))
+    query = ClientNote.query.options(
+        joinedload(ClientNote.client), joinedload(ClientNote.author)
+    )
     query = query.filter(ClientNote.client_id == client_id)
     query = query.order_by(ClientNote.is_important.desc(), ClientNote.created_at.desc())
 
@@ -1792,7 +1893,9 @@ def create_client_note(client_id):
     )
     db.session.add(note)
     db.session.commit()
-    return jsonify({"message": "Client note created successfully", "note": note.to_dict()}), 201
+    return jsonify(
+        {"message": "Client note created successfully", "note": note.to_dict()}
+    ), 201
 
 
 @api_v1_bp.route("/client-notes/<int:note_id>", methods=["GET"])
@@ -1804,7 +1907,9 @@ def get_client_note(note_id):
     from sqlalchemy.orm import joinedload
 
     note = (
-        ClientNote.query.options(joinedload(ClientNote.client), joinedload(ClientNote.author))
+        ClientNote.query.options(
+            joinedload(ClientNote.client), joinedload(ClientNote.author)
+        )
         .filter_by(id=note_id)
         .first_or_404()
     )
@@ -1821,7 +1926,9 @@ def update_client_note(note_id):
     from sqlalchemy.orm import joinedload
 
     note = (
-        ClientNote.query.options(joinedload(ClientNote.client), joinedload(ClientNote.author))
+        ClientNote.query.options(
+            joinedload(ClientNote.client), joinedload(ClientNote.author)
+        )
         .filter_by(id=note_id)
         .first_or_404()
     )
@@ -1836,7 +1943,9 @@ def update_client_note(note_id):
     if "is_important" in data:
         note.is_important = bool(data["is_important"])
     db.session.commit()
-    return jsonify({"message": "Client note updated successfully", "note": note.to_dict()})
+    return jsonify(
+        {"message": "Client note updated successfully", "note": note.to_dict()}
+    )
 
 
 @api_v1_bp.route("/client-notes/<int:note_id>", methods=["DELETE"])
@@ -1848,7 +1957,9 @@ def delete_client_note(note_id):
     from sqlalchemy.orm import joinedload
 
     note = (
-        ClientNote.query.options(joinedload(ClientNote.client), joinedload(ClientNote.author))
+        ClientNote.query.options(
+            joinedload(ClientNote.client), joinedload(ClientNote.author)
+        )
         .filter_by(id=note_id)
         .first_or_404()
     )
@@ -1877,7 +1988,9 @@ def list_project_costs(project_id):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 50, type=int)
 
-    query = ProjectCost.query.options(joinedload(ProjectCost.project), joinedload(ProjectCost.user))
+    query = ProjectCost.query.options(
+        joinedload(ProjectCost.project), joinedload(ProjectCost.user)
+    )
     query = query.filter(ProjectCost.project_id == project_id)
 
     if start_date:
@@ -1942,7 +2055,9 @@ def create_project_cost(project_id):
     )
     db.session.add(cost)
     db.session.commit()
-    return jsonify({"message": "Project cost created successfully", "cost": cost.to_dict()}), 201
+    return jsonify(
+        {"message": "Project cost created successfully", "cost": cost.to_dict()}
+    ), 201
 
 
 @api_v1_bp.route("/project-costs/<int:cost_id>", methods=["GET"])
@@ -1951,7 +2066,9 @@ def get_project_cost(cost_id):
     from sqlalchemy.orm import joinedload
 
     cost = (
-        ProjectCost.query.options(joinedload(ProjectCost.project), joinedload(ProjectCost.user))
+        ProjectCost.query.options(
+            joinedload(ProjectCost.project), joinedload(ProjectCost.user)
+        )
         .filter_by(id=cost_id)
         .first_or_404()
     )
@@ -1965,7 +2082,9 @@ def update_project_cost(cost_id):
     from sqlalchemy.orm import joinedload
 
     cost = (
-        ProjectCost.query.options(joinedload(ProjectCost.project), joinedload(ProjectCost.user))
+        ProjectCost.query.options(
+            joinedload(ProjectCost.project), joinedload(ProjectCost.user)
+        )
         .filter_by(id=cost_id)
         .first_or_404()
     )
@@ -1979,13 +2098,17 @@ def update_project_cost(cost_id):
 
             cost.amount = Decimal(str(data["amount"]))
         except (ValueError, TypeError, InvalidOperation):
-            return validation_error_response({"amount": ["Invalid value."]}, message="Invalid amount")
+            return validation_error_response(
+                {"amount": ["Invalid value."]}, message="Invalid amount"
+            )
     if "cost_date" in data:
         parsed = _parse_date(data["cost_date"])
         if parsed:
             cost.cost_date = parsed
     db.session.commit()
-    return jsonify({"message": "Project cost updated successfully", "cost": cost.to_dict()})
+    return jsonify(
+        {"message": "Project cost updated successfully", "cost": cost.to_dict()}
+    )
 
 
 @api_v1_bp.route("/project-costs/<int:cost_id>", methods=["DELETE"])
@@ -1994,7 +2117,9 @@ def delete_project_cost(cost_id):
     from sqlalchemy.orm import joinedload
 
     cost = (
-        ProjectCost.query.options(joinedload(ProjectCost.project), joinedload(ProjectCost.user))
+        ProjectCost.query.options(
+            joinedload(ProjectCost.project), joinedload(ProjectCost.user)
+        )
         .filter_by(id=cost_id)
         .first_or_404()
     )
@@ -2067,7 +2192,9 @@ def create_tax_rule():
     )
     db.session.add(rule)
     db.session.commit()
-    return jsonify({"message": "Tax rule created successfully", "tax_rule": {"id": rule.id}}), 201
+    return jsonify(
+        {"message": "Tax rule created successfully", "tax_rule": {"id": rule.id}}
+    ), 201
 
 
 @api_v1_bp.route("/tax-rules/<int:rule_id>", methods=["PUT", "PATCH"])
@@ -2162,7 +2289,9 @@ def create_currency():
     )
     db.session.add(cur)
     db.session.commit()
-    return jsonify({"message": "Currency created successfully", "currency": {"code": cur.code}}), 201
+    return jsonify(
+        {"message": "Currency created successfully", "currency": {"code": cur.code}}
+    ), 201
 
 
 @api_v1_bp.route("/currencies/<string:code>", methods=["PUT", "PATCH"])
@@ -2230,7 +2359,11 @@ def create_exchange_rate():
     base_code = data["base_code"].upper()
     quote_code = data["quote_code"].upper()
     if not Currency.query.get(base_code) or not Currency.query.get(quote_code):
-        return jsonify({"error": "Base and quote currencies must exist before creating an exchange rate"}), 400
+        return jsonify(
+            {
+                "error": "Base and quote currencies must exist before creating an exchange rate"
+            }
+        ), 400
     er = ExchangeRate(
         base_code=base_code,
         quote_code=quote_code,
@@ -2262,7 +2395,9 @@ def update_exchange_rate(rate_id):
 
             er.rate = Decimal(str(data["rate"]))
         except (ValueError, TypeError, InvalidOperation):
-            return validation_error_response({"rate": ["Invalid value."]}, message="Invalid rate")
+            return validation_error_response(
+                {"rate": ["Invalid value."]}, message="Invalid rate"
+            )
     if "date" in data:
         d = _parse_date(data["date"])
         if d:
@@ -2291,19 +2426,27 @@ def add_favorite_project():
     if not project_id:
         return jsonify({"error": "project_id is required"}), 400
     # Prevent duplicates due to unique constraint
-    existing = UserFavoriteProject.query.filter_by(user_id=g.api_user.id, project_id=project_id).first()
+    existing = UserFavoriteProject.query.filter_by(
+        user_id=g.api_user.id, project_id=project_id
+    ).first()
     if existing:
-        return jsonify({"message": "Already favorited", "favorite": existing.to_dict()}), 200
+        return jsonify(
+            {"message": "Already favorited", "favorite": existing.to_dict()}
+        ), 200
     fav = UserFavoriteProject(user_id=g.api_user.id, project_id=project_id)
     db.session.add(fav)
     db.session.commit()
-    return jsonify({"message": "Project favorited successfully", "favorite": fav.to_dict()}), 201
+    return jsonify(
+        {"message": "Project favorited successfully", "favorite": fav.to_dict()}
+    ), 201
 
 
 @api_v1_bp.route("/users/me/favorites/projects/<int:project_id>", methods=["DELETE"])
 @require_api_token("write:projects")
 def remove_favorite_project(project_id):
-    fav = UserFavoriteProject.query.filter_by(user_id=g.api_user.id, project_id=project_id).first_or_404()
+    fav = UserFavoriteProject.query.filter_by(
+        user_id=g.api_user.id, project_id=project_id
+    ).first_or_404()
     db.session.delete(fav)
     db.session.commit()
     return jsonify({"message": "Favorite removed successfully"})
@@ -2431,7 +2574,9 @@ def create_invoice_template():
     )
     db.session.add(t)
     db.session.commit()
-    return jsonify({"message": "Invoice template created successfully", "template": {"id": t.id}}), 201
+    return jsonify(
+        {"message": "Invoice template created successfully", "template": {"id": t.id}}
+    ), 201
 
 
 @api_v1_bp.route("/invoice-templates/<int:template_id>", methods=["PUT", "PATCH"])
@@ -2444,7 +2589,9 @@ def update_invoice_template(template_id):
         if not name:
             return jsonify({"error": "name cannot be empty"}), 400
         # Check duplicate name
-        existing = InvoiceTemplate.query.filter(InvoiceTemplate.name == name, InvoiceTemplate.id != template_id).first()
+        existing = InvoiceTemplate.query.filter(
+            InvoiceTemplate.name == name, InvoiceTemplate.id != template_id
+        ).first()
         if existing:
             return jsonify({"error": "Template name already exists"}), 400
         t.name = name
@@ -2453,7 +2600,9 @@ def update_invoice_template(template_id):
             setattr(t, field, (data.get(field) or "").strip() or None)
     if "is_default" in data and bool(data["is_default"]):
         # set this as default, unset others
-        InvoiceTemplate.query.filter(InvoiceTemplate.id != template_id).update({InvoiceTemplate.is_default: False})
+        InvoiceTemplate.query.filter(InvoiceTemplate.id != template_id).update(
+            {InvoiceTemplate.is_default: False}
+        )
         t.is_default = True
     db.session.commit()
     return jsonify({"message": "Invoice template updated successfully"})
@@ -2485,11 +2634,15 @@ def list_recurring_invoices():
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 50, type=int)
 
-    query = RecurringInvoice.query.options(joinedload(RecurringInvoice.project), joinedload(RecurringInvoice.client))
+    query = RecurringInvoice.query.options(
+        joinedload(RecurringInvoice.project), joinedload(RecurringInvoice.client)
+    )
 
     is_active = request.args.get("is_active")
     if is_active is not None:
-        query = query.filter(RecurringInvoice.is_active == (is_active.lower() == "true"))
+        query = query.filter(
+            RecurringInvoice.is_active == (is_active.lower() == "true")
+        )
     client_id = request.args.get("client_id", type=int)
     if client_id:
         query = query.filter(RecurringInvoice.client_id == client_id)
@@ -2526,7 +2679,9 @@ def get_recurring_invoice(ri_id):
     from sqlalchemy.orm import joinedload
 
     ri = (
-        RecurringInvoice.query.options(joinedload(RecurringInvoice.project), joinedload(RecurringInvoice.client))
+        RecurringInvoice.query.options(
+            joinedload(RecurringInvoice.project), joinedload(RecurringInvoice.client)
+        )
         .filter_by(id=ri_id)
         .first_or_404()
     )
@@ -2602,7 +2757,9 @@ def update_recurring_invoice(ri_id):
     from sqlalchemy.orm import joinedload
 
     ri = (
-        RecurringInvoice.query.options(joinedload(RecurringInvoice.project), joinedload(RecurringInvoice.client))
+        RecurringInvoice.query.options(
+            joinedload(RecurringInvoice.project), joinedload(RecurringInvoice.client)
+        )
         .filter_by(id=ri_id)
         .first_or_404()
     )
@@ -2630,7 +2787,9 @@ def update_recurring_invoice(ri_id):
         try:
             ri.interval = int(data["interval"])
         except (ValueError, TypeError):
-            return validation_error_response({"interval": ["Invalid value."]}, message="Invalid interval")
+            return validation_error_response(
+                {"interval": ["Invalid value."]}, message="Invalid interval"
+            )
     if "next_run_date" in data:
         parsed = _parse_date(data["next_run_date"])
         if parsed:
@@ -2644,14 +2803,18 @@ def update_recurring_invoice(ri_id):
         try:
             ri.due_date_days = int(data["due_date_days"])
         except (ValueError, TypeError):
-            return validation_error_response({"due_date_days": ["Invalid value."]}, message="Invalid due_date_days")
+            return validation_error_response(
+                {"due_date_days": ["Invalid value."]}, message="Invalid due_date_days"
+            )
     if "tax_rate" in data:
         try:
             from decimal import Decimal
 
             ri.tax_rate = Decimal(str(data["tax_rate"]))
         except (ValueError, TypeError, InvalidOperation):
-            return validation_error_response({"tax_rate": ["Invalid value."]}, message="Invalid tax_rate")
+            return validation_error_response(
+                {"tax_rate": ["Invalid value."]}, message="Invalid tax_rate"
+            )
     db.session.commit()
     return jsonify(
         {
@@ -2678,9 +2841,13 @@ def generate_from_recurring_invoice(ri_id):
     ri = RecurringInvoice.query.get_or_404(ri_id)
     invoice = ri.generate_invoice()
     if not invoice:
-        return jsonify({"message": "No invoice generated (not due yet or inactive)"}), 200
+        return jsonify(
+            {"message": "No invoice generated (not due yet or inactive)"}
+        ), 200
     db.session.commit()
-    return jsonify({"message": "Invoice generated successfully", "invoice": invoice.to_dict()}), 201
+    return jsonify(
+        {"message": "Invoice generated successfully", "invoice": invoice.to_dict()}
+    ), 201
 
 
 # ==================== Credit Notes ====================
@@ -2744,7 +2911,11 @@ def get_credit_note(cn_id):
     """Get credit note"""
     from sqlalchemy.orm import joinedload
 
-    cn = CreditNote.query.options(joinedload(CreditNote.invoice)).filter_by(id=cn_id).first_or_404()
+    cn = (
+        CreditNote.query.options(joinedload(CreditNote.invoice))
+        .filter_by(id=cn_id)
+        .first_or_404()
+    )
 
     return jsonify(
         {
@@ -2815,7 +2986,11 @@ def update_credit_note(cn_id):
     """Update credit note"""
     from sqlalchemy.orm import joinedload
 
-    cn = CreditNote.query.options(joinedload(CreditNote.invoice)).filter_by(id=cn_id).first_or_404()
+    cn = (
+        CreditNote.query.options(joinedload(CreditNote.invoice))
+        .filter_by(id=cn_id)
+        .first_or_404()
+    )
 
     data = request.get_json() or {}
     if "reason" in data:
@@ -2826,7 +3001,9 @@ def update_credit_note(cn_id):
 
             cn.amount = Decimal(str(data["amount"]))
         except (ValueError, TypeError, InvalidOperation):
-            return validation_error_response({"amount": ["Invalid value."]}, message="Invalid amount")
+            return validation_error_response(
+                {"amount": ["Invalid value."]}, message="Invalid amount"
+            )
     db.session.commit()
     return jsonify({"message": "Credit note updated successfully"})
 
@@ -2837,7 +3014,11 @@ def delete_credit_note(cn_id):
     """Delete credit note"""
     from sqlalchemy.orm import joinedload
 
-    cn = CreditNote.query.options(joinedload(CreditNote.invoice)).filter_by(id=cn_id).first_or_404()
+    cn = (
+        CreditNote.query.options(joinedload(CreditNote.invoice))
+        .filter_by(id=cn_id)
+        .first_or_404()
+    )
 
     db.session.delete(cn)
     db.session.commit()
@@ -2974,8 +3155,12 @@ def get_current_user():
     settings = Settings.get_settings()
     response["time_entry_requirements"] = {
         "require_task": getattr(settings, "time_entry_require_task", False),
-        "require_description": getattr(settings, "time_entry_require_description", False),
-        "description_min_length": getattr(settings, "time_entry_description_min_length", 20),
+        "require_description": getattr(
+            settings, "time_entry_require_description", False
+        ),
+        "description_min_length": getattr(
+            settings, "time_entry_description_min_length", 20
+        ),
     }
     return jsonify(response)
 
@@ -3019,10 +3204,15 @@ def list_users():
         .group_by(TimeEntry.user_id)
         .all()
     )
-    total_hours_by_user = {uid: round((total_seconds or 0) / 3600, 2) for uid, total_seconds in rows}
+    total_hours_by_user = {
+        uid: round((total_seconds or 0) / 3600, 2) for uid, total_seconds in rows
+    }
     return jsonify(
         {
-            "users": [u.to_dict(total_hours_override=total_hours_by_user.get(u.id)) for u in items],
+            "users": [
+                u.to_dict(total_hours_override=total_hours_by_user.get(u.id))
+                for u in items
+            ],
             "pagination": result["pagination"],
         }
     )
@@ -3109,11 +3299,17 @@ def create_webhook():
 
         parsed = urlparse(data["url"])
         if not parsed.scheme or not parsed.netloc:
-            return validation_error_response({"url": ["Invalid URL format."]}, message="Invalid URL format")
+            return validation_error_response(
+                {"url": ["Invalid URL format."]}, message="Invalid URL format"
+            )
         if parsed.scheme not in ["http", "https"]:
-            return validation_error_response({"url": ["URL must use http or https."]}, message="Invalid URL format")
+            return validation_error_response(
+                {"url": ["URL must use http or https."]}, message="Invalid URL format"
+            )
     except (KeyError, ValueError, AttributeError, TypeError):
-        return validation_error_response({"url": ["Invalid URL format."]}, message="Invalid URL format")
+        return validation_error_response(
+            {"url": ["Invalid URL format."]}, message="Invalid URL format"
+        )
 
     # Validate events
     from app.utils.webhook_service import WebhookService
@@ -3179,7 +3375,11 @@ def get_webhook(webhook_id):
     """
     from sqlalchemy.orm import joinedload
 
-    webhook = Webhook.query.options(joinedload(Webhook.user)).filter_by(id=webhook_id).first_or_404()
+    webhook = (
+        Webhook.query.options(joinedload(Webhook.user))
+        .filter_by(id=webhook_id)
+        .first_or_404()
+    )
 
     # Check permissions
     if not g.api_user.is_admin and webhook.user_id != g.api_user.id:
@@ -3210,7 +3410,11 @@ def update_webhook(webhook_id):
     """
     from sqlalchemy.orm import joinedload
 
-    webhook = Webhook.query.options(joinedload(Webhook.user)).filter_by(id=webhook_id).first_or_404()
+    webhook = (
+        Webhook.query.options(joinedload(Webhook.user))
+        .filter_by(id=webhook_id)
+        .first_or_404()
+    )
 
     # Check permissions
     if not g.api_user.is_admin and webhook.user_id != g.api_user.id:
@@ -3230,14 +3434,18 @@ def update_webhook(webhook_id):
 
             parsed = urlparse(data["url"])
             if not parsed.scheme or not parsed.netloc:
-                return validation_error_response({"url": ["Invalid URL format."]}, message="Invalid URL format")
+                return validation_error_response(
+                    {"url": ["Invalid URL format."]}, message="Invalid URL format"
+                )
             if parsed.scheme not in ["http", "https"]:
                 return validation_error_response(
                     {"url": ["URL must use http or https."]},
                     message="Invalid URL format",
                 )
         except (ValueError, AttributeError, TypeError):
-            return validation_error_response({"url": ["Invalid URL format."]}, message="Invalid URL format")
+            return validation_error_response(
+                {"url": ["Invalid URL format."]}, message="Invalid URL format"
+            )
         webhook.url = data["url"]
     if "events" in data:
         if not isinstance(data["events"], list):
@@ -3271,7 +3479,9 @@ def update_webhook(webhook_id):
 
     db.session.commit()
 
-    return jsonify({"webhook": webhook.to_dict(), "message": "Webhook updated successfully"})
+    return jsonify(
+        {"webhook": webhook.to_dict(), "message": "Webhook updated successfully"}
+    )
 
 
 @api_v1_bp.route("/webhooks/<int:webhook_id>", methods=["DELETE"])
@@ -3296,7 +3506,11 @@ def delete_webhook(webhook_id):
     """
     from sqlalchemy.orm import joinedload
 
-    webhook = Webhook.query.options(joinedload(Webhook.user)).filter_by(id=webhook_id).first_or_404()
+    webhook = (
+        Webhook.query.options(joinedload(Webhook.user))
+        .filter_by(id=webhook_id)
+        .first_or_404()
+    )
 
     # Check permissions
     if not g.api_user.is_admin and webhook.user_id != g.api_user.id:
@@ -3338,7 +3552,11 @@ def list_webhook_deliveries(webhook_id):
     """
     from sqlalchemy.orm import joinedload
 
-    webhook = Webhook.query.options(joinedload(Webhook.user)).filter_by(id=webhook_id).first_or_404()
+    webhook = (
+        Webhook.query.options(joinedload(Webhook.user))
+        .filter_by(id=webhook_id)
+        .first_or_404()
+    )
 
     # Check permissions
     if not g.api_user.is_admin and webhook.user_id != g.api_user.id:
@@ -3447,8 +3665,12 @@ def create_stock_item_api():
             description=data.get("description"),
             category=data.get("category"),
             unit=data.get("unit", "pcs"),
-            default_price=Decimal(str(data["default_price"])) if data.get("default_price") else None,
-            default_cost=Decimal(str(data["default_cost"])) if data.get("default_cost") else None,
+            default_price=Decimal(str(data["default_price"]))
+            if data.get("default_price")
+            else None,
+            default_cost=Decimal(str(data["default_cost"]))
+            if data.get("default_cost")
+            else None,
             barcode=data.get("barcode"),
             is_trackable=data.get("is_trackable", True),
             currency_code=data.get("currency_code", "EUR"),
@@ -3456,7 +3678,9 @@ def create_stock_item_api():
         )
         db.session.add(item)
         db.session.commit()
-        return jsonify({"message": "Stock item created successfully", "item": item.to_dict()}), 201
+        return jsonify(
+            {"message": "Stock item created successfully", "item": item.to_dict()}
+        ), 201
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error creating stock item: {e}", exc_info=True)
@@ -3483,9 +3707,13 @@ def update_stock_item_api(item_id):
         if "unit" in data:
             item.unit = data["unit"]
         if "default_price" in data:
-            item.default_price = Decimal(str(data["default_price"])) if data["default_price"] else None
+            item.default_price = (
+                Decimal(str(data["default_price"])) if data["default_price"] else None
+            )
         if "default_cost" in data:
-            item.default_cost = Decimal(str(data["default_cost"])) if data["default_cost"] else None
+            item.default_cost = (
+                Decimal(str(data["default_cost"])) if data["default_cost"] else None
+            )
         if "barcode" in data:
             item.barcode = data.get("barcode")
         if "is_trackable" in data:
@@ -3496,7 +3724,9 @@ def update_stock_item_api(item_id):
             item.is_active = bool(data["is_active"])
 
         db.session.commit()
-        return jsonify({"message": "Stock item updated successfully", "item": item.to_dict()})
+        return jsonify(
+            {"message": "Stock item updated successfully", "item": item.to_dict()}
+        )
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error updating stock item: {e}", exc_info=True)
@@ -3637,7 +3867,9 @@ def create_stock_movement_api():
     devalue_unit_cost = data.get("devalue_unit_cost")
 
     if not stock_item_id or not warehouse_id or quantity is None:
-        return jsonify({"error": "stock_item_id, warehouse_id, and quantity are required"}), 400
+        return jsonify(
+            {"error": "stock_item_id, warehouse_id, and quantity are required"}
+        ), 400
 
     try:
         quantity = Decimal(str(quantity))
@@ -3656,42 +3888,70 @@ def create_stock_movement_api():
         if movement_type == "devaluation":
             # Devaluation requires trackable items
             if not item.is_trackable:
-                return jsonify({"error": "Stock item is not trackable. Devaluation requires trackable items."}), 400
+                return jsonify(
+                    {
+                        "error": "Stock item is not trackable. Devaluation requires trackable items."
+                    }
+                ), 400
             if quantity <= 0:
                 return jsonify({"error": "Devaluation quantity must be positive"}), 400
 
             base_cost = item.default_cost or Decimal("0")
             if base_cost <= 0:
-                return jsonify({"error": "Stock item must have a default cost to perform devaluation"}), 400
+                return jsonify(
+                    {
+                        "error": "Stock item must have a default cost to perform devaluation"
+                    }
+                ), 400
 
             # Calculate devaluation cost
             if devalue_method == "percent":
                 if devalue_percent is None:
-                    return jsonify({"error": "Devaluation percent is required when using percent method"}), 400
+                    return jsonify(
+                        {
+                            "error": "Devaluation percent is required when using percent method"
+                        }
+                    ), 400
                 try:
                     pct = Decimal(str(devalue_percent))
                 except (ValueError, InvalidOperation):
                     return jsonify({"error": "Invalid devaluation percent value"}), 400
                 if pct < 0 or pct > 100:
-                    return jsonify({"error": "Devaluation percent must be between 0 and 100"}), 400
-                unit_cost_override = (base_cost * (Decimal("100") - pct) / Decimal("100")).quantize(Decimal("0.01"))
+                    return jsonify(
+                        {"error": "Devaluation percent must be between 0 and 100"}
+                    ), 400
+                unit_cost_override = (
+                    base_cost * (Decimal("100") - pct) / Decimal("100")
+                ).quantize(Decimal("0.01"))
             elif devalue_method == "fixed":
                 if devalue_unit_cost is None:
-                    return jsonify({"error": "New unit cost is required when using fixed cost method"}), 400
+                    return jsonify(
+                        {
+                            "error": "New unit cost is required when using fixed cost method"
+                        }
+                    ), 400
                 try:
-                    unit_cost_override = Decimal(str(devalue_unit_cost)).quantize(Decimal("0.01"))
+                    unit_cost_override = Decimal(str(devalue_unit_cost)).quantize(
+                        Decimal("0.01")
+                    )
                 except (ValueError, InvalidOperation):
                     return jsonify({"error": "Invalid unit cost value"}), 400
                 if unit_cost_override < 0:
                     return jsonify({"error": "Unit cost cannot be negative"}), 400
             else:
-                return jsonify({"error": "Invalid devaluation method. Must be 'percent' or 'fixed'"}), 400
+                return jsonify(
+                    {
+                        "error": "Invalid devaluation method. Must be 'percent' or 'fixed'"
+                    }
+                ), 400
 
             # Check stock availability
             warehouse_stock = WarehouseStock.query.filter_by(
                 warehouse_id=warehouse_id, stock_item_id=stock_item_id
             ).first()
-            available_qty = warehouse_stock.quantity_on_hand if warehouse_stock else Decimal("0")
+            available_qty = (
+                warehouse_stock.quantity_on_hand if warehouse_stock else Decimal("0")
+            )
             if available_qty < quantity:
                 return (
                     jsonify(
@@ -3719,41 +3979,73 @@ def create_stock_movement_api():
         if movement_type in ["return", "waste"]:
             # Validate quantity
             if movement_type == "return" and quantity <= 0:
-                return jsonify({"error": "Return movements must use a positive quantity"}), 400
+                return jsonify(
+                    {"error": "Return movements must use a positive quantity"}
+                ), 400
             if movement_type == "waste" and quantity >= 0:
-                return jsonify({"error": "Waste movements must use a negative quantity"}), 400
+                return jsonify(
+                    {"error": "Waste movements must use a negative quantity"}
+                ), 400
 
             # Process devaluation if enabled
             if devalue_enabled:
                 if not item.is_trackable:
-                    return jsonify({"error": "Stock item is not trackable. Devaluation requires trackable items."}), 400
+                    return jsonify(
+                        {
+                            "error": "Stock item is not trackable. Devaluation requires trackable items."
+                        }
+                    ), 400
 
                 base_cost = item.default_cost or Decimal("0")
                 if base_cost <= 0:
-                    return jsonify({"error": "Stock item must have a default cost to perform devaluation"}), 400
+                    return jsonify(
+                        {
+                            "error": "Stock item must have a default cost to perform devaluation"
+                        }
+                    ), 400
 
                 # Calculate devaluation cost
                 if devalue_method == "percent":
                     if devalue_percent is None:
-                        return jsonify({"error": "Devaluation percent is required when devaluation is enabled"}), 400
+                        return jsonify(
+                            {
+                                "error": "Devaluation percent is required when devaluation is enabled"
+                            }
+                        ), 400
                     try:
                         pct = Decimal(str(devalue_percent))
                     except (ValueError, InvalidOperation):
-                        return jsonify({"error": "Invalid devaluation percent value"}), 400
+                        return jsonify(
+                            {"error": "Invalid devaluation percent value"}
+                        ), 400
                     if pct < 0 or pct > 100:
-                        return jsonify({"error": "Devaluation percent must be between 0 and 100"}), 400
-                    unit_cost_override = (base_cost * (Decimal("100") - pct) / Decimal("100")).quantize(Decimal("0.01"))
+                        return jsonify(
+                            {"error": "Devaluation percent must be between 0 and 100"}
+                        ), 400
+                    unit_cost_override = (
+                        base_cost * (Decimal("100") - pct) / Decimal("100")
+                    ).quantize(Decimal("0.01"))
                 elif devalue_method == "fixed":
                     if devalue_unit_cost is None:
-                        return jsonify({"error": "New unit cost is required when devaluation is enabled"}), 400
+                        return jsonify(
+                            {
+                                "error": "New unit cost is required when devaluation is enabled"
+                            }
+                        ), 400
                     try:
-                        unit_cost_override = Decimal(str(devalue_unit_cost)).quantize(Decimal("0.01"))
+                        unit_cost_override = Decimal(str(devalue_unit_cost)).quantize(
+                            Decimal("0.01")
+                        )
                     except (ValueError, InvalidOperation):
                         return jsonify({"error": "Invalid unit cost value"}), 400
                     if unit_cost_override < 0:
                         return jsonify({"error": "Unit cost cannot be negative"}), 400
                 else:
-                    return jsonify({"error": "Invalid devaluation method. Must be 'percent' or 'fixed'"}), 400
+                    return jsonify(
+                        {
+                            "error": "Invalid devaluation method. Must be 'percent' or 'fixed'"
+                        }
+                    ), 400
 
                 # Validate devaluation cost is not greater than original
                 if unit_cost_override > base_cost:
@@ -3779,7 +4071,11 @@ def create_stock_movement_api():
                     warehouse_stock = WarehouseStock.query.filter_by(
                         warehouse_id=warehouse_id, stock_item_id=stock_item_id
                     ).first()
-                    available_qty = warehouse_stock.quantity_on_hand if warehouse_stock else Decimal("0")
+                    available_qty = (
+                        warehouse_stock.quantity_on_hand
+                        if warehouse_stock
+                        else Decimal("0")
+                    )
                     if available_qty < qty_to_waste:
                         return (
                             jsonify(
@@ -3804,7 +4100,9 @@ def create_stock_movement_api():
                         consume_from_lot_id = deval_lot.id
                     except Exception as e:
                         db.session.rollback()
-                        return jsonify({"error": f"Failed to devalue stock before waste: {str(e)}"}), 400
+                        return jsonify(
+                            {"error": f"Failed to devalue stock before waste: {str(e)}"}
+                        ), 400
 
         # Record the movement
         try:
@@ -3854,7 +4152,9 @@ def create_stock_movement_api():
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Error recording stock movement via API: {e}", exc_info=True)
+        current_app.logger.error(
+            f"Error recording stock movement via API: {e}", exc_info=True
+        )
         return jsonify({"error": str(e)}), 400
 
 
@@ -3888,7 +4188,9 @@ def list_transfers_api():
 
     # Subquery: distinct reference_ids ordered by latest moved_at
     ref_subq = (
-        query.with_entities(StockMovement.reference_id, func.max(StockMovement.moved_at).label("max_at"))
+        query.with_entities(
+            StockMovement.reference_id, func.max(StockMovement.moved_at).label("max_at")
+        )
         .group_by(StockMovement.reference_id)
         .order_by(func.max(StockMovement.moved_at).desc())
     )
@@ -3908,13 +4210,19 @@ def list_transfers_api():
         )
         if len(movements) != 2:
             continue
-        out_m, in_m = (movements[0], movements[1]) if movements[0].quantity < 0 else (movements[1], movements[0])
+        out_m, in_m = (
+            (movements[0], movements[1])
+            if movements[0].quantity < 0
+            else (movements[1], movements[0])
+        )
         quantity = abs(float(out_m.quantity))
         transfers.append(
             {
                 "reference_id": ref_id,
                 "moved_at": (
-                    (in_m.moved_at or out_m.moved_at).isoformat() if (in_m.moved_at or out_m.moved_at) else None
+                    (in_m.moved_at or out_m.moved_at).isoformat()
+                    if (in_m.moved_at or out_m.moved_at)
+                    else None
                 ),
                 "stock_item_id": out_m.stock_item_id,
                 "from_warehouse_id": out_m.warehouse_id,
@@ -3983,7 +4291,9 @@ def create_transfer_api():
         return error_response("quantity must be positive", status_code=400)
 
     if int(from_warehouse_id) == int(to_warehouse_id):
-        return error_response("Source and destination warehouses must be different", status_code=400)
+        return error_response(
+            "Source and destination warehouses must be different", status_code=400
+        )
 
     stock_item = StockItem.query.get(stock_item_id)
     if not stock_item:
@@ -4000,7 +4310,9 @@ def create_transfer_api():
         warehouse_id=int(from_warehouse_id), stock_item_id=int(stock_item_id)
     ).first()
     if not source_stock or source_stock.quantity_available < quantity:
-        return error_response("Insufficient stock available in source warehouse", status_code=400)
+        return error_response(
+            "Insufficient stock available in source warehouse", status_code=400
+        )
 
     transfer_ref_id = int(datetime.utcnow().timestamp() * 1000)
     reason = f"Transfer from {from_wh.code} to {to_wh.code}"
@@ -4074,12 +4386,18 @@ def get_transfer_api(reference_id):
     if len(movements) != 2:
         return not_found_response("Transfer", reference_id)
 
-    out_m, in_m = (movements[0], movements[1]) if movements[0].quantity < 0 else (movements[1], movements[0])
+    out_m, in_m = (
+        (movements[0], movements[1])
+        if movements[0].quantity < 0
+        else (movements[1], movements[0])
+    )
     quantity = abs(float(out_m.quantity))
 
     transfer = {
         "reference_id": reference_id,
-        "moved_at": (in_m.moved_at or out_m.moved_at).isoformat() if (in_m.moved_at or out_m.moved_at) else None,
+        "moved_at": (in_m.moved_at or out_m.moved_at).isoformat()
+        if (in_m.moved_at or out_m.moved_at)
+        else None,
         "stock_item_id": out_m.stock_item_id,
         "from_warehouse_id": out_m.warehouse_id,
         "to_warehouse_id": in_m.warehouse_id,
@@ -4250,7 +4568,9 @@ def create_supplier_api():
         # Check for duplicate code
         existing = Supplier.query.filter_by(code=data["code"]).first()
         if existing:
-            return jsonify({"error": f"Supplier with code '{data['code']}' already exists"}), 400
+            return jsonify(
+                {"error": f"Supplier with code '{data['code']}' already exists"}
+            ), 400
 
         supplier = Supplier(
             code=data["code"],
@@ -4265,7 +4585,9 @@ def create_supplier_api():
         )
         db.session.add(supplier)
         db.session.commit()
-        return jsonify({"message": "Supplier created successfully", "supplier": supplier.to_dict()}), 201
+        return jsonify(
+            {"message": "Supplier created successfully", "supplier": supplier.to_dict()}
+        ), 201
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error creating supplier: {e}", exc_info=True)
@@ -4286,7 +4608,9 @@ def update_supplier_api(supplier_id):
         if "code" in data and data["code"] != supplier.code:
             existing = Supplier.query.filter_by(code=data["code"]).first()
             if existing:
-                return jsonify({"error": f"Supplier with code '{data['code']}' already exists"}), 400
+                return jsonify(
+                    {"error": f"Supplier with code '{data['code']}' already exists"}
+                ), 400
             supplier.code = data["code"]
 
         if "name" in data:
@@ -4307,7 +4631,9 @@ def update_supplier_api(supplier_id):
             supplier.is_active = bool(data["is_active"])
 
         db.session.commit()
-        return jsonify({"message": "Supplier updated successfully", "supplier": supplier.to_dict()})
+        return jsonify(
+            {"message": "Supplier updated successfully", "supplier": supplier.to_dict()}
+        )
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error updating supplier: {e}", exc_info=True)
@@ -4407,7 +4733,9 @@ def create_purchase_order_api():
 
     supplier = Supplier.query.get(supplier_id)
     if not supplier:
-        return jsonify({"error": "supplier_id does not reference an existing supplier"}), 400
+        return jsonify(
+            {"error": "supplier_id does not reference an existing supplier"}
+        ), 400
 
     items = data.get("items", [])
     normalized_items = []
@@ -4415,11 +4743,15 @@ def create_purchase_order_api():
         for item_data in items:
             description = item_data.get("description")
             if description is None or not str(description).strip():
-                return jsonify({"error": "Each item requires a non-empty description"}), 400
+                return jsonify(
+                    {"error": "Each item requires a non-empty description"}
+                ), 400
             quantity_ordered = Decimal(str(item_data.get("quantity_ordered", 1)))
             unit_cost = Decimal(str(item_data.get("unit_cost", 0)))
             if quantity_ordered <= 0:
-                return jsonify({"error": "quantity_ordered must be greater than zero"}), 400
+                return jsonify(
+                    {"error": "quantity_ordered must be greater than zero"}
+                ), 400
             if unit_cost < 0:
                 return jsonify({"error": "unit_cost must be zero or greater"}), 400
             normalized_items.append(
@@ -4460,7 +4792,9 @@ def create_purchase_order_api():
         )
         db.session.add(purchase_order)
         db.session.flush()
-        purchase_order.po_number = f"PO-{order_date.strftime('%Y%m%d')}-{purchase_order.id:04d}"
+        purchase_order.po_number = (
+            f"PO-{order_date.strftime('%Y%m%d')}-{purchase_order.id:04d}"
+        )
 
         # Handle items
         for item_data in normalized_items:
@@ -4491,8 +4825,12 @@ def create_purchase_order_api():
         )
     except IntegrityError:
         db.session.rollback()
-        current_app.logger.exception("Purchase order create conflict or integrity error")
-        return jsonify({"error": "Could not create purchase order due to data conflict"}), 409
+        current_app.logger.exception(
+            "Purchase order create conflict or integrity error"
+        )
+        return jsonify(
+            {"error": "Could not create purchase order due to data conflict"}
+        ), 409
     except (InvalidOperation, ValueError, TypeError):
         db.session.rollback()
         return jsonify({"error": "Invalid purchase order payload"}), 400
@@ -4503,7 +4841,9 @@ def create_purchase_order_api():
     except Exception:
         db.session.rollback()
         current_app.logger.exception("Unexpected error while creating purchase order")
-        return jsonify({"error": "Unexpected server error while creating purchase order"}), 500
+        return jsonify(
+            {"error": "Unexpected server error while creating purchase order"}
+        ), 500
 
 
 @api_v1_bp.route("/inventory/purchase-orders/<int:po_id>", methods=["PUT", "PATCH"])
@@ -4532,7 +4872,9 @@ def update_purchase_order_api(po_id):
     try:
         # Update basic fields
         if "order_date" in data:
-            purchase_order.order_date = datetime.strptime(data["order_date"], "%Y-%m-%d").date()
+            purchase_order.order_date = datetime.strptime(
+                data["order_date"], "%Y-%m-%d"
+            ).date()
         if "expected_delivery_date" in data:
             purchase_order.expected_delivery_date = (
                 datetime.strptime(data["expected_delivery_date"], "%Y-%m-%d").date()
@@ -4578,8 +4920,12 @@ def update_purchase_order_api(po_id):
         )
     except IntegrityError:
         db.session.rollback()
-        current_app.logger.exception("Purchase order update conflict or integrity error")
-        return jsonify({"error": "Could not update purchase order due to data conflict"}), 409
+        current_app.logger.exception(
+            "Purchase order update conflict or integrity error"
+        )
+        return jsonify(
+            {"error": "Could not update purchase order due to data conflict"}
+        ), 409
     except (InvalidOperation, ValueError, TypeError):
         db.session.rollback()
         return jsonify({"error": "Invalid purchase order payload"}), 400
@@ -4590,7 +4936,9 @@ def update_purchase_order_api(po_id):
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error updating purchase order: {e}", exc_info=True)
-        return jsonify({"error": "Unexpected server error while updating purchase order"}), 500
+        return jsonify(
+            {"error": "Unexpected server error while updating purchase order"}
+        ), 500
 
 
 @api_v1_bp.route("/inventory/purchase-orders/<int:po_id>", methods=["DELETE"])
@@ -4654,7 +5002,9 @@ def receive_purchase_order_api(po_id):
 
         received_date_str = data.get("received_date")
         received_date = (
-            datetime.strptime(received_date_str, "%Y-%m-%d").date() if received_date_str else datetime.now().date()
+            datetime.strptime(received_date_str, "%Y-%m-%d").date()
+            if received_date_str
+            else datetime.now().date()
         )
         purchase_order.mark_as_received(received_date)
 
@@ -4805,7 +5155,9 @@ def list_timesheet_periods():
     start = _parse_date(request.args.get("start_date"))
     end = _parse_date(request.args.get("end_date"))
 
-    periods = service.list_periods(user_id=user_id, status=status, period_start=start, period_end=end)
+    periods = service.list_periods(
+        user_id=user_id, status=status, period_start=start, period_end=end
+    )
     return jsonify({"timesheet_periods": [p.to_dict() for p in periods]})
 
 
@@ -4832,7 +5184,9 @@ def create_or_get_timesheet_period():
 def submit_timesheet_period(period_id):
     from app.services.workforce_governance_service import WorkforceGovernanceService
 
-    result = WorkforceGovernanceService().submit_period(period_id=period_id, actor_id=g.api_user.id)
+    result = WorkforceGovernanceService().submit_period(
+        period_id=period_id, actor_id=g.api_user.id
+    )
     if not result.get("success"):
         return jsonify({"error": result.get("message", "Could not submit period")}), 400
     return jsonify(
@@ -4856,7 +5210,9 @@ def approve_timesheet_period(period_id):
         period_id=period_id, approver_id=g.api_user.id, comment=data.get("comment")
     )
     if not result.get("success"):
-        return jsonify({"error": result.get("message", "Could not approve period")}), 400
+        return jsonify(
+            {"error": result.get("message", "Could not approve period")}
+        ), 400
     return jsonify(
         {
             "message": "Timesheet period approved",
@@ -4878,7 +5234,9 @@ def reject_timesheet_period(period_id):
     if not reason:
         return jsonify({"error": "reason is required"}), 400
 
-    result = WorkforceGovernanceService().reject_period(period_id=period_id, approver_id=g.api_user.id, reason=reason)
+    result = WorkforceGovernanceService().reject_period(
+        period_id=period_id, approver_id=g.api_user.id, reason=reason
+    )
     if not result.get("success"):
         return jsonify({"error": result.get("message", "Could not reject period")}), 400
     return jsonify(
@@ -4916,7 +5274,9 @@ def close_timesheet_period(period_id):
 def delete_timesheet_period_api(period_id):
     from app.services.workforce_governance_service import WorkforceGovernanceService
 
-    result = WorkforceGovernanceService().delete_period(period_id=period_id, actor_id=g.api_user.id)
+    result = WorkforceGovernanceService().delete_period(
+        period_id=period_id, actor_id=g.api_user.id
+    )
     if not result.get("success"):
         return jsonify({"error": result.get("message", "Could not delete period")}), 400
     return jsonify({"message": "Timesheet period deleted"})
@@ -4946,22 +5306,30 @@ def update_timesheet_policy():
     data = request.get_json() or {}
 
     if "default_period_type" in data:
-        policy.default_period_type = (data.get("default_period_type") or "weekly").strip().lower()
+        policy.default_period_type = (
+            (data.get("default_period_type") or "weekly").strip().lower()
+        )
     if "auto_lock_days" in data:
         policy.auto_lock_days = data.get("auto_lock_days")
     if "approver_user_ids" in data:
         ids = data.get("approver_user_ids") or []
         if isinstance(ids, list):
-            policy.approver_user_ids = ",".join(str(int(x)) for x in ids if str(x).strip())
+            policy.approver_user_ids = ",".join(
+                str(int(x)) for x in ids if str(x).strip()
+            )
     if "enable_multi_level_approval" in data:
-        policy.enable_multi_level_approval = bool(data.get("enable_multi_level_approval"))
+        policy.enable_multi_level_approval = bool(
+            data.get("enable_multi_level_approval")
+        )
     if "require_rejection_comment" in data:
         policy.require_rejection_comment = bool(data.get("require_rejection_comment"))
     if "enable_admin_override" in data:
         policy.enable_admin_override = bool(data.get("enable_admin_override"))
 
     db.session.commit()
-    return jsonify({"message": "Timesheet policy updated", "timesheet_policy": policy.to_dict()})
+    return jsonify(
+        {"message": "Timesheet policy updated", "timesheet_policy": policy.to_dict()}
+    )
 
 
 # ==================== Time Off ====================
@@ -5001,7 +5369,9 @@ def create_leave_type_api():
     )
     db.session.add(leave_type)
     db.session.commit()
-    return jsonify({"message": "Leave type created", "leave_type": leave_type.to_dict()}), 201
+    return jsonify(
+        {"message": "Leave type created", "leave_type": leave_type.to_dict()}
+    ), 201
 
 
 @api_v1_bp.route("/time-off/leave-types/<int:leave_type_id>", methods=["DELETE"])
@@ -5013,7 +5383,9 @@ def delete_leave_type_api(leave_type_id):
         return forbidden_response("Access denied")
     result = WorkforceGovernanceService().delete_leave_type(leave_type_id)
     if not result.get("success"):
-        return jsonify({"error": result.get("message", "Could not delete leave type")}), 400
+        return jsonify(
+            {"error": result.get("message", "Could not delete leave type")}
+        ), 400
     return jsonify({"message": "Leave type deleted"})
 
 
@@ -5055,7 +5427,9 @@ def create_time_off_request_api():
     start = _parse_date(data.get("start_date"))
     end = _parse_date(data.get("end_date"))
     if not leave_type_id or not start or not end:
-        return jsonify({"error": "leave_type_id, start_date and end_date are required"}), 400
+        return jsonify(
+            {"error": "leave_type_id, start_date and end_date are required"}
+        ), 400
 
     requested_hours = data.get("requested_hours")
     if requested_hours is not None:
@@ -5076,7 +5450,9 @@ def create_time_off_request_api():
         submit_now=bool(data.get("submit", True)),
     )
     if not result.get("success"):
-        return jsonify({"error": result.get("message", "Could not create request")}), 400
+        return jsonify(
+            {"error": result.get("message", "Could not create request")}
+        ), 400
     return (
         jsonify(
             {
@@ -5104,7 +5480,9 @@ def approve_time_off_request_api(request_id):
         comment=data.get("comment"),
     )
     if not result.get("success"):
-        return jsonify({"error": result.get("message", "Could not approve request")}), 400
+        return jsonify(
+            {"error": result.get("message", "Could not approve request")}
+        ), 400
     return jsonify(
         {
             "message": "Time-off request approved",
@@ -5129,7 +5507,9 @@ def reject_time_off_request_api(request_id):
         comment=data.get("comment"),
     )
     if not result.get("success"):
-        return jsonify({"error": result.get("message", "Could not reject request")}), 400
+        return jsonify(
+            {"error": result.get("message", "Could not reject request")}
+        ), 400
     return jsonify(
         {
             "message": "Time-off request rejected",
@@ -5149,7 +5529,9 @@ def delete_time_off_request_api(request_id):
         actor_can_approve=_is_api_approver(g.api_user),
     )
     if not result.get("success"):
-        return jsonify({"error": result.get("message", "Could not delete request")}), 400
+        return jsonify(
+            {"error": result.get("message", "Could not delete request")}
+        ), 400
     return jsonify({"message": "Time-off request deleted"})
 
 
@@ -5217,7 +5599,9 @@ def delete_holiday_api(holiday_id):
         return forbidden_response("Access denied")
     result = WorkforceGovernanceService().delete_holiday(holiday_id)
     if not result.get("success"):
-        return jsonify({"error": result.get("message", "Could not delete holiday")}), 400
+        return jsonify(
+            {"error": result.get("message", "Could not delete holiday")}
+        ), 400
     return jsonify({"message": "Holiday deleted"})
 
 
@@ -5235,7 +5619,9 @@ def export_payroll_csv():
     start = _parse_date(request.args.get("start_date"))
     end = _parse_date(request.args.get("end_date"))
     if not start or not end:
-        return jsonify({"error": "start_date and end_date are required (YYYY-MM-DD)"}), 400
+        return jsonify(
+            {"error": "start_date and end_date are required (YYYY-MM-DD)"}
+        ), 400
 
     user_id = request.args.get("user_id", type=int)
     if not g.api_user.is_admin:
@@ -5318,8 +5704,12 @@ def capacity_report_api():
     if not g.api_user.is_admin:
         parsed_user_ids = [g.api_user.id]
 
-    rows = WorkforceGovernanceService().capacity_report(start_date=start, end_date=end, team_user_ids=parsed_user_ids)
-    return jsonify({"capacity": rows, "start_date": start.isoformat(), "end_date": end.isoformat()})
+    rows = WorkforceGovernanceService().capacity_report(
+        start_date=start, end_date=end, team_user_ids=parsed_user_ids
+    )
+    return jsonify(
+        {"capacity": rows, "start_date": start.isoformat(), "end_date": end.isoformat()}
+    )
 
 
 @api_v1_bp.route("/reports/compliance/locked-periods", methods=["GET"])
@@ -5332,7 +5722,9 @@ def compliance_locked_periods_api():
 
     start = _parse_date(request.args.get("start_date"))
     end = _parse_date(request.args.get("end_date"))
-    rows = WorkforceGovernanceService().locked_periods_report(start_date=start, end_date=end)
+    rows = WorkforceGovernanceService().locked_periods_report(
+        start_date=start, end_date=end
+    )
     return jsonify({"locked_periods": rows})
 
 
@@ -5348,7 +5740,9 @@ def compliance_audit_events_api():
     end = _parse_date(request.args.get("end_date"))
     user_id = request.args.get("user_id", type=int)
 
-    rows = WorkforceGovernanceService().compliance_audit_events(start_date=start, end_date=end, user_id=user_id)
+    rows = WorkforceGovernanceService().compliance_audit_events(
+        start_date=start, end_date=end, user_id=user_id
+    )
     return jsonify({"audit_events": rows})
 
 
@@ -5368,7 +5762,9 @@ def mileage_gps_start_api():
         location=data.get("location"),
     )
     if not result.get("success"):
-        return jsonify({"error": result.get("message", "Could not start GPS tracking")}), 400
+        return jsonify(
+            {"error": result.get("message", "Could not start GPS tracking")}
+        ), 400
     return jsonify(result), 201
 
 
@@ -5383,7 +5779,9 @@ def mileage_gps_add_point_api(track_id):
     if latitude is None or longitude is None:
         return jsonify({"error": "latitude and longitude are required"}), 400
 
-    result = GPSTrackingService().add_track_point(track_id=track_id, latitude=latitude, longitude=longitude)
+    result = GPSTrackingService().add_track_point(
+        track_id=track_id, latitude=latitude, longitude=longitude
+    )
     if not result.get("success"):
         return jsonify({"error": result.get("message", "Could not add GPS point")}), 400
     return jsonify(result)
@@ -5402,7 +5800,9 @@ def mileage_gps_stop_api(track_id):
         location=data.get("location"),
     )
     if not result.get("success"):
-        return jsonify({"error": result.get("message", "Could not stop GPS tracking")}), 400
+        return jsonify(
+            {"error": result.get("message", "Could not stop GPS tracking")}
+        ), 400
     return jsonify(result)
 
 
@@ -5418,7 +5818,9 @@ def mileage_gps_create_expense_api(track_id):
         rate_per_km=data.get("rate_per_km"),
     )
     if not result.get("success"):
-        return jsonify({"error": result.get("message", "Could not create expense from GPS track")}), 400
+        return jsonify(
+            {"error": result.get("message", "Could not create expense from GPS track")}
+        ), 400
     return jsonify(result)
 
 
@@ -5427,14 +5829,24 @@ def mileage_gps_create_expense_api(track_id):
 def mileage_gps_list_api():
     from app.services.gps_tracking_service import GPSTrackingService
 
-    start = parse_datetime(request.args.get("start_date")) if request.args.get("start_date") else None
-    end = parse_datetime(request.args.get("end_date")) if request.args.get("end_date") else None
+    start = (
+        parse_datetime(request.args.get("start_date"))
+        if request.args.get("start_date")
+        else None
+    )
+    end = (
+        parse_datetime(request.args.get("end_date"))
+        if request.args.get("end_date")
+        else None
+    )
 
     user_id = request.args.get("user_id", type=int)
     if not user_id or not g.api_user.is_admin:
         user_id = g.api_user.id
 
-    tracks = GPSTrackingService().get_user_tracks(user_id=user_id, start_date=start, end_date=end)
+    tracks = GPSTrackingService().get_user_tracks(
+        user_id=user_id, start_date=start, end_date=end
+    )
     return jsonify({"tracks": tracks})
 
 

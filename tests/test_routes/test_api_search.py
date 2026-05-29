@@ -29,7 +29,7 @@ class _FailingProjectQuery:
 pytestmark = [pytest.mark.api, pytest.mark.integration]
 
 from app import db
-from app.models import Project, Task, Client, TimeEntry, ApiToken
+from app.models import ApiToken, Client, Project, Task, TimeEntry
 from app.services import global_search_service as global_search_service_module
 
 
@@ -337,8 +337,9 @@ class TestV1SearchAPI:
 
     def test_search_time_entries_respects_user_permissions(self, app, user, project):
         """Test that non-admin users only see their own time entries"""
-        from app import db
         from datetime import datetime, timedelta
+
+        from app import db
 
         # Create API token for user
         token, plain_token = ApiToken.create_token(user_id=user.id, name="Test Token", scopes="read:projects")

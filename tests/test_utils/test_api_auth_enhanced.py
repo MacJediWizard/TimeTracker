@@ -7,14 +7,12 @@ import pytest
 pytestmark = [pytest.mark.unit, pytest.mark.utils]
 
 from datetime import datetime, timedelta
+
 from flask import Flask, g
-from app.models import ApiToken, User
-from app.utils.api_auth import (
-    authenticate_token,
-    require_api_token,
-    extract_token_from_request,
-)
+
 from app import db
+from app.models import ApiToken, User
+from app.utils.api_auth import authenticate_token, extract_token_from_request, require_api_token
 
 
 @pytest.fixture

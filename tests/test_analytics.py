@@ -2,11 +2,13 @@
 Tests for analytics functionality (logging, Prometheus, OTLP telemetry)
 """
 
-import pytest
-import os
 import json
-from unittest.mock import patch, MagicMock, call
+import os
+from unittest.mock import MagicMock, call, patch
+
+import pytest
 from flask import g
+
 from app import create_app, log_event, track_event
 
 

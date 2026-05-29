@@ -9,11 +9,13 @@ These tests cover:
 - Smoke tests for critical user deletion workflows
 """
 
-import pytest
-from flask import url_for
-from app.models import User, TimeEntry, Project, Client
 from datetime import datetime, timedelta
 from decimal import Decimal
+
+import pytest
+from flask import url_for
+
+from app.models import Client, Project, TimeEntry, User
 
 
 class TestAdminUserList:
@@ -352,8 +354,9 @@ class TestAdminUserDeletion:
         """Test that deleting a user with time entries fails."""
         with app.app_context():
             # Create a time entry for the user
-            from app import db
             from factories import TimeEntryFactory
+
+            from app import db
 
             TimeEntryFactory(
                 user_id=user.id,
@@ -500,9 +503,10 @@ class TestAdminUserDeletionCascading:
         """Test that deleting a user cascades to project costs."""
         with app.app_context():
             # Create a project cost for the user
-            from app.models import ProjectCost
-            from app import db
             from datetime import date
+
+            from app import db
+            from app.models import ProjectCost
 
             project_cost = ProjectCost(
                 project_id=test_project.id,
@@ -601,8 +605,9 @@ class TestUserDeletionSmokeTests:
         """SMOKE: System prevents deletion of user with time entries."""
         with app.app_context():
             # Create time entry
-            from app import db
             from factories import TimeEntryFactory
+
+            from app import db
 
             TimeEntryFactory(
                 user_id=user.id,

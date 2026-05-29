@@ -1,6 +1,7 @@
 """Tests for API v1 inventory transfers (list, create, get by reference_id)."""
 
 import json
+
 import pytest
 
 pytestmark = [pytest.mark.api, pytest.mark.integration]
@@ -8,14 +9,7 @@ pytestmark = [pytest.mark.api, pytest.mark.integration]
 from decimal import Decimal
 
 from app import db
-from app.models import (
-    User,
-    ApiToken,
-    Warehouse,
-    StockItem,
-    WarehouseStock,
-    StockMovement,
-)
+from app.models import ApiToken, StockItem, StockMovement, User, Warehouse, WarehouseStock
 
 
 @pytest.fixture

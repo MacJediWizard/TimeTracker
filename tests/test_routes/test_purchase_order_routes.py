@@ -1,15 +1,18 @@
 """Tests for purchase order routes"""
 
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.routes]
 
-from decimal import Decimal
 from datetime import date
+from decimal import Decimal
+
 from flask import url_for
+
 from app import db
-from app.models import PurchaseOrder, PurchaseOrderItem, Supplier, StockItem, Warehouse, User
+from app.models import PurchaseOrder, PurchaseOrderItem, StockItem, Supplier, User, Warehouse
 
 
 @pytest.fixture

@@ -5,9 +5,11 @@ import pytest
 pytestmark = [pytest.mark.unit, pytest.mark.routes]
 
 from decimal import Decimal
+
 from flask import url_for
+
 from app import db
-from app.models import Warehouse, StockItem, WarehouseStock, StockMovement, StockLot, User
+from app.models import StockItem, StockLot, StockMovement, User, Warehouse, WarehouseStock
 
 
 @pytest.fixture

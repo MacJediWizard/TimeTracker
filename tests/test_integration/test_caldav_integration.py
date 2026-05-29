@@ -8,8 +8,10 @@ pytestmark = [pytest.mark.integration]
 
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
+
 from flask import url_for
 
+from app.integrations.caldav_calendar import CalDAVCalendar, CalDAVCalendarConnector, CalDAVClient
 from app.models import (
     CalendarEvent,
     Integration,
@@ -18,11 +20,6 @@ from app.models import (
     Project,
     TimeEntry,
     User,
-)
-from app.integrations.caldav_calendar import (
-    CalDAVCalendarConnector,
-    CalDAVClient,
-    CalDAVCalendar,
 )
 
 

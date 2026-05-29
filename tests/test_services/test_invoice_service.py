@@ -2,9 +2,10 @@
 Tests for InvoiceService.
 """
 
-import pytest
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+
+import pytest
 
 from app import db
 from app.models import Client, Invoice, Project, TimeEntry
@@ -113,8 +114,8 @@ def test_get_invoice_with_details(app, test_project, test_user):
 @pytest.mark.unit
 def test_create_invoice_from_time_entries_with_tax(app, test_project, test_user):
     """Test creating invoice from time entries with tax calculation"""
-    from decimal import Decimal
     from datetime import datetime, timedelta
+    from decimal import Decimal
 
     service = InvoiceService()
 
@@ -195,8 +196,8 @@ def test_create_invoice_from_time_entries_invalid_project(app, test_user):
 @pytest.mark.unit
 def test_mark_invoice_as_sent_updates_time_entries(app, test_project, test_user):
     """Test that marking invoice as sent updates time entries as paid"""
-    from decimal import Decimal
     from datetime import datetime, timedelta
+    from decimal import Decimal
 
     service = InvoiceService()
 

@@ -11,7 +11,7 @@ import pytest
 
 pytestmark = [pytest.mark.integration]
 
-from app.integrations.jira import JiraConnector, JIRA_ISSUE_KEY_PATTERN
+from app.integrations.jira import JIRA_ISSUE_KEY_PATTERN, JiraConnector
 from app.models import Integration, User
 
 

@@ -7,13 +7,7 @@ pytestmark = [pytest.mark.api, pytest.mark.integration]
 from decimal import Decimal
 
 from app import db
-from app.models import (
-    ApiToken,
-    Warehouse,
-    StockItem,
-    WarehouseStock,
-    StockMovement,
-)
+from app.models import ApiToken, StockItem, StockMovement, Warehouse, WarehouseStock
 
 
 @pytest.fixture

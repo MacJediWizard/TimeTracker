@@ -17,10 +17,7 @@ from app import db
 from app.models.client import Client
 from app.models.esignature_request import ESignatureRequest, ESignatureStatus
 from app.models.timesheet_period import TimesheetPeriod, TimesheetPeriodStatus
-from app.models.timesheet_signoff_request import (
-    TimesheetSignoffRequest,
-    TimesheetSignoffStatus,
-)
+from app.models.timesheet_signoff_request import TimesheetSignoffRequest, TimesheetSignoffStatus
 from app.models.timesheet_signoff_template import TimesheetSignoffTemplate
 
 

@@ -8,12 +8,7 @@ pytestmark = [pytest.mark.unit, pytest.mark.routes]
 
 from app import db
 from app.models import User
-from app.utils.keyboard_shortcuts_defaults import (
-    FORBIDDEN_KEYS,
-    merge_overrides,
-    normalize_key,
-    validate_overrides,
-)
+from app.utils.keyboard_shortcuts_defaults import FORBIDDEN_KEYS, merge_overrides, normalize_key, validate_overrides
 
 
 @pytest.fixture

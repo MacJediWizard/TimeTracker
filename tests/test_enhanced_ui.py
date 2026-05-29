@@ -4,7 +4,6 @@ Tests for enhanced UI features
 
 import os
 
-import pytest
 from flask import url_for
 
 
@@ -42,18 +41,33 @@ class TestEnhancedUI:
         assert b"toast-notifications.js" in response.data
 
     def test_set_submit_button_loading_available(self, authenticated_client):
-        """Test that setSubmitButtonLoading helper is provided by enhanced-ui.js"""
-        response = authenticated_client.get(url_for("main.dashboard"))
-        assert response.status_code == 200
-        assert b"enhanced-ui.js" in response.data
-        assert b"setSubmitButtonLoading" in response.data
+        """Test that setSubmitButtonLoading helper is provided by enhanced-ui.js.
+
+        The dashboard HTML references enhanced-ui.js via <script src=...>; the
+        symbol itself lives in the served static file. Fetch the file and
+        confirm the helper is exported.
+        """
+        page = authenticated_client.get(url_for("main.dashboard"))
+        assert page.status_code == 200
+        assert b"enhanced-ui.js" in page.data
+
+        asset = authenticated_client.get(url_for("static", filename="enhanced-ui.js"))
+        assert asset.status_code == 200
+        assert b"setSubmitButtonLoading" in asset.data
 
     def test_filter_ajax_error_toast_message_in_enhanced_ui(self, authenticated_client):
-        """Test that enhanced-ui.js shows consistent error toast on filter failure"""
-        response = authenticated_client.get(url_for("projects.list_projects"))
-        assert response.status_code == 200
-        assert b"enhanced-ui.js" in response.data
-        assert b"Failed to filter results" in response.data
+        """Test that enhanced-ui.js shows a consistent error toast on filter failure.
+
+        Same shape as above — the user-facing string lives in the static JS,
+        not in the rendered page HTML.
+        """
+        page = authenticated_client.get(url_for("projects.list_projects"))
+        assert page.status_code == 200
+        assert b"enhanced-ui.js" in page.data
+
+        asset = authenticated_client.get(url_for("static", filename="enhanced-ui.js"))
+        assert asset.status_code == 200
+        assert b"Failed to filter results" in asset.data
 
 
 class TestComponentLibrary:

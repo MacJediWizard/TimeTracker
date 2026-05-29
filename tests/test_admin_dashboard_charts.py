@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 def test_admin_dashboard_returns_chart_data_with_30_days(client, app, admin_user):
     """Admin dashboard returns 200 and chart data with 30 points for user_activity and time_entries_daily."""
     from app import db
-    from app.models import TimeEntry, Settings
+    from app.models import Settings, TimeEntry
 
     with app.app_context():
         # Ensure admin module accessible

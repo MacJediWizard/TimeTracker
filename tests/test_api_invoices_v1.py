@@ -1,7 +1,8 @@
 import json
-import uuid
-import tempfile
 import os
+import tempfile
+import uuid
+
 import pytest
 
 pytestmark = [pytest.mark.api, pytest.mark.integration]
@@ -9,7 +10,7 @@ pytestmark = [pytest.mark.api, pytest.mark.integration]
 from datetime import date, timedelta
 
 from app import create_app, db
-from app.models import User, Client, Project, Invoice, ApiToken
+from app.models import ApiToken, Client, Invoice, Project, User
 
 
 @pytest.fixture

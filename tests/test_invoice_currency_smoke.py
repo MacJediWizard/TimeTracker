@@ -3,12 +3,14 @@ Smoke tests for invoice currency functionality
 Simple high-level tests to ensure the system works end-to-end
 """
 
-import pytest
 from datetime import date, timedelta
 from decimal import Decimal
+
+import pytest
+from factories import ClientFactory, InvoiceFactory, ProjectFactory, UserFactory
+
 from app import db
 from app.models import Settings  # noqa: F401  (kept for tooling discoverability)
-from factories import UserFactory, ClientFactory, ProjectFactory, InvoiceFactory
 
 # The local `app` fixture this file used to define (with `sqlite:///:memory:` and
 # the default connection pool) raced against pytest-xdist parallel execution and

@@ -1,12 +1,14 @@
 """Tests for admin settings and logo upload functionality."""
 
-import pytest
-import os
 import io
+import os
+
+import pytest
 from flask import url_for
-from app import db
-from app.models import User, Settings
 from PIL import Image
+
+from app import db
+from app.models import Settings, User
 
 
 @pytest.fixture

@@ -8,6 +8,7 @@ import pytest
 pytestmark = pytest.mark.skip(reason="get_user_friendly_message function no longer exists in error_handlers module")
 
 from flask import jsonify
+
 from app import db
 from app.models import User
 from app.utils.error_handlers import register_error_handlers

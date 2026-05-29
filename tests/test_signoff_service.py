@@ -11,18 +11,11 @@ from unittest.mock import patch
 import pytest
 
 from app import db
-from app.integrations.esignature.base import (
-    ESignatureError,
-    ESignatureSendResult,
-    ESignatureWebhookEvent,
-)
+from app.integrations.esignature.base import ESignatureError, ESignatureSendResult, ESignatureWebhookEvent
 from app.models.client import Client
 from app.models.esignature_request import ESignatureRequest, ESignatureStatus
 from app.models.integration import Integration, IntegrationCredential
-from app.models.timesheet_signoff_request import (
-    TimesheetSignoffRequest,
-    TimesheetSignoffStatus,
-)
+from app.models.timesheet_signoff_request import TimesheetSignoffRequest, TimesheetSignoffStatus
 from app.models.timesheet_signoff_template import TimesheetSignoffTemplate
 from app.models.user import User
 from app.services.timesheet_signoff_service import TimesheetSignoffService

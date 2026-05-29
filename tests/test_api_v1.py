@@ -38,11 +38,7 @@ def app():
     with app.app_context():
         db.create_all()
         from app.models import Role
-        from app.utils.permissions_seed import (
-            migrate_legacy_users,
-            seed_permissions,
-            seed_roles,
-        )
+        from app.utils.permissions_seed import migrate_legacy_users, seed_permissions, seed_roles
 
         for role_name in ("admin", "user", "manager", "subcontractor"):
             if Role.query.filter_by(name=role_name).first() is None:

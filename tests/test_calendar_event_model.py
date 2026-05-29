@@ -3,10 +3,12 @@ Test suite for CalendarEvent model.
 Tests model creation, relationships, properties, and business logic.
 """
 
-import pytest
 from datetime import datetime, timedelta
-from app.models import CalendarEvent, User, Project, Task, Client, TimeEntry
+
+import pytest
+
 from app import db
+from app.models import CalendarEvent, Client, Project, Task, TimeEntry, User
 
 # ============================================================================
 # CalendarEvent Model Tests

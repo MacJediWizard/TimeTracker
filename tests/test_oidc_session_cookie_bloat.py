@@ -6,8 +6,9 @@ Flask's cookie session can overflow cookie limits and cause the browser to drop
 or truncate the session, leading to redirect loops back to /login.
 """
 
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 
 @pytest.mark.unit

@@ -1,10 +1,12 @@
 """Tests for audit logging utility"""
 
-import pytest
 from datetime import datetime
-from app.models import AuditLog, Project, User
+
+import pytest
+
 from app import db
-from app.utils.audit import should_track_model, should_track_field, serialize_value, get_entity_name, get_entity_type
+from app.models import AuditLog, Project, User
+from app.utils.audit import get_entity_name, get_entity_type, serialize_value, should_track_field, should_track_model
 
 
 class TestAuditLoggingUtility:

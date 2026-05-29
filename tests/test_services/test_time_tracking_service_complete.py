@@ -2,10 +2,12 @@
 Comprehensive tests for TimeTrackingService including update and delete methods.
 """
 
-import pytest
 from datetime import datetime, timedelta
+
+import pytest
+
+from app.models import Project, TimeEntry, User
 from app.services import TimeTrackingService
-from app.models import TimeEntry, Project, User
 
 
 class TestTimeTrackingServiceComplete:

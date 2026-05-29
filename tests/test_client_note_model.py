@@ -3,10 +3,12 @@ Test suite for ClientNote model.
 Tests model creation, relationships, properties, and business logic.
 """
 
-import pytest
 from datetime import datetime
-from app.models import ClientNote, Client, User
+
+import pytest
+
 from app import db
+from app.models import Client, ClientNote, User
 
 # ============================================================================
 # ClientNote Model Tests

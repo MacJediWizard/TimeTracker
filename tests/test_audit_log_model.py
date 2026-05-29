@@ -2,8 +2,6 @@
 
 from datetime import datetime
 
-import pytest
-
 from app import db
 from app.models import AuditLog
 
@@ -173,15 +171,16 @@ class TestAuditLogModel:
             )
 
             db.session.commit()
-            # Filter by action — scope to Project so fixture-driven creates
-            # (User/Client/Project/Settings) on PostgreSQL don't pollute the
-            # count.
-            created_logs = AuditLog.get_recent(action="created", entity_type="Project", limit=10)
+            # Scope by both action+entity_type and the explicit user_id used by
+            # this test, so the audit-listener-driven create rows fired during
+            # fixture setup (User/Client/Project/Settings — user_id=None there)
+            # don't pollute the count.
+            created_logs = AuditLog.get_recent(action="created", entity_type="Project", user_id=test_user.id, limit=10)
             assert len(created_logs) == 1
             assert created_logs[0].action == "created"
 
-            # Filter by entity type
-            project_logs = AuditLog.get_recent(entity_type="Project", limit=10)
+            # Same scoping for the per-entity-type query: only this test's 3 rows.
+            project_logs = AuditLog.get_recent(entity_type="Project", user_id=test_user.id, limit=10)
             assert len(project_logs) == 3
 
     def test_audit_log_to_dict(self, app, test_user, test_project):

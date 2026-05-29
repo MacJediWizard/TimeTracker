@@ -6,8 +6,8 @@ This script validates that all new features can be imported
 and basic functionality works without errors.
 """
 
-import sys
 import os
+import sys
 
 # Add the app directory to the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -19,21 +19,21 @@ def test_imports():
 
     try:
         # Test model imports
-        from app.models import TimeEntryTemplate, Activity, SavedFilter, User
+        from app.models import Activity, SavedFilter, TimeEntryTemplate, User
 
         print("✅ Models imported successfully")
 
         # Test route imports
-        from app.routes.user import user_bp
-        from app.routes.time_entry_templates import time_entry_templates_bp
         from app.routes.saved_filters import saved_filters_bp
+        from app.routes.time_entry_templates import time_entry_templates_bp
+        from app.routes.user import user_bp
 
         print("✅ Routes imported successfully")
 
         # Test utility imports
-        from app.utils.email import mail, init_mail, send_email
-        from app.utils.excel_export import create_time_entries_excel, create_project_report_excel
-        from app.utils.scheduled_tasks import scheduler, check_overdue_invoices, register_scheduled_tasks
+        from app.utils.email import init_mail, mail, send_email
+        from app.utils.excel_export import create_project_report_excel, create_time_entries_excel
+        from app.utils.scheduled_tasks import check_overdue_invoices, register_scheduled_tasks, scheduler
 
         print("✅ Utilities imported successfully")
 
@@ -51,7 +51,7 @@ def test_model_attributes():
     print("\n🔍 Testing model attributes...")
 
     try:
-        from app.models import TimeEntryTemplate, Activity, SavedFilter, User
+        from app.models import Activity, SavedFilter, TimeEntryTemplate, User
 
         # Test TimeEntryTemplate attributes
         template_attrs = [
@@ -121,7 +121,7 @@ def test_model_methods():
     print("\n🔍 Testing model methods...")
 
     try:
-        from app.models import TimeEntryTemplate, Activity
+        from app.models import Activity, TimeEntryTemplate
 
         # Test TimeEntryTemplate methods
         template_methods = ["to_dict", "record_usage", "increment_usage"]
@@ -149,9 +149,9 @@ def test_blueprint_registration():
     print("\n🔍 Testing blueprint registration...")
 
     try:
-        from app.routes.user import user_bp
-        from app.routes.time_entry_templates import time_entry_templates_bp
         from app.routes.saved_filters import saved_filters_bp
+        from app.routes.time_entry_templates import time_entry_templates_bp
+        from app.routes.user import user_bp
 
         # Check blueprint names
         assert user_bp.name == "user", "user_bp has wrong name"
@@ -174,8 +174,8 @@ def test_utility_functions():
 
     try:
         from app.utils.email import init_mail, send_email
-        from app.utils.excel_export import create_time_entries_excel, create_project_report_excel
-        from app.utils.scheduled_tasks import register_scheduled_tasks, check_overdue_invoices
+        from app.utils.excel_export import create_project_report_excel, create_time_entries_excel
+        from app.utils.scheduled_tasks import check_overdue_invoices, register_scheduled_tasks
 
         # Check that functions are callable
         assert callable(init_mail), "init_mail is not callable"

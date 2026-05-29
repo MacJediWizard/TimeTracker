@@ -8,12 +8,14 @@ This module tests:
 - Admin interface for enabling/disabling portal access
 """
 
-import pytest
 from datetime import datetime, timedelta
 from decimal import Decimal
+
+import pytest
 from sqlalchemy.exc import PendingRollbackError
-from app.models import User, Client, Project, Invoice, InvoiceItem, TimeEntry, Quote
+
 from app import db
+from app.models import Client, Invoice, InvoiceItem, Project, Quote, TimeEntry, User
 
 
 @pytest.fixture(autouse=True)
@@ -830,7 +832,8 @@ class TestClientPortalActivityFeed:
     def test_activity_feed_service_only_client_projects(self, app, test_client):
         """get_client_activity_feed returns only activities for client's projects"""
         with app.app_context():
-            from app.models import Activity, Client as ClientModel
+            from app.models import Activity
+            from app.models import Client as ClientModel
             from app.services.client_activity_feed_service import get_client_activity_feed
 
             other_client = ClientModel(name="Other Client Feed", email="other2@example.com")
@@ -902,7 +905,7 @@ def test_get_client_id_from_session_returns_none_without_portal(app, user):
 def test_create_notification_emits_to_client_room(app, test_client):
     """Creating a client notification emits to client_portal_{client_id} room"""
     with app.app_context():
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
 
         with patch("app.socketio") as mock_socketio:
             mock_socketio.emit = MagicMock()

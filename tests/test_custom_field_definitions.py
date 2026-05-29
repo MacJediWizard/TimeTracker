@@ -4,8 +4,9 @@ Tests model creation, deletion, and client field cleanup.
 """
 
 import pytest
-from app.models import CustomFieldDefinition, Client
+
 from app import db
+from app.models import Client, CustomFieldDefinition
 
 # ============================================================================
 # CustomFieldDefinition Model Tests

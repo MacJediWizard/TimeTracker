@@ -2,11 +2,13 @@
 Tests for OIDC logout behavior
 """
 
+from unittest.mock import MagicMock, Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, MagicMock
 from flask import session, url_for
-from app.models import User
+
 from app import db
+from app.models import User
 
 
 @pytest.fixture

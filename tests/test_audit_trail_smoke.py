@@ -1,9 +1,11 @@
 """Smoke tests for audit trail feature"""
 
-import pytest
 from datetime import datetime
-from app.models import AuditLog, Project, User, Task
+
+import pytest
+
 from app import db
+from app.models import AuditLog, Project, Task, User
 
 
 @pytest.mark.smoke

@@ -1,7 +1,7 @@
 import pytest
 
 from app import db
-from app.models import User, Project, Task
+from app.models import Project, Task, User
 
 
 @pytest.mark.smoke

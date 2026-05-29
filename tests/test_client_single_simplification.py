@@ -6,9 +6,10 @@ and grayed out across manual time logging, project creation, and similar forms.
 """
 
 import pytest
+from flask import url_for
+
 from app import db
 from app.models import Client
-from flask import url_for
 
 
 @pytest.mark.integration

@@ -3,7 +3,6 @@ plus the branding-asset upload endpoint."""
 
 import io
 
-
 from app import db
 from app.models.branding_asset import BrandingAsset
 from app.models.timesheet_signoff_template import TimesheetSignoffTemplate

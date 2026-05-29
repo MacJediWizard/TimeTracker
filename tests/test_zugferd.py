@@ -1,8 +1,8 @@
 """Tests for Factur-X / ZUGFeRD: embedding CII XML in invoice PDFs."""
 
+import io
 from datetime import date, timedelta
 from decimal import Decimal
-import io
 
 import pytest
 

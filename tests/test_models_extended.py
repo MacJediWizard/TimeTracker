@@ -1,11 +1,13 @@
 """Extended model tests for additional coverage"""
 
-import pytest
 from datetime import datetime, timedelta
 from decimal import Decimal
+
+import pytest
+from factories import ClientFactory, InvoiceFactory, InvoiceItemFactory, ProjectFactory, UserFactory
+
 from app import db
-from app.models import User, Client, Project, TimeEntry, Invoice, InvoiceItem, Task, Comment, Settings
-from factories import ClientFactory, ProjectFactory, InvoiceFactory, InvoiceItemFactory, UserFactory
+from app.models import Client, Comment, Invoice, InvoiceItem, Project, Settings, Task, TimeEntry, User
 
 # ============================================================================
 # User Model Extended Tests

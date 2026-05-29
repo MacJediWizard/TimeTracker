@@ -11,7 +11,6 @@ import hmac
 import time
 from types import SimpleNamespace
 
-
 from app.integrations.esignature.docuseal import DocuSealConnector
 
 _SECRET = "whsec_test-secret-do-not-use-in-prod"

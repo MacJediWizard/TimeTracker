@@ -2,13 +2,15 @@
 Unit tests for TimeTrackingService.
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime, timedelta
-from app.services.time_tracking_service import TimeTrackingService
-from app.repositories import TimeEntryRepository, ProjectRepository
-from app.models import TimeEntry, Project, Task
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
+
 from app.constants import TimeEntrySource
+from app.models import Project, Task, TimeEntry
+from app.repositories import ProjectRepository, TimeEntryRepository
+from app.services.time_tracking_service import TimeTrackingService
 
 
 @pytest.fixture

@@ -12,10 +12,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app import db
 from app.models.client import Client
-from app.models.timesheet_signoff_request import (
-    TimesheetSignoffRequest,
-    TimesheetSignoffStatus,
-)
+from app.models.timesheet_signoff_request import TimesheetSignoffRequest, TimesheetSignoffStatus
 from app.models.timesheet_signoff_template import TimesheetSignoffTemplate
 from app.models.user import User
 

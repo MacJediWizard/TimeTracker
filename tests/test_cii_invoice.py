@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.utils.cii_invoice import CIIParty, build_cii_invoice_xml, FACTURX_GUIDELINE_EN16931
-from app.utils.invoice_validators import validate_cii_wellformed, validate_cii_en16931
+from app.utils.cii_invoice import FACTURX_GUIDELINE_EN16931, CIIParty, build_cii_invoice_xml
+from app.utils.invoice_validators import validate_cii_en16931, validate_cii_wellformed
 
 
 def _make_invoice(**overrides):

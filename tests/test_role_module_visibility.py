@@ -53,6 +53,7 @@ def test_module_enabled_decorator_blocks_hidden_module_route(app, user):
 
     from flask_login import login_user
     from werkzeug.exceptions import Forbidden
+
     from app.routes.analytics import analytics_dashboard
 
     with app.test_request_context("/analytics"):

@@ -77,8 +77,13 @@ def test_client(app):
 
 
 @pytest.fixture
-def test_project(app, test_client):
-    """Create a test project."""
+def test_project(app, test_client, test_user):
+    """Create a test project owned by the test user.
+
+    The per-user scope filter introduced upstream (PR #641) only lets a
+    'user' role see projects they created or are assigned to, so we set
+    created_by here to keep these tests deterministic across DBs.
+    """
     with app.app_context():
         project = Project(
             name="Test Project",
@@ -86,6 +91,7 @@ def test_project(app, test_client):
             description="A test project",
             billable=True,
             hourly_rate=Decimal("100.00"),
+            created_by=test_user,
         )
         db.session.add(project)
         db.session.commit()
@@ -93,8 +99,8 @@ def test_project(app, test_client):
 
 
 @pytest.fixture
-def test_project_2(app, test_client):
-    """Create a second test project."""
+def test_project_2(app, test_client, test_user):
+    """Create a second test project owned by the test user (see test_project)."""
     with app.app_context():
         project = Project(
             name="Test Project 2",
@@ -102,6 +108,7 @@ def test_project_2(app, test_client):
             description="Another test project",
             billable=True,
             hourly_rate=Decimal("150.00"),
+            created_by=test_user,
         )
         db.session.add(project)
         db.session.commit()
@@ -334,7 +341,8 @@ class TestFavoriteProjectRoutes:
 
             # Favorite the project
             response = client_fixture.post(
-                f"/projects/{test_project}/favorite", headers={"X-Requested-With": "XMLHttpRequest"}
+                f"/projects/{test_project}/favorite",
+                headers={"X-Requested-With": "XMLHttpRequest"},
             )
 
             assert response.status_code == 200
@@ -359,7 +367,8 @@ class TestFavoriteProjectRoutes:
 
             # Unfavorite the project
             response = client_fixture.post(
-                f"/projects/{test_project}/unfavorite", headers={"X-Requested-With": "XMLHttpRequest"}
+                f"/projects/{test_project}/unfavorite",
+                headers={"X-Requested-With": "XMLHttpRequest"},
             )
 
             assert response.status_code == 200

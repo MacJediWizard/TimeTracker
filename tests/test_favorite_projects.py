@@ -48,9 +48,15 @@ def client_fixture(app):
 
 @pytest.fixture
 def test_user(app):
-    """Create a test user."""
+    """Create a test user.
+
+    role='admin' so the per-user project-scope filter introduced upstream
+    (PR #641) doesn't hide the seeded project fixtures from the test under
+    PG (the Role / Permission tables aren't always wired up in this file's
+    in-memory app context).
+    """
     with app.app_context():
-        user = User(username="testuser", role="user")
+        user = User(username="testuser", role="admin")
         db.session.add(user)
         db.session.commit()
         return user.id

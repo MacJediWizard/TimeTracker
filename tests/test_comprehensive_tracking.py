@@ -37,7 +37,7 @@ class TestClientEventTracking:
     def test_client_update_tracking(self, client, admin_user, test_client_obj, mock_tracking):
         """Test that client update events are tracked"""
         # Login as admin
-        client.post("/login", data={"username": admin_user.username, "password": "admin123"})
+        client.post("/login", data={"username": admin_user.username, "password": "password123"})
 
         # Update client
         response = client.post(
@@ -53,7 +53,7 @@ class TestClientEventTracking:
     def test_client_archive_tracking(self, client, admin_user, test_client_obj, mock_tracking):
         """Test that client archive events are tracked"""
         # Login as admin
-        client.post("/login", data={"username": admin_user.username, "password": "admin123"})
+        client.post("/login", data={"username": admin_user.username, "password": "password123"})
 
         # Archive client
         response = client.post(f"/clients/{test_client_obj.id}/archive", follow_redirects=True)
@@ -69,7 +69,7 @@ class TestTaskEventTracking:
     def test_task_creation_tracking(self, client, auth_user, test_project, mock_tracking):
         """Test that task creation events are tracked"""
         # Login
-        client.post("/login", data={"username": auth_user.username, "password": "test123"})
+        client.post("/login", data={"username": auth_user.username, "password": "password123"})
 
         # Create a task
         response = client.post(
@@ -85,7 +85,7 @@ class TestTaskEventTracking:
     def test_task_status_change_tracking(self, client, auth_user, test_task, mock_tracking):
         """Test that task status change events are tracked"""
         # Login
-        client.post("/login", data={"username": auth_user.username, "password": "test123"})
+        client.post("/login", data={"username": auth_user.username, "password": "password123"})
 
         # Update task status
         response = client.post(f"/tasks/{test_task.id}/status", data={"status": "in_progress"}, follow_redirects=True)
@@ -96,7 +96,7 @@ class TestTaskEventTracking:
     def test_task_update_tracking(self, client, auth_user, test_task, mock_tracking):
         """Test that task update events are tracked"""
         # Login
-        client.post("/login", data={"username": auth_user.username, "password": "test123"})
+        client.post("/login", data={"username": auth_user.username, "password": "password123"})
 
         # Update task
         response = client.post(
@@ -120,7 +120,7 @@ class TestCommentEventTracking:
     def test_comment_creation_tracking(self, client, auth_user, test_project, mock_tracking):
         """Test that comment creation events are tracked"""
         # Login
-        client.post("/login", data={"username": auth_user.username, "password": "test123"})
+        client.post("/login", data={"username": auth_user.username, "password": "password123"})
 
         # Create a comment
         response = client.post(
@@ -137,7 +137,7 @@ class TestAdminTelemetryDashboard:
     def test_telemetry_dashboard_access(self, client, admin_user):
         """Test that admin can access telemetry dashboard"""
         # Login as admin
-        client.post("/login", data={"username": admin_user.username, "password": "admin123"})
+        client.post("/login", data={"username": admin_user.username, "password": "password123"})
 
         # Access telemetry dashboard
         response = client.get("/admin/telemetry")
@@ -147,7 +147,7 @@ class TestAdminTelemetryDashboard:
     def test_telemetry_toggle(self, client, admin_user, installation_config):
         """Test toggling telemetry"""
         # Login as admin
-        client.post("/login", data={"username": admin_user.username, "password": "admin123"})
+        client.post("/login", data={"username": admin_user.username, "password": "password123"})
 
         # Get initial state
         initial_state = installation_config.get_telemetry_preference()
@@ -163,7 +163,7 @@ class TestAdminTelemetryDashboard:
     def test_non_admin_cannot_access_telemetry(self, client, auth_user):
         """Test that non-admin cannot access telemetry dashboard"""
         # Login as regular user
-        client.post("/login", data={"username": auth_user.username, "password": "test123"})
+        client.post("/login", data={"username": auth_user.username, "password": "password123"})
 
         # Try to access telemetry dashboard
         response = client.get("/admin/telemetry", follow_redirects=True)

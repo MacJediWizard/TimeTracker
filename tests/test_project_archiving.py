@@ -6,11 +6,6 @@ import pytest
 
 from app.models import Activity, Project, TimeEntry
 
-pytestmark = pytest.mark.xfail(
-    reason="Module-wide PG-only flake; tracked as drytrix/TimeTracker#650",
-    strict=False,
-)
-
 
 class TestProjectArchivingModel:
     """Test project archiving model functionality"""

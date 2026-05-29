@@ -169,6 +169,7 @@ class TestAdminUserPasswordReset:
             # Set an initial password for the user
             user.set_password("oldpassword123")
             from app import db
+
             db.session.commit()
             user_id = user.id
 
@@ -202,6 +203,7 @@ class TestAdminUserPasswordReset:
         """Test password reset with force password change flag."""
         with app.app_context():
             from app import db
+
             user_id = user.id
 
         with client:

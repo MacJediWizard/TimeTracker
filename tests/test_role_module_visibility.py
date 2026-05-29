@@ -59,4 +59,3 @@ def test_module_enabled_decorator_blocks_hidden_module_route(app, user):
         login_user(user, remember=True)
         with pytest.raises(Forbidden):
             analytics_dashboard()
-

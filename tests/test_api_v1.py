@@ -38,11 +38,21 @@ def app():
     with app.app_context():
         db.create_all()
         from app.models import Role
-        from app.utils.permissions_seed import migrate_legacy_users, seed_permissions, seed_roles
+        from app.utils.permissions_seed import (
+            migrate_legacy_users,
+            seed_permissions,
+            seed_roles,
+        )
 
         for role_name in ("admin", "user", "manager", "subcontractor"):
             if Role.query.filter_by(name=role_name).first() is None:
-                db.session.add(Role(name=role_name, description=f"Test {role_name} role", is_system_role=True))
+                db.session.add(
+                    Role(
+                        name=role_name,
+                        description=f"Test {role_name} role",
+                        is_system_role=True,
+                    )
+                )
         db.session.commit()
         seed_permissions()
         seed_roles(silent=True)
@@ -181,7 +191,9 @@ class TestAPIAuthentication:
         """Test request with insufficient scope"""
         # Create token with limited scope
         token, plain_token = ApiToken.create_token(
-            user_id=int(test_user), name="Limited Token", scopes="read:projects"  # Only read access
+            user_id=int(test_user),
+            name="Limited Token",
+            scopes="read:projects",  # Only read access
         )
         db.session.add(token)
         db.session.commit()
@@ -226,7 +238,10 @@ class TestAIHelperAPI:
         assert data["error_code"] == "ai_disabled"
 
     def test_ai_chat_returns_disabled_error_when_not_enabled(self, client, api_token):
-        headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {api_token}",
+            "Content-Type": "application/json",
+        }
         response = client.post("/api/v1/ai/chat", json={"prompt": "What did I do today?"}, headers=headers)
 
         assert response.status_code == 503
@@ -261,7 +276,10 @@ class TestProjects:
 
     def test_create_project(self, client, api_token, test_client_model):
         """Test creating a project"""
-        headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {api_token}",
+            "Content-Type": "application/json",
+        }
         project_data = {
             "name": "New Project",
             "description": "A new project",
@@ -278,7 +296,10 @@ class TestProjects:
 
     def test_update_project(self, client, api_token, test_project):
         """Test updating a project"""
-        headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {api_token}",
+            "Content-Type": "application/json",
+        }
         update_data = {"name": "Updated Project", "hourly_rate": 150.0}
 
         response = client.put(f"/api/v1/projects/{test_project.id}", json=update_data, headers=headers)
@@ -328,7 +349,10 @@ class TestTimeEntries:
 
     def test_create_time_entry(self, client, api_token, test_project):
         """Test creating a time entry"""
-        headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {api_token}",
+            "Content-Type": "application/json",
+        }
         entry_data = {
             "project_id": test_project.id,
             "start_time": "2024-01-15T09:00:00Z",
@@ -359,7 +383,10 @@ class TestTimeEntries:
         db.session.commit()
         entry_id = entry.id
 
-        headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {api_token}",
+            "Content-Type": "application/json",
+        }
         update_data = {"notes": "Updated notes", "billable": False}
 
         response = client.put(f"/api/v1/time-entries/{entry_id}", json=update_data, headers=headers)
@@ -385,7 +412,10 @@ class TestTimer:
 
     def test_start_timer(self, client, api_token, test_project):
         """Test starting a timer"""
-        headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {api_token}",
+            "Content-Type": "application/json",
+        }
         timer_data = {"project_id": test_project.id}
 
         response = client.post("/api/v1/timer/start", json=timer_data, headers=headers)
@@ -442,7 +472,10 @@ class TestTasks:
 
     def test_create_task(self, client, api_token, test_project):
         """Test creating a task"""
-        headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {api_token}",
+            "Content-Type": "application/json",
+        }
         task_data = {
             "name": "New Task",
             "description": "Task description",
@@ -474,8 +507,15 @@ class TestClients:
 
     def test_create_client(self, client, api_token):
         """Test creating a client"""
-        headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
-        client_data = {"name": "New Client", "email": "newclient@example.com", "company": "New Company"}
+        headers = {
+            "Authorization": f"Bearer {api_token}",
+            "Content-Type": "application/json",
+        }
+        client_data = {
+            "name": "New Client",
+            "email": "newclient@example.com",
+            "company": "New Company",
+        }
 
         response = client.post("/api/v1/clients", json=client_data, headers=headers)
 

@@ -77,7 +77,11 @@ def test_comments_crud_project(client, api_token, project):
     assert len(r.get_json()["comments"]) >= 1
 
     # update
-    r = client.patch(f"/api/v1/comments/{c_id}", headers=_auth(api_token), json={"content": "Updated"})
+    r = client.patch(
+        f"/api/v1/comments/{c_id}",
+        headers=_auth(api_token),
+        json={"content": "Updated"},
+    )
     assert r.status_code == 200
     assert r.get_json()["comment"]["content"] == "Updated"
 

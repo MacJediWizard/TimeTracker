@@ -141,7 +141,6 @@ class TestAuditLogModel:
             assert len(logs) == 3
             assert all(log.user_id == test_user.id for log in logs)
 
-    @pytest.mark.xfail(reason="PG-only fixture noise; tracked as drytrix/TimeTracker#650", strict=False)
     def test_audit_log_get_recent(self, app, test_user, test_project):
         """Test getting recent audit logs with filters"""
         with app.app_context():

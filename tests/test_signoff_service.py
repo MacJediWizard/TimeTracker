@@ -46,9 +46,7 @@ def service_setup(app):
             columns_to_show=["time", "duration", "project", "task", "notes"],
         )
         db.session.add(template)
-        integration = Integration(
-            name="DocuSeal", provider="docuseal", is_global=True, is_active=True
-        )
+        integration = Integration(name="DocuSeal", provider="docuseal", is_global=True, is_active=True)
         db.session.add(integration)
         db.session.flush()
         cred = IntegrationCredential(
@@ -107,9 +105,7 @@ def test_send_for_signoff_happy_path(app, service_setup):
         signoff_id = signoff.id
 
         mock_conn = _mock_connector(service_setup["integration_id"])
-        with patch.object(
-            TimesheetSignoffService, "get_esignature_connector", return_value=mock_conn
-        ):
+        with patch.object(TimesheetSignoffService, "get_esignature_connector", return_value=mock_conn):
             TimesheetSignoffService.send_for_signoff(signoff)
 
         refreshed = TimesheetSignoffRequest.query.get(signoff_id)
@@ -130,9 +126,7 @@ def test_send_for_signoff_raises_when_no_connector(app, service_setup):
         db.session.add(signoff)
         db.session.commit()
 
-        with patch.object(
-            TimesheetSignoffService, "get_esignature_connector", return_value=None
-        ):
+        with patch.object(TimesheetSignoffService, "get_esignature_connector", return_value=None):
             with pytest.raises(ESignatureError):
                 TimesheetSignoffService.send_for_signoff(signoff)
 
@@ -158,9 +152,7 @@ def test_send_for_signoff_raises_when_template_missing(app, service_setup):
         # build_template_from_orm still works (it doesn't check archived).
         # We're really exercising the connector-call path here.
         mock_conn = _mock_connector(service_setup["integration_id"])
-        with patch.object(
-            TimesheetSignoffService, "get_esignature_connector", return_value=mock_conn
-        ):
+        with patch.object(TimesheetSignoffService, "get_esignature_connector", return_value=mock_conn):
             TimesheetSignoffService.send_for_signoff(signoff)
         # If archived template is still usable for send (it is — by design,
         # to allow resends after archival), no exception should be raised.

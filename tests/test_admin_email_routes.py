@@ -31,9 +31,7 @@ class TestAdminEmailRoutes:
         """Test that admin can access email support page"""
         # Login as admin
         with client:
-            client.post(
-                "/login", data={"username": admin_user.username, "password": "password"}, follow_redirects=True
-            )
+            client.post("/login", data={"username": admin_user.username, "password": "password"}, follow_redirects=True)
 
             response = client.get("/admin/email")
             assert response.status_code == 200
@@ -60,9 +58,7 @@ class TestAdminEmailRoutes:
 
         # Login as admin
         with client:
-            client.post(
-                "/login", data={"username": admin_user.username, "password": "password"}, follow_redirects=True
-            )
+            client.post("/login", data={"username": admin_user.username, "password": "password"}, follow_redirects=True)
 
             response = client.get("/admin/email")
             assert response.status_code == 200
@@ -86,9 +82,7 @@ class TestAdminEmailRoutes:
 
         # Login as admin
         with client:
-            client.post(
-                "/login", data={"username": admin_user.username, "password": "password"}, follow_redirects=True
-            )
+            client.post("/login", data={"username": admin_user.username, "password": "password"}, follow_redirects=True)
 
             response = client.post(
                 "/admin/email/test", json={"recipient": "test@example.com"}, content_type="application/json"
@@ -106,9 +100,7 @@ class TestAdminEmailRoutes:
 
         # Login as admin
         with client:
-            client.post(
-                "/login", data={"username": admin_user.username, "password": "password"}, follow_redirects=True
-            )
+            client.post("/login", data={"username": admin_user.username, "password": "password"}, follow_redirects=True)
 
             response = client.post(
                 "/admin/email/test", json={"recipient": "test@example.com"}, content_type="application/json"
@@ -123,9 +115,7 @@ class TestAdminEmailRoutes:
         """Test sending test email without recipient"""
         # Login as admin
         with client:
-            client.post(
-                "/login", data={"username": admin_user.username, "password": "password"}, follow_redirects=True
-            )
+            client.post("/login", data={"username": admin_user.username, "password": "password"}, follow_redirects=True)
 
             response = client.post("/admin/email/test", json={}, content_type="application/json")
 
@@ -138,9 +128,7 @@ class TestAdminEmailRoutes:
         """Test email configuration status endpoint"""
         # Login as admin
         with client:
-            client.post(
-                "/login", data={"username": admin_user.username, "password": "password"}, follow_redirects=True
-            )
+            client.post("/login", data={"username": admin_user.username, "password": "password"}, follow_redirects=True)
 
             response = client.get("/admin/email/config-status")
 
@@ -155,9 +143,7 @@ class TestAdminEmailRoutes:
         """Test that test email endpoint has rate limiting"""
         # Login as admin
         with client:
-            client.post(
-                "/login", data={"username": admin_user.username, "password": "password"}, follow_redirects=True
-            )
+            client.post("/login", data={"username": admin_user.username, "password": "password"}, follow_redirects=True)
 
             # Send multiple requests rapidly
             for i in range(6):  # Limit is 5 per minute

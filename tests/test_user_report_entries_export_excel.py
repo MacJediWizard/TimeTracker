@@ -68,9 +68,8 @@ def test_export_user_entries_excel_returns_one_row_per_entry(client, app, admin_
     )
 
     assert resp.status_code == 200, f"Unexpected redirect to {resp.headers.get('Location')}"
-    assert (
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        in (resp.headers.get("Content-Type") or "")
+    assert "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" in (
+        resp.headers.get("Content-Type") or ""
     )
     assert ".xlsx" in (resp.headers.get("Content-Disposition") or "")
 

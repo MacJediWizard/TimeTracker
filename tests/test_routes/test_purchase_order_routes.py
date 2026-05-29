@@ -112,7 +112,9 @@ class TestPurchaseOrderRoutes:
         assert response.status_code == 200
         assert b"PO-TEST-001" in response.data
 
-    def test_view_purchase_order_with_line_items(self, client, test_user, test_purchase_order, test_stock_item, test_warehouse):
+    def test_view_purchase_order_with_line_items(
+        self, client, test_user, test_purchase_order, test_stock_item, test_warehouse
+    ):
         """View page must render when PO has line items (regression for #576)."""
         item = PurchaseOrderItem(
             purchase_order_id=test_purchase_order.id,

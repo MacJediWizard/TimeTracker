@@ -1,4 +1,5 @@
 """Tests for PDF/A-3 conversion with ICC profile embedding."""
+
 import io
 import os
 

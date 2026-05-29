@@ -95,7 +95,6 @@ def test_logo_setup():
         return True
 
 
-@pytest.mark.xfail(reason="PG-only upstream flake; tracked as drytrix/TimeTracker#650", strict=False)
 def test_pdf_generation():
     """Test PDF generation with logo"""
     print("\n" + "=" * 60)

@@ -33,6 +33,7 @@ def test_admin_dashboard_returns_chart_data_with_30_days(client, app, admin_user
     assert "userActivityChart" in data or "timeEntryChart" in data or "projectStatusChart" in data
     # 30-day series: page should contain many date strings (YYYY-MM-DD)
     import re
+
     date_pattern = r"\d{4}-\d{2}-\d{2}"
     dates_in_page = re.findall(date_pattern, data)
     assert len(dates_in_page) >= 30, "Chart data should include at least 30 date values (30-day series)"

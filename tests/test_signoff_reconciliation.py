@@ -19,9 +19,7 @@ from app.services.timesheet_signoff_service import TimesheetSignoffService
 @pytest.fixture
 def recon_setup(app):
     with app.app_context():
-        integration = Integration(
-            name="DocuSeal", provider="docuseal", is_global=True, is_active=True
-        )
+        integration = Integration(name="DocuSeal", provider="docuseal", is_global=True, is_active=True)
         db.session.add(integration)
         db.session.flush()
         cred = IntegrationCredential(

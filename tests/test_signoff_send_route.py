@@ -109,9 +109,7 @@ def test_send_unknown_period_404(client, admin_user):
     assert resp.status_code == 404
 
 
-def test_send_happy_path_creates_request_and_calls_service(
-    app, client, admin_user, send_setup
-):
+def test_send_happy_path_creates_request_and_calls_service(app, client, admin_user, send_setup):
     """Service is stubbed; we verify the route inserts the
     TimesheetSignoffRequest in DRAFT, then calls send_for_signoff."""
     _login_admin(client, admin_user)
@@ -152,9 +150,7 @@ def test_send_happy_path_creates_request_and_calls_service(
 def test_send_with_specific_template_id(app, client, admin_user, send_setup):
     """Admin can override the default template at send time."""
     with app.app_context():
-        other = TimesheetSignoffTemplate(
-            name="alt-template", columns_to_show=["time", "duration"]
-        )
+        other = TimesheetSignoffTemplate(name="alt-template", columns_to_show=["time", "duration"])
         db.session.add(other)
         db.session.commit()
         other_id = other.id
@@ -209,9 +205,7 @@ def test_cancel_marks_row_cancelled(app, client, admin_user, send_setup):
         assert refreshed.cancelled_at is not None
 
 
-def test_download_signed_pdf_returns_404_when_file_missing(
-    app, client, admin_user, send_setup
-):
+def test_download_signed_pdf_returns_404_when_file_missing(app, client, admin_user, send_setup):
     """Local artefact file gone (or never captured) → 404."""
     with app.app_context():
         esig = ESignatureRequest(

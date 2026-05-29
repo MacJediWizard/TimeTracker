@@ -60,9 +60,7 @@ def test_returns_401_when_signature_invalid(client, docuseal_integration):
 def test_returns_200_for_unknown_external_id(client, app, docuseal_integration):
     """Provider must NOT retry for submissions we don't know about
     (already archived locally, or never ours). Handler returns 200."""
-    with patch(
-        "app.services.integration_service.IntegrationService.get_connector"
-    ) as mock_get:
+    with patch("app.services.integration_service.IntegrationService.get_connector") as mock_get:
         mock_conn = SimpleNamespace(
             verify_webhook=lambda body, headers: True,
             parse_webhook=lambda body: SimpleNamespace(
@@ -83,9 +81,7 @@ def test_returns_200_for_unknown_external_id(client, app, docuseal_integration):
     assert resp.status_code == 200
 
 
-def test_returns_200_when_already_terminal_same_status(
-    client, app, docuseal_integration
-):
+def test_returns_200_when_already_terminal_same_status(client, app, docuseal_integration):
     """Duplicate webhook (already-signed event for an already-signed row)
     must be idempotent — return 200, do not call the service."""
     with app.app_context():
@@ -100,12 +96,8 @@ def test_returns_200_when_already_terminal_same_status(
         db.session.commit()
 
     with (
-        patch(
-            "app.services.integration_service.IntegrationService.get_connector"
-        ) as mock_get,
-        patch(
-            "app.services.timesheet_signoff_service.TimesheetSignoffService.apply_webhook_event"
-        ) as mock_apply,
+        patch("app.services.integration_service.IntegrationService.get_connector") as mock_get,
+        patch("app.services.timesheet_signoff_service.TimesheetSignoffService.apply_webhook_event") as mock_apply,
     ):
         mock_get.return_value = SimpleNamespace(
             verify_webhook=lambda body, headers: True,
@@ -142,12 +134,8 @@ def test_calls_service_on_happy_path(client, app, docuseal_integration):
         db.session.commit()
 
     with (
-        patch(
-            "app.services.integration_service.IntegrationService.get_connector"
-        ) as mock_get,
-        patch(
-            "app.services.timesheet_signoff_service.TimesheetSignoffService.apply_webhook_event"
-        ) as mock_apply,
+        patch("app.services.integration_service.IntegrationService.get_connector") as mock_get,
+        patch("app.services.timesheet_signoff_service.TimesheetSignoffService.apply_webhook_event") as mock_apply,
     ):
         mock_get.return_value = SimpleNamespace(
             verify_webhook=lambda body, headers: True,

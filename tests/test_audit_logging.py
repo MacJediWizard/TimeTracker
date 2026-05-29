@@ -94,9 +94,7 @@ class TestAuditLoggingIntegration:
             merged.name = "Updated Project Name"
             db.session.flush()
 
-            audit_logs = AuditLog.query.filter_by(
-                entity_type="Project", entity_id=project_id, action="updated"
-            ).all()
+            audit_logs = AuditLog.query.filter_by(entity_type="Project", entity_id=project_id, action="updated").all()
             assert len(audit_logs) >= 1, "At least one audit log should be created for entity update"
             assert audit_logs[0].action == "updated"
             assert audit_logs[0].entity_type == "Project"

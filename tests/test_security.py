@@ -8,7 +8,6 @@ from flask import session
 from app import db
 from app.models import User, Project, TimeEntry
 
-
 # ============================================================================
 # Authentication Tests
 # ============================================================================

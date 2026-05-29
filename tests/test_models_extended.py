@@ -7,7 +7,6 @@ from app import db
 from app.models import User, Client, Project, TimeEntry, Invoice, InvoiceItem, Task, Comment, Settings
 from factories import ClientFactory, ProjectFactory, InvoiceFactory, InvoiceItemFactory, UserFactory
 
-
 # ============================================================================
 # User Model Extended Tests
 # ============================================================================

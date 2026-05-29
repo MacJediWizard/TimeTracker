@@ -14,7 +14,6 @@ from types import SimpleNamespace
 
 from app.integrations.esignature.docuseal import DocuSealConnector
 
-
 _SECRET = "whsec_test-secret-do-not-use-in-prod"
 _BODY = b'{"event_type":"form.completed","timestamp":"2026-05-21T18:00:00Z","data":{"id":1}}'
 
@@ -97,14 +96,9 @@ def test_verify_rejects_malformed_header(app):
     conn = _connector(app)
     with app.app_context():
         # No dot separator
-        assert (
-            conn.verify_webhook(_BODY, {"X-Docuseal-Signature": "not-a-valid-format"})
-            is False
-        )
+        assert conn.verify_webhook(_BODY, {"X-Docuseal-Signature": "not-a-valid-format"}) is False
         # Non-integer timestamp
-        assert (
-            conn.verify_webhook(_BODY, {"X-Docuseal-Signature": "abc.def123"}) is False
-        )
+        assert conn.verify_webhook(_BODY, {"X-Docuseal-Signature": "abc.def123"}) is False
 
 
 def test_verify_fails_closed_when_secret_missing(app):

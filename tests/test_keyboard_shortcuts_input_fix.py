@@ -113,7 +113,6 @@ class TestKeyboardShortcutsInputFix:
 class TestKeyboardShortcutsJavaScriptLogic:
     """Test JavaScript keyboard shortcuts logic (documentation tests)."""
 
-    @pytest.mark.xfail(reason="PG-only upstream flake; tracked as drytrix/TimeTracker#650", strict=False)
     def test_istyping_method_exists(self):
         """
         Documentation test: Verify isTyping/isTypingContext methods exist.
@@ -178,7 +177,6 @@ class TestKeyboardShortcutsJavaScriptLogic:
             # Should include ctrl+k, ctrl+/, shift+?
             assert "ctrl+k" in content.lower() or "ctrlKey" in content
 
-    @pytest.mark.xfail(reason="PG-only upstream flake; tracked as drytrix/TimeTracker#650", strict=False)
     def test_contenteditable_check(self):
         """
         Documentation test: Verify contentEditable elements are handled.
@@ -190,7 +188,6 @@ class TestKeyboardShortcutsJavaScriptLogic:
             content = f.read()
             assert "isContentEditable" in content or "contentEditable" in content
 
-    @pytest.mark.xfail(reason="PG-only upstream flake; tracked as drytrix/TimeTracker#650", strict=False)
     def test_rich_text_editor_detection(self):
         """
         Documentation test: Verify rich text editors are detected.

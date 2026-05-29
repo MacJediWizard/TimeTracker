@@ -1,4 +1,5 @@
 """Tests for Factur-X / ZUGFeRD: embedding CII XML in invoice PDFs."""
+
 from datetime import date, timedelta
 from decimal import Decimal
 import io

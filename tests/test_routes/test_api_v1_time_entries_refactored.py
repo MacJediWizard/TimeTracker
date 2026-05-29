@@ -147,9 +147,7 @@ class TestAPITimeEntriesRefactored:
         db.session.add(entry)
         db.session.commit()
 
-        response = client_with_token.get(
-            f"/api/v1/time-entries?start_date={today_str}&end_date={today_str}"
-        )
+        response = client_with_token.get(f"/api/v1/time-entries?start_date={today_str}&end_date={today_str}")
 
         assert response.status_code == 200
         data = response.get_json()

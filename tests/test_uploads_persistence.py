@@ -158,10 +158,6 @@ def test_uploads_directory_is_writable(app, uploads_dir):
 
 
 @pytest.mark.integration
-@pytest.mark.xfail(
-    reason="Pre-existing upstream test failure surfaced by v5.6.x sync; not introduced by #22",
-    strict=False,
-)
 def test_logo_file_persists_after_upload(authenticated_admin_client, sample_logo_image, app, cleanup_test_files):
     """Test that uploaded logo file persists on disk after upload."""
     with app.app_context():
@@ -200,10 +196,6 @@ def test_logo_file_persists_after_upload(authenticated_admin_client, sample_logo
 
 
 @pytest.mark.integration
-@pytest.mark.xfail(
-    reason="Pre-existing upstream test failure surfaced by v5.6.x sync; not introduced by #22",
-    strict=False,
-)
 def test_logo_accessible_after_simulated_restart(
     authenticated_admin_client, sample_logo_image, app, cleanup_test_files
 ):
@@ -248,10 +240,6 @@ def test_logo_accessible_after_simulated_restart(
 
 
 @pytest.mark.integration
-@pytest.mark.xfail(
-    reason="Pre-existing upstream test failure surfaced by v5.6.x sync; not introduced by #22",
-    strict=False,
-)
 def test_multiple_logos_in_directory(authenticated_admin_client, app, cleanup_test_files):
     """Test that multiple logos can exist in the directory (old and new)."""
     with app.app_context():
@@ -290,10 +278,6 @@ def test_multiple_logos_in_directory(authenticated_admin_client, app, cleanup_te
 
 
 @pytest.mark.integration
-@pytest.mark.xfail(
-    reason="Pre-existing upstream test failure surfaced by v5.6.x sync; not introduced by #22",
-    strict=False,
-)
 def test_logo_path_is_in_uploads_directory(
     authenticated_admin_client, sample_logo_image, app, uploads_dir, cleanup_test_files
 ):
@@ -374,10 +358,6 @@ def test_settings_logo_path_none_when_no_filename(app):
 
 
 @pytest.mark.integration
-@pytest.mark.xfail(
-    reason="Pre-existing upstream test failure surfaced by v5.6.x sync; not introduced by #22",
-    strict=False,
-)
 def test_logo_file_has_correct_extension(authenticated_admin_client, sample_logo_image, app, cleanup_test_files):
     """Test that uploaded logo file has correct extension."""
     with app.app_context():
@@ -400,10 +380,6 @@ def test_logo_file_has_correct_extension(authenticated_admin_client, sample_logo
 
 
 @pytest.mark.integration
-@pytest.mark.xfail(
-    reason="Pre-existing upstream test failure surfaced by v5.6.x sync; not introduced by #22",
-    strict=False,
-)
 def test_old_logo_removed_when_new_uploaded(authenticated_admin_client, app, cleanup_test_files):
     """Test that old logo file is removed when new one is uploaded."""
     with app.app_context():
@@ -458,10 +434,6 @@ def test_old_logo_removed_when_new_uploaded(authenticated_admin_client, app, cle
 
 
 @pytest.mark.integration
-@pytest.mark.xfail(
-    reason="Pre-existing upstream test failure surfaced by v5.6.x sync; not introduced by #22",
-    strict=False,
-)
 def test_logo_removed_when_deleted(authenticated_admin_client, sample_logo_image, app, cleanup_test_files):
     """Test that logo file is removed when deleted via admin interface."""
     with app.app_context():
@@ -512,10 +484,6 @@ def test_uploads_directory_accessible(app, uploads_dir):
 
 
 @pytest.mark.smoke
-@pytest.mark.xfail(
-    reason="Pre-existing upstream test failure surfaced by v5.6.x sync; not introduced by #22",
-    strict=False,
-)
 def test_logo_upload_and_retrieve_workflow(authenticated_admin_client, sample_logo_image, app, cleanup_test_files):
     """Smoke test: Complete workflow of uploading and retrieving a logo."""
     with app.app_context():

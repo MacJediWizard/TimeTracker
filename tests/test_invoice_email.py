@@ -7,17 +7,18 @@ from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 import pytest
-from factories import ClientFactory, InvoiceFactory, InvoiceItemFactory, ProjectFactory, UserFactory
+from factories import (
+    ClientFactory,
+    InvoiceFactory,
+    InvoiceItemFactory,
+    ProjectFactory,
+    UserFactory,
+)
 from flask import current_app
 
 from app import db
 from app.models import InvoiceEmail
 from app.utils.email import send_invoice_email, send_invoice_template_test_email
-
-pytestmark = pytest.mark.xfail(
-    reason="Module-wide PG-only flake; mock targets renamed upstream; tracked as drytrix/TimeTracker#650",
-    strict=False,
-)
 
 
 @pytest.fixture
@@ -298,10 +299,6 @@ class TestSendInvoiceEmail:
             assert invoice_email is not None
             assert mock_mail_send.called
 
-    @pytest.mark.xfail(
-        reason="PG-only upstream flake; tracked as drytrix/TimeTracker#650",
-        strict=False,
-    )
     def test_send_invoice_email_failure_creates_failed_record(self, app, test_invoice, test_user, mock_pdf_generator):
         """Test that failed email sends create a failed tracking record"""
         with app.app_context():
@@ -442,10 +439,6 @@ class TestInvoiceEmailModel:
             assert invoice_email.opened_at is not None
             assert invoice_email.opened_count == 1
 
-    @pytest.mark.xfail(
-        reason="PG-only upstream flake; tracked as drytrix/TimeTracker#650",
-        strict=False,
-    )
     def test_invoice_email_mark_failed(self, app, test_invoice, test_user):
         """Test marking email as failed"""
         with app.app_context():

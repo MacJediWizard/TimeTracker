@@ -86,4 +86,3 @@ def test_oidc_callback_does_not_store_id_token_in_cookie_session(app, client):
 
             # And the token should be stored server-side under the derived cache key
             assert stored.get(f"oidc:id_token:{key}") == huge_id_token
-

@@ -17,7 +17,6 @@ from app.utils.error_handlers import register_error_handlers
 from app.utils.i18n import _needs_compile, compile_po_to_mo, ensure_translations_compiled
 from app.utils.db import safe_commit
 
-
 # ============================================================================
 # Template Filter Tests
 # ============================================================================

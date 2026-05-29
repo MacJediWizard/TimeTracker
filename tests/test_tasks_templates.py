@@ -65,7 +65,9 @@ def test_kanban_board_aria_and_dnd(authenticated_client, app):
         db.session.commit()
 
         # authenticated_client already has a logged-in user, but we need to login as the new user
-        authenticated_client.post("/login", data={"username": user.username, "password": "password123"}, follow_redirects=True)
+        authenticated_client.post(
+            "/login", data={"username": user.username, "password": "password123"}, follow_redirects=True
+        )
 
         resp = authenticated_client.get("/kanban")
         assert resp.status_code == 200

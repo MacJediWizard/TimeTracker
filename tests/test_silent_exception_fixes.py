@@ -189,6 +189,7 @@ def test_backup_get_alembic_revision_returns_none_on_error(app):
     from app.utils.backup import _get_alembic_revision
 
     with app.app_context():
+
         class BadSession:
             def execute(self, *args, **kwargs):
                 raise RuntimeError("test failure")

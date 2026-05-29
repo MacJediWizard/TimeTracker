@@ -1,6 +1,7 @@
 """
 Tests for keyboard shortcuts API: GET/POST/reset, validation, auth.
 """
+
 import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.routes]

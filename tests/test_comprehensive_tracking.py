@@ -34,7 +34,6 @@ class TestClientEventTracking:
         # Note: Event tracking assertions may not pass if tracking is mocked at wrong level
         # This test verifies the route executes successfully
 
-    @pytest.mark.xfail(reason="PG-only flake; tracked upstream as drytrix/TimeTracker#650", strict=False)
     def test_client_update_tracking(self, client, admin_user, test_client_obj, mock_tracking):
         """Test that client update events are tracked"""
         # Login as admin
@@ -51,7 +50,6 @@ class TestClientEventTracking:
         assert mock_tracking["log_event"].called
         assert mock_tracking["track_event"].called
 
-    @pytest.mark.xfail(reason="PG-only flake; tracked upstream as drytrix/TimeTracker#650", strict=False)
     def test_client_archive_tracking(self, client, admin_user, test_client_obj, mock_tracking):
         """Test that client archive events are tracked"""
         # Login as admin
@@ -68,7 +66,6 @@ class TestClientEventTracking:
 class TestTaskEventTracking:
     """Test event tracking for task operations"""
 
-    @pytest.mark.xfail(reason="PG-only flake; tracked upstream as drytrix/TimeTracker#650", strict=False)
     def test_task_creation_tracking(self, client, auth_user, test_project, mock_tracking):
         """Test that task creation events are tracked"""
         # Login
@@ -137,7 +134,6 @@ class TestCommentEventTracking:
 class TestAdminTelemetryDashboard:
     """Test admin telemetry dashboard"""
 
-    @pytest.mark.xfail(reason="PG-only flake; tracked upstream as drytrix/TimeTracker#650", strict=False)
     def test_telemetry_dashboard_access(self, client, admin_user):
         """Test that admin can access telemetry dashboard"""
         # Login as admin
@@ -148,7 +144,6 @@ class TestAdminTelemetryDashboard:
         assert response.status_code == 200
         assert b"Telemetry" in response.data or b"telemetry" in response.data.lower()
 
-    @pytest.mark.xfail(reason="PG-only flake; tracked upstream as drytrix/TimeTracker#650", strict=False)
     def test_telemetry_toggle(self, client, admin_user, installation_config):
         """Test toggling telemetry"""
         # Login as admin

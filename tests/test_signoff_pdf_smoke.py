@@ -19,9 +19,7 @@ def _sample_data() -> SignoffData:
     friday = monday + timedelta(days=4)
 
     def entry(day_offset, h_start, h_end, project, task, notes):
-        start = datetime.combine(
-            monday + timedelta(days=day_offset), datetime.min.time()
-        )
+        start = datetime.combine(monday + timedelta(days=day_offset), datetime.min.time())
         return SimpleNamespace(
             start_time=start.replace(hour=h_start),
             end_time=start.replace(hour=h_end),

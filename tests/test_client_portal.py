@@ -33,16 +33,17 @@ def set_client_portal_access(user, client_id=None, enabled=True):
 
 def safe_commit_with_retry(max_retries=3):
     """Safely commit with retry logic for database locks
-    
+
     This is needed because audit logging can cause database locks during parallel
     test execution. If commit fails, we rollback and retry.
-    
+
     Note: If the commit fails due to audit logging, the transaction is rolled back,
     so the data changes are lost. This function will retry the commit, but if it
     continues to fail, the data may not be saved. The caller should verify the data
     was actually saved.
     """
     import time
+
     for attempt in range(max_retries):
         try:
             db.session.commit()
@@ -53,10 +54,10 @@ def safe_commit_with_retry(max_retries=3):
                 db.session.rollback()
             except Exception:
                 pass
-            
+
             # Wait a bit before retrying (exponential backoff)
             if attempt < max_retries - 1:
-                time.sleep(0.1 * (2 ** attempt))
+                time.sleep(0.1 * (2**attempt))
             else:
                 # On final attempt, just rollback and return False
                 # The caller should verify if data was actually saved
@@ -66,7 +67,7 @@ def safe_commit_with_retry(max_retries=3):
 
 def safe_get_user(user_id):
     """Safely get a user, handling rollback errors from database locks
-    
+
     This is needed because audit logging can cause database locks during parallel
     test execution, which leaves the session in a rolled-back state.
     """
@@ -169,7 +170,7 @@ class TestClientPortalUserModel:
             # Commit outside no_autoflush block
             # Use safe_commit_with_retry to handle database locks from audit logging
             commit_success = safe_commit_with_retry()
-            
+
             # Verify user was actually updated (commit might have failed)
             user = safe_get_user(user_id)
             if not commit_success or not user.client_portal_enabled or user.client_id != test_client.id:
@@ -229,7 +230,7 @@ class TestClientPortalUserModel:
             # Commit outside no_autoflush block
             # Use safe_commit_with_retry to handle database locks from audit logging
             commit_success = safe_commit_with_retry()
-            
+
             # Verify user was actually updated (commit might have failed)
             user = safe_get_user(user_id)
             if not commit_success or not user.client_portal_enabled or user.client_id != test_client.id:
@@ -444,9 +445,7 @@ class TestClientPortalRoutes:
             response = client.get(f"/client-portal/invoices/{invoice.id}")
             assert response.status_code == 200
 
-    def test_view_invoice_other_clients_invoice_returns_404_with_flash(
-        self, app, client, user, test_client
-    ):
+    def test_view_invoice_other_clients_invoice_returns_404_with_flash(self, app, client, user, test_client):
         """Portal user cannot view invoice belonging to another client; returns 404 and flash."""
         with app.app_context():
             user = set_client_portal_access(user, test_client.id)
@@ -454,9 +453,7 @@ class TestClientPortalRoutes:
             other_client = Client(name="Other Client")
             db.session.add(other_client)
             db.session.flush()
-            other_project = Project(
-                name="Other Project", client_id=other_client.id, status="active"
-            )
+            other_project = Project(name="Other Project", client_id=other_client.id, status="active")
             db.session.add(other_project)
             safe_commit_with_retry()
 
@@ -480,9 +477,7 @@ class TestClientPortalRoutes:
             body = response.get_data(as_text=True)
             assert "not found" in body.lower() or "Invoice" in body
 
-    def test_view_quote_other_clients_quote_returns_404_with_flash(
-        self, app, client, user, test_client
-    ):
+    def test_view_quote_other_clients_quote_returns_404_with_flash(self, app, client, user, test_client):
         """Portal user cannot view quote belonging to another client; returns 404 and flash."""
         with app.app_context():
             user = set_client_portal_access(user, test_client.id)
@@ -549,7 +544,7 @@ class TestAdminClientPortalManagement:
             )
             # Should redirect to users list (or show form with error if commit failed)
             assert response.status_code == 200
-            
+
             # Check for error messages in response (commit failure)
             response_text = response.get_data(as_text=True)
             if "Could not update user due to a database error" in response_text:
@@ -567,11 +562,15 @@ class TestAdminClientPortalManagement:
                 if updated_user.client_portal_enabled is True and updated_user.client_id == test_client.id:
                     break
                 if attempt < max_retries - 1:
-                    time.sleep(0.1 * (2 ** attempt))
+                    time.sleep(0.1 * (2**attempt))
                 else:
                     # Final attempt - verify the assertion
-                    assert updated_user.client_portal_enabled is True, f"User client_portal_enabled is {updated_user.client_portal_enabled}, expected True"
-                    assert updated_user.client_id == test_client.id, f"User client_id is {updated_user.client_id}, expected {test_client.id}"
+                    assert (
+                        updated_user.client_portal_enabled is True
+                    ), f"User client_portal_enabled is {updated_user.client_portal_enabled}, expected True"
+                    assert (
+                        updated_user.client_id == test_client.id
+                    ), f"User client_id is {updated_user.client_id}, expected {test_client.id}"
 
     def test_admin_can_disable_client_portal(self, app, admin_authenticated_client, user, test_client):
         """Test admin can disable client portal for user"""
@@ -601,7 +600,7 @@ class TestAdminClientPortalManagement:
                 },
                 follow_redirects=True,
             )
-            
+
             # Check for error messages in response (commit failure)
             response_text = response.get_data(as_text=True)
             if "Could not update user due to a database error" in response_text:
@@ -612,6 +611,7 @@ class TestAdminClientPortalManagement:
             # Verify user was updated - retry in case of database lock delays
             # The route uses safe_commit which might fail due to audit logging locks
             import time
+
             max_retries = 5
             for attempt in range(max_retries):
                 # Expire any cached objects to force fresh query
@@ -620,10 +620,12 @@ class TestAdminClientPortalManagement:
                 if updated_user.client_portal_enabled is False and updated_user.client_id is None:
                     break
                 if attempt < max_retries - 1:
-                    time.sleep(0.1 * (2 ** attempt))
+                    time.sleep(0.1 * (2**attempt))
                 else:
                     # Final attempt - verify the assertion
-                    assert updated_user.client_portal_enabled is False, f"User client_portal_enabled is {updated_user.client_portal_enabled}, expected False"
+                    assert (
+                        updated_user.client_portal_enabled is False
+                    ), f"User client_portal_enabled is {updated_user.client_portal_enabled}, expected False"
                     assert updated_user.client_id is None, f"User client_id is {updated_user.client_id}, expected None"
 
 
@@ -722,9 +724,7 @@ class TestClientPortalDashboardPreferences:
             )
             assert response.status_code == 400
 
-    def test_dashboard_preferences_post_widget_ids_not_list_returns_400(
-        self, app, client, user, test_client
-    ):
+    def test_dashboard_preferences_post_widget_ids_not_list_returns_400(self, app, client, user, test_client):
         """POST with widget_ids not a list (e.g. string) returns 400."""
         with app.app_context():
             user = set_client_portal_access(user, test_client.id)
@@ -754,6 +754,7 @@ class TestClientPortalReportsVisibility:
         """Reports page returns 200 and uses portal data for authenticated client only"""
         with app.app_context():
             from app.models import Client as ClientModel
+
             other_client = ClientModel(name="Other Client", email="other@example.com")
             db.session.add(other_client)
             db.session.flush()
@@ -831,6 +832,7 @@ class TestClientPortalActivityFeed:
         with app.app_context():
             from app.models import Activity, Client as ClientModel
             from app.services.client_activity_feed_service import get_client_activity_feed
+
             other_client = ClientModel(name="Other Client Feed", email="other2@example.com")
             db.session.add(other_client)
             db.session.flush()
@@ -856,8 +858,10 @@ def test_get_client_id_from_session_client_portal_id(app):
     """_get_client_id_from_session returns client_id when session has client_portal_id"""
     with app.app_context():
         from app.routes.api import _get_client_id_from_session
+
         with app.test_request_context():
             from flask import session
+
             session["client_portal_id"] = 42
             assert _get_client_id_from_session() == 42
 
@@ -873,8 +877,10 @@ def test_get_client_id_from_session_user_portal(app, user, test_client):
         db.session.commit()
         db.session.expire_all()
         from app.routes.api import _get_client_id_from_session
+
         with app.test_request_context():
             from flask import session
+
             session["_user_id"] = str(user.id)
             assert _get_client_id_from_session() == test_client.id
 
@@ -884,8 +890,10 @@ def test_get_client_id_from_session_returns_none_without_portal(app, user):
     """_get_client_id_from_session returns None when session has no portal identity"""
     with app.app_context():
         from app.routes.api import _get_client_id_from_session
+
         with app.test_request_context():
             from flask import session
+
             session.clear()
             assert _get_client_id_from_session() is None
 
@@ -895,9 +903,11 @@ def test_create_notification_emits_to_client_room(app, test_client):
     """Creating a client notification emits to client_portal_{client_id} room"""
     with app.app_context():
         from unittest.mock import patch, MagicMock
+
         with patch("app.socketio") as mock_socketio:
             mock_socketio.emit = MagicMock()
             from app.services.client_notification_service import ClientNotificationService
+
             service = ClientNotificationService()
             service.create_notification(
                 client_id=test_client.id,

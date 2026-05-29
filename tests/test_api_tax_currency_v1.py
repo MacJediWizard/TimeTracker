@@ -73,12 +73,21 @@ def test_tax_currency_flow(client, admin_token):
     r = client.post(
         "/api/v1/exchange-rates",
         headers=_auth(admin_token),
-        json={"base_code": "EUR", "quote_code": "USD", "rate": 1.1, "date": date.today().isoformat(), "source": "test"},
+        json={
+            "base_code": "EUR",
+            "quote_code": "USD",
+            "rate": 1.1,
+            "date": date.today().isoformat(),
+            "source": "test",
+        },
     )
     assert r.status_code == 201
 
     # list exchange rates
-    r = client.get("/api/v1/exchange-rates?base_code=EUR&quote_code=USD", headers=_auth(admin_token))
+    r = client.get(
+        "/api/v1/exchange-rates?base_code=EUR&quote_code=USD",
+        headers=_auth(admin_token),
+    )
     assert r.status_code == 200
 
     # create tax rule

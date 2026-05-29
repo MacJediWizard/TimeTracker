@@ -8,7 +8,6 @@ import json
 from app.models import ClientNote
 from app import db
 
-
 # ============================================================================
 # Client Notes Routes Tests
 # ============================================================================

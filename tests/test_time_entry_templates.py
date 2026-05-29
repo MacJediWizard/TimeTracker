@@ -13,7 +13,6 @@ from datetime import datetime
 from app.models import TimeEntryTemplate, User, Project, Task, TimeEntry
 from app import db
 
-
 # ============================================================================
 # Model Tests
 # ============================================================================

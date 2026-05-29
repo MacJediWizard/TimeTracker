@@ -7,7 +7,6 @@ import pytest
 from datetime import datetime, timedelta, date
 from decimal import Decimal
 
-
 # ============================================================================
 # Smoke Tests - Critical Routes
 # ============================================================================

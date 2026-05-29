@@ -8,7 +8,6 @@ from datetime import datetime, timedelta, date
 from decimal import Decimal
 import json
 
-
 # ============================================================================
 # Timer API Tests
 # ============================================================================

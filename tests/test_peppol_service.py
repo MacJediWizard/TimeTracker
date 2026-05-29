@@ -117,7 +117,9 @@ def test_peppol_service_success_creates_transmission(app, monkeypatch):
         db.session.add(inv)
         db.session.commit()
 
-        db.session.add(InvoiceItem(invoice_id=inv.id, description="Work", quantity=Decimal("2.00"), unit_price=Decimal("50.00")))
+        db.session.add(
+            InvoiceItem(invoice_id=inv.id, description="Work", quantity=Decimal("2.00"), unit_price=Decimal("50.00"))
+        )
         db.session.commit()
         inv.calculate_totals()
         db.session.commit()
@@ -143,6 +145,7 @@ def test_peppol_service_success_creates_transmission(app, monkeypatch):
 
         # Validate UBL passes structural Peppol BIS 3.0 checks
         from app.utils.invoice_validators import validate_ubl_peppol_bis3
+
         passed, issues = validate_ubl_peppol_bis3(tx.ubl_xml)
         assert passed is True, f"UBL Peppol BIS 3.0 validation failed: {issues}"
 
@@ -191,5 +194,5 @@ def test_as4_message_payload_is_gzip_compressed():
 def test_native_transport_marked_experimental():
     """Native transport module exposes NATIVE_TRANSPORT_EXPERIMENTAL flag."""
     from app.integrations.peppol_as4 import NATIVE_TRANSPORT_EXPERIMENTAL
-    assert NATIVE_TRANSPORT_EXPERIMENTAL is True
 
+    assert NATIVE_TRANSPORT_EXPERIMENTAL is True

@@ -8,7 +8,6 @@ from datetime import datetime, timedelta
 from app.models import CalendarEvent, User, Project, Task, Client, TimeEntry
 from app import db
 
-
 # ============================================================================
 # CalendarEvent Model Tests
 # ============================================================================

@@ -252,9 +252,7 @@ class TestCreateTransferAPI:
             data = response.get_json()
             assert data is not None
 
-    def test_create_transfer_same_warehouse(
-        self, client, api_token, stock_item_trackable, warehouse_from, test_user
-    ):
+    def test_create_transfer_same_warehouse(self, client, api_token, stock_item_trackable, warehouse_from, test_user):
         """POST with from_warehouse_id == to_warehouse_id returns 400."""
         StockMovement.record_movement(
             movement_type="purchase",

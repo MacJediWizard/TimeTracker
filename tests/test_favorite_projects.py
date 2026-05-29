@@ -390,7 +390,6 @@ class TestFavoriteProjectRoutes:
 class TestFavoriteProjectFiltering:
     """Test filtering projects by favorites."""
 
-    @pytest.mark.xfail(reason="PG-only upstream flake; tracked as drytrix/TimeTracker#650", strict=False)
     def test_list_projects_with_favorites_filter(self, app, client_fixture, test_user, test_project, test_project_2):
         """Test listing only favorite projects."""
         with app.app_context():
@@ -410,7 +409,6 @@ class TestFavoriteProjectFiltering:
             # Check that the response contains the favorite project
             assert b"Test Project" in response.data
 
-    @pytest.mark.xfail(reason="PG-only upstream flake; tracked as drytrix/TimeTracker#650", strict=False)
     def test_list_all_projects_without_filter(self, app, client_fixture, test_user, test_project, test_project_2):
         """Test listing all projects without favorites filter."""
         with app.app_context():

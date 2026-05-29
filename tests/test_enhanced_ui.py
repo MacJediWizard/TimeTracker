@@ -11,10 +11,6 @@ from flask import url_for
 class TestEnhancedUI:
     """Test enhanced UI components and features"""
 
-    @pytest.mark.xfail(
-        reason="PG-only flake; tracked upstream as drytrix/TimeTracker#650",
-        strict=False,
-    )
     def test_enhanced_css_loaded(self, authenticated_client):
         """Test that enhanced UI CSS is loaded"""
         response = authenticated_client.get(url_for("main.dashboard"))
@@ -45,10 +41,6 @@ class TestEnhancedUI:
         assert response.status_code == 200
         assert b"toast-notifications.js" in response.data
 
-    @pytest.mark.xfail(
-        reason="PG-only flake; tracked upstream as drytrix/TimeTracker#650",
-        strict=False,
-    )
     def test_set_submit_button_loading_available(self, authenticated_client):
         """Test that setSubmitButtonLoading helper is provided by enhanced-ui.js"""
         response = authenticated_client.get(url_for("main.dashboard"))
@@ -56,10 +48,6 @@ class TestEnhancedUI:
         assert b"enhanced-ui.js" in response.data
         assert b"setSubmitButtonLoading" in response.data
 
-    @pytest.mark.xfail(
-        reason="PG-only flake; tracked upstream as drytrix/TimeTracker#650",
-        strict=False,
-    )
     def test_filter_ajax_error_toast_message_in_enhanced_ui(self, authenticated_client):
         """Test that enhanced-ui.js shows consistent error toast on filter failure"""
         response = authenticated_client.get(url_for("projects.list_projects"))
@@ -258,9 +246,7 @@ class TestAccessibility:
         """Test that skip to content link is present"""
         response = authenticated_client.get(url_for("main.dashboard"))
         assert response.status_code == 200
-        assert (
-            b"Skip to content" in response.data or b"dashboard" in response.data.lower()
-        )
+        assert b"Skip to content" in response.data or b"dashboard" in response.data.lower()
 
     def test_aria_labels_present(self, authenticated_client):
         """Test that ARIA labels are present"""
@@ -327,11 +313,7 @@ class TestResponsiveDesign:
         """Test that mobile navigation button exists"""
         response = authenticated_client.get(url_for("main.dashboard"))
         assert response.status_code == 200
-        assert (
-            b"mobileSidebarBtn" in response.data
-            or b"lg:hidden" in response.data
-            or response.status_code == 200
-        )
+        assert b"mobileSidebarBtn" in response.data or b"lg:hidden" in response.data or response.status_code == 200
 
 
 class TestStaticFiles:

@@ -13,9 +13,7 @@ from flask import url_for
 
 @pytest.mark.integration
 @pytest.mark.routes
-def test_manual_entry_shows_single_client_prefilled(
-    authenticated_client, app, user, test_client
-):
+def test_manual_entry_shows_single_client_prefilled(authenticated_client, app, user, test_client):
     """When only one client exists, manual entry form shows pre-filled grayed-out client."""
     with app.app_context():
         # Ensure exactly one active client (test_client from fixture)
@@ -37,9 +35,7 @@ def test_manual_entry_shows_single_client_prefilled(
 
 @pytest.mark.integration
 @pytest.mark.routes
-def test_manual_entry_shows_select_when_multiple_clients(
-    authenticated_client, app, user, test_client
-):
+def test_manual_entry_shows_select_when_multiple_clients(authenticated_client, app, user, test_client):
     """When multiple clients exist, manual entry form shows normal client select."""
     with app.app_context():
         # Add a second client

@@ -9,7 +9,6 @@ from flask import url_for
 from app.models import Task, Project, User, TaskActivity
 from app import db
 
-
 # ============================================================================
 # Fixtures
 # ============================================================================

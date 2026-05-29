@@ -564,4 +564,3 @@ class TestOvertimeYTD:
         assert isinstance(result, dict)
         assert "overtime_hours" in result
         assert "total_hours" in result
-

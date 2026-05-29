@@ -8,7 +8,13 @@ from datetime import date, timedelta
 from decimal import Decimal
 from app import db
 from app.models import User, Project, Invoice, InvoiceItem, Settings, Client
-from factories import UserFactory, ClientFactory, ProjectFactory, InvoiceFactory, InvoiceItemFactory
+from factories import (
+    UserFactory,
+    ClientFactory,
+    ProjectFactory,
+    InvoiceFactory,
+    InvoiceItemFactory,
+)
 from flask import url_for
 
 
@@ -70,7 +76,10 @@ def sample_invoice(app, admin_user):
 
     # Add invoice item
     item = InvoiceItemFactory(
-        invoice_id=invoice.id, description="Test Service", quantity=Decimal("5.00"), unit_price=Decimal("100.00")
+        invoice_id=invoice.id,
+        description="Test Service",
+        quantity=Decimal("5.00"),
+        unit_price=Decimal("100.00"),
     )
     db.session.commit()
 
@@ -115,7 +124,11 @@ def test_pdf_layout_save_custom_template(admin_authenticated_client, app):
     # Save custom template (A4 is default)
     response = admin_authenticated_client.post(
         "/admin/pdf-layout",
-        data={"invoice_pdf_template_html": custom_html, "invoice_pdf_template_css": custom_css, "page_size": "A4"},
+        data={
+            "invoice_pdf_template_html": custom_html,
+            "invoice_pdf_template_css": custom_css,
+            "page_size": "A4",
+        },
         follow_redirects=True,
     )
 
@@ -206,9 +219,7 @@ def test_pdf_layout_preview(admin_authenticated_client, sample_invoice):
 
 @pytest.mark.smoke
 @pytest.mark.admin
-def test_pdf_layout_preview_prefers_form_template_json_over_database(
-    admin_authenticated_client, app, sample_invoice
-):
+def test_pdf_layout_preview_prefers_form_template_json_over_database(admin_authenticated_client, app, sample_invoice):
     """Issue #600: preview must use template_json from the POST body when present, not only the DB."""
     from app.models import InvoicePDFTemplate
 
@@ -226,7 +237,12 @@ def test_pdf_layout_preview_prefers_form_template_json_over_database(
                 "y": 50,
                 "text": "DB_PREVIEW_MARKER_XYZ",
                 "width": 400,
-                "style": {"font": "Helvetica", "size": 12, "color": "#000000", "align": "left"},
+                "style": {
+                    "font": "Helvetica",
+                    "size": 12,
+                    "color": "#000000",
+                    "align": "left",
+                },
             }
         ],
         "styles": {"default": {"font": "Helvetica", "size": 10, "color": "#000000"}},
@@ -245,7 +261,12 @@ def test_pdf_layout_preview_prefers_form_template_json_over_database(
                 "y": 50,
                 "text": "FORM_PREVIEW_MARKER_XYZ",
                 "width": 400,
-                "style": {"font": "Helvetica", "size": 12, "color": "#000000", "align": "left"},
+                "style": {
+                    "font": "Helvetica",
+                    "size": 12,
+                    "color": "#000000",
+                    "align": "left",
+                },
             }
         ],
         "styles": {"default": {"font": "Helvetica", "size": 10, "color": "#000000"}},
@@ -298,7 +319,10 @@ def test_pdf_layout_preview_with_mock_invoice(admin_authenticated_client, app):
     # Test preview should still work with mock invoice
     response = admin_authenticated_client.post(
         "/admin/pdf-layout/preview",
-        data={"html": "<h1>{{ invoice.invoice_number }}</h1>", "css": "h1 { color: blue; }"},
+        data={
+            "html": "<h1>{{ invoice.invoice_number }}</h1>",
+            "css": "h1 { color: blue; }",
+        },
     )
 
     assert response.status_code == 200
@@ -393,9 +417,9 @@ def test_pdf_layout_navigation_link_exists(admin_authenticated_client, app):
         pdf_layout_url = url_for("admin.pdf_layout")
         # Check for various possible indicators of the PDF layout link
         assert (
-            "admin.pdf_layout" in html 
-            or "pdf-layout" in html 
-            or "PDF Templates" in html 
+            "admin.pdf_layout" in html
+            or "pdf-layout" in html
+            or "PDF Templates" in html
             or "pdf templates" in html.lower()
             or pdf_layout_url in html
             or "/admin/pdf-layout" in html
@@ -448,7 +472,8 @@ def test_pdf_layout_rate_limiting(admin_authenticated_client):
     # Make multiple rapid requests to preview endpoint
     for i in range(65):  # Exceeds the 60 per minute limit
         response = admin_authenticated_client.post(
-            "/admin/pdf-layout/preview", data={"html": "<h1>Test</h1>", "css": "h1 { color: red; }"}
+            "/admin/pdf-layout/preview",
+            data={"html": "<h1>Test</h1>", "css": "h1 { color: red; }"},
         )
 
         # After 60 requests, should be rate limited
@@ -532,7 +557,12 @@ def test_pdf_layout_save_and_restore_tables(app):
 
     # Minimal ReportLab template_json with two table elements
     template_json = {
-        "page": {"size": "A4", "width": 595, "height": 842, "margin": {"top": 20, "right": 20, "bottom": 20, "left": 20}},
+        "page": {
+            "size": "A4",
+            "width": 595,
+            "height": 842,
+            "margin": {"top": 20, "right": 20, "bottom": 20, "left": 20},
+        },
         "elements": [
             {
                 "type": "table",
@@ -540,10 +570,30 @@ def test_pdf_layout_save_and_restore_tables(app):
                 "y": 350,
                 "width": 515,
                 "columns": [
-                    {"width": 250, "header": "Description", "field": "description", "align": "left"},
-                    {"width": 70, "header": "Qty", "field": "quantity", "align": "center"},
-                    {"width": 110, "header": "Unit Price", "field": "unit_price", "align": "right"},
-                    {"width": 110, "header": "Total", "field": "total_amount", "align": "right"},
+                    {
+                        "width": 250,
+                        "header": "Description",
+                        "field": "description",
+                        "align": "left",
+                    },
+                    {
+                        "width": 70,
+                        "header": "Qty",
+                        "field": "quantity",
+                        "align": "center",
+                    },
+                    {
+                        "width": 110,
+                        "header": "Unit Price",
+                        "field": "unit_price",
+                        "align": "right",
+                    },
+                    {
+                        "width": 110,
+                        "header": "Total",
+                        "field": "total_amount",
+                        "align": "right",
+                    },
                 ],
                 "data": "{{ invoice.all_line_items }}",
                 "row_template": {
@@ -559,10 +609,30 @@ def test_pdf_layout_save_and_restore_tables(app):
                 "y": 450,
                 "width": 515,
                 "columns": [
-                    {"width": 200, "header": "Expense", "field": "title", "align": "left"},
-                    {"width": 100, "header": "Date", "field": "expense_date", "align": "center"},
-                    {"width": 105, "header": "Category", "field": "category", "align": "left"},
-                    {"width": 110, "header": "Amount", "field": "total_amount", "align": "right"},
+                    {
+                        "width": 200,
+                        "header": "Expense",
+                        "field": "title",
+                        "align": "left",
+                    },
+                    {
+                        "width": 100,
+                        "header": "Date",
+                        "field": "expense_date",
+                        "align": "center",
+                    },
+                    {
+                        "width": 105,
+                        "header": "Category",
+                        "field": "category",
+                        "align": "left",
+                    },
+                    {
+                        "width": 110,
+                        "header": "Amount",
+                        "field": "total_amount",
+                        "align": "right",
+                    },
                 ],
                 "data": "{{ invoice.expenses }}",
                 "row_template": {
@@ -581,7 +651,7 @@ def test_pdf_layout_save_and_restore_tables(app):
         template = InvoicePDFTemplate.get_template("A4")
         template.design_json = json.dumps(design_json)
         template.template_json = json.dumps(template_json)
-        template.template_html = "<div class=\"invoice-wrapper\"><h1>Test</h1></div>"
+        template.template_html = '<div class="invoice-wrapper"><h1>Test</h1></div>'
         template.template_css = "@page { size: A4; }"
         db.session.commit()
 

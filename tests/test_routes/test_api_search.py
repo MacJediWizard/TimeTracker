@@ -117,9 +117,7 @@ class TestLegacySearchAPI:
 
     def test_search_partial_when_projects_domain_db_error(self, authenticated_client):
         """Project search SQLAlchemy errors surface as partial response; other domains still run."""
-        with patch.object(
-            global_search_service_module.Project, "query", _FailingProjectQuery()
-        ):
+        with patch.object(global_search_service_module.Project, "query", _FailingProjectQuery()):
             response = authenticated_client.get("/api/search", query_string={"q": "te"})
         assert response.status_code == 200
         data = response.get_json()
@@ -131,9 +129,7 @@ class TestLegacySearchAPI:
 
     def test_search_with_limit(self, authenticated_client, project):
         """Test search with custom limit"""
-        response = authenticated_client.get(
-            "/api/search", query_string={"q": "test", "limit": 5}
-        )
+        response = authenticated_client.get("/api/search", query_string={"q": "test", "limit": 5})
 
         assert response.status_code == 200
         data = response.get_json()
@@ -141,9 +137,7 @@ class TestLegacySearchAPI:
 
     def test_search_with_types_filter(self, authenticated_client, project):
         """Test search with types filter"""
-        response = authenticated_client.get(
-            "/api/search", query_string={"q": "test", "types": "project"}
-        )
+        response = authenticated_client.get("/api/search", query_string={"q": "test", "types": "project"})
 
         assert response.status_code == 200
         data = response.get_json()
@@ -153,9 +147,7 @@ class TestLegacySearchAPI:
 
     def test_search_projects(self, authenticated_client, project):
         """Test searching for projects"""
-        response = authenticated_client.get(
-            "/api/search", query_string={"q": project.name[:3]}
-        )
+        response = authenticated_client.get("/api/search", query_string={"q": project.name[:3]})
 
         assert response.status_code == 200
         data = response.get_json()
@@ -202,32 +194,22 @@ class TestLegacySearchAPI:
             "/api/search", query_string={"q": project.name[:4], "types": "project"}
         )
         assert resp.status_code == 200
-        proj_ids = [
-            r["id"] for r in resp.get_json()["results"] if r["type"] == "project"
-        ]
+        proj_ids = [r["id"] for r in resp.get_json()["results"] if r["type"] == "project"]
         assert project.id in proj_ids
 
         resp_t = scope_restricted_authenticated_client.get(
             "/api/search", query_string={"q": task.name[:4], "types": "task"}
         )
         assert resp_t.status_code == 200
-        task_ids = [
-            r["id"] for r in resp_t.get_json()["results"] if r["type"] == "task"
-        ]
+        task_ids = [r["id"] for r in resp_t.get_json()["results"] if r["type"] == "task"]
         assert task.id in task_ids
 
-    def test_search_admin_sees_out_of_scope_project(
-        self, admin_authenticated_client, out_of_scope_entities
-    ):
+    def test_search_admin_sees_out_of_scope_project(self, admin_authenticated_client, out_of_scope_entities):
         """Admin global search includes projects outside any subcontractor scope."""
         marker = out_of_scope_entities["marker"]
-        resp = admin_authenticated_client.get(
-            "/api/search", query_string={"q": marker, "types": "project"}
-        )
+        resp = admin_authenticated_client.get("/api/search", query_string={"q": marker, "types": "project"})
         assert resp.status_code == 200
-        proj_ids = [
-            r["id"] for r in resp.get_json()["results"] if r["type"] == "project"
-        ]
+        proj_ids = [r["id"] for r in resp.get_json()["results"] if r["type"] == "project"]
         assert out_of_scope_entities["project_id"] in proj_ids
 
 
@@ -237,9 +219,7 @@ class TestV1SearchAPI:
     @pytest.fixture
     def api_token(self, app, user):
         """Create an API token for testing"""
-        token, plain_token = ApiToken.create_token(
-            user_id=user.id, name="Test API Token", scopes="read:projects"
-        )
+        token, plain_token = ApiToken.create_token(user_id=user.id, name="Test API Token", scopes="read:projects")
         from app import db
 
         db.session.add(token)
@@ -289,9 +269,7 @@ class TestV1SearchAPI:
 
     def test_v1_search_partial_when_projects_domain_db_error(self, api_client):
         """v1: project search DB errors are reported in errors.projects; other domains still run."""
-        with patch.object(
-            global_search_service_module.Project, "query", _FailingProjectQuery()
-        ):
+        with patch.object(global_search_service_module.Project, "query", _FailingProjectQuery()):
             response = api_client.get("/api/v1/search", query_string={"q": "te"})
         assert response.status_code == 200
         data = response.get_json()
@@ -312,9 +290,7 @@ class TestV1SearchAPI:
     def test_search_requires_read_projects_scope(self, app, user):
         """Test that search requires read:projects scope"""
         # Create token without read:projects scope
-        token, plain_token = ApiToken.create_token(
-            user_id=user.id, name="Test Token", scopes="read:time_entries"
-        )
+        token, plain_token = ApiToken.create_token(user_id=user.id, name="Test Token", scopes="read:time_entries")
         from app import db
 
         db.session.add(token)
@@ -332,9 +308,7 @@ class TestV1SearchAPI:
 
     def test_search_with_limit(self, api_client, project):
         """Test search with custom limit"""
-        response = api_client.get(
-            "/api/v1/search", query_string={"q": "test", "limit": 5}
-        )
+        response = api_client.get("/api/v1/search", query_string={"q": "test", "limit": 5})
 
         assert response.status_code == 200
         data = response.get_json()
@@ -343,9 +317,7 @@ class TestV1SearchAPI:
 
     def test_search_with_types_filter(self, api_client, project):
         """Test search with types filter"""
-        response = api_client.get(
-            "/api/v1/search", query_string={"q": "test", "types": "project"}
-        )
+        response = api_client.get("/api/v1/search", query_string={"q": "test", "types": "project"})
 
         assert response.status_code == 200
         data = response.get_json()
@@ -355,9 +327,7 @@ class TestV1SearchAPI:
 
     def test_search_projects(self, api_client, project):
         """Test searching for projects"""
-        response = api_client.get(
-            "/api/v1/search", query_string={"q": project.name[:3]}
-        )
+        response = api_client.get("/api/v1/search", query_string={"q": project.name[:3]})
 
         assert response.status_code == 200
         data = response.get_json()
@@ -371,9 +341,7 @@ class TestV1SearchAPI:
         from datetime import datetime, timedelta
 
         # Create API token for user
-        token, plain_token = ApiToken.create_token(
-            user_id=user.id, name="Test Token", scopes="read:projects"
-        )
+        token, plain_token = ApiToken.create_token(user_id=user.id, name="Test Token", scopes="read:projects")
         db.session.add(token)
 
         # Create time entry for this user
@@ -390,9 +358,7 @@ class TestV1SearchAPI:
         test_client = app.test_client()
         test_client.environ_base["HTTP_AUTHORIZATION"] = f"Bearer {plain_token}"
 
-        response = test_client.get(
-            "/api/v1/search", query_string={"q": "Test search", "types": "entry"}
-        )
+        response = test_client.get("/api/v1/search", query_string={"q": "Test search", "types": "entry"})
 
         assert response.status_code == 200
         data = response.get_json()
@@ -402,9 +368,7 @@ class TestV1SearchAPI:
 
     def test_search_clients(self, api_client, test_client):
         """Test searching for clients (test_client is the Client model fixture, not the HTTP client)."""
-        response = api_client.get(
-            "/api/v1/search", query_string={"q": test_client.name[:3]}
-        )
+        response = api_client.get("/api/v1/search", query_string={"q": test_client.name[:3]})
 
         assert response.status_code == 200
         data = response.get_json()
@@ -437,9 +401,7 @@ class TestV1SearchAPI:
         marker = out_of_scope_entities["marker"]
         test_client = app.test_client()
         test_client.environ_base["HTTP_AUTHORIZATION"] = f"Bearer {plain}"
-        resp = test_client.get(
-            "/api/v1/search", query_string={"q": marker, "types": "project,task,client"}
-        )
+        resp = test_client.get("/api/v1/search", query_string={"q": marker, "types": "project,task,client"})
         assert resp.status_code == 200
         data = resp.get_json()
         proj_ids = {r["id"] for r in data["results"] if r["type"] == "project"}
@@ -449,11 +411,7 @@ class TestV1SearchAPI:
         assert out_of_scope_entities["task_id"] not in task_ids
         assert out_of_scope_entities["client_id"] not in client_ids
 
-        resp_ok = test_client.get(
-            "/api/v1/search", query_string={"q": project.name[:4], "types": "project"}
-        )
+        resp_ok = test_client.get("/api/v1/search", query_string={"q": project.name[:4], "types": "project"})
         assert resp_ok.status_code == 200
-        proj_ok = [
-            r["id"] for r in resp_ok.get_json()["results"] if r["type"] == "project"
-        ]
+        proj_ok = [r["id"] for r in resp_ok.get_json()["results"] if r["type"] == "project"]
         assert project.id in proj_ok

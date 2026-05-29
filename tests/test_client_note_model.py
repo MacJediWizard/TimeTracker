@@ -8,7 +8,6 @@ from datetime import datetime
 from app.models import ClientNote, Client, User
 from app import db
 
-
 # ============================================================================
 # ClientNote Model Tests
 # ============================================================================

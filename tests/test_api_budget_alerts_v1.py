@@ -44,7 +44,9 @@ def admin_user(app):
 @pytest.fixture
 def api_token(app, admin_user):
     token, plain = ApiToken.create_token(
-        user_id=admin_user.id, name="Budget Token", scopes="admin:all,read:budget_alerts,write:budget_alerts"
+        user_id=admin_user.id,
+        name="Budget Token",
+        scopes="admin:all,read:budget_alerts,write:budget_alerts",
     )
     db.session.add(token)
     db.session.commit()

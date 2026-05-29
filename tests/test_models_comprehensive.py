@@ -11,7 +11,6 @@ from app.models import User, Project, TimeEntry, Client, Settings, Invoice, Invo
 from factories import InvoiceFactory
 from app import db
 
-
 # ============================================================================
 # User Model Tests
 # ============================================================================

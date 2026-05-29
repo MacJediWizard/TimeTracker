@@ -36,9 +36,7 @@ class TestAPIExpensesComplete:
         test_client.environ_base["HTTP_AUTHORIZATION"] = f"Bearer {plain_token}"
         return test_client
 
-    def test_list_expenses_with_filters(
-        self, app, client_with_token, user, project, expense
-    ):
+    def test_list_expenses_with_filters(self, app, client_with_token, user, project, expense):
         """Test list_expenses with various filters"""
         # Filter by project
         response = client_with_token.get(f"/api/v1/expenses?project_id={project.id}")

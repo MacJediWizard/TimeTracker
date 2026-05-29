@@ -11,11 +11,6 @@ from sqlalchemy.pool import StaticPool
 from app import create_app, db
 from app.models import Client, Invoice, Payment, Project, User
 
-pytestmark = pytest.mark.xfail(
-    reason="Module-wide PG-only flake; tracked as drytrix/TimeTracker#650",
-    strict=False,
-)
-
 
 @pytest.fixture
 def app():

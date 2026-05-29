@@ -22,7 +22,6 @@ from app.models import User, Project, Task, Client, Role, UserClient
 from app import db
 from app.repositories import TimeEntryRepository
 
-
 # ---------------------------------------------------------------------------
 # get_accessible_project_and_client_ids_for_user (existing)
 # ---------------------------------------------------------------------------

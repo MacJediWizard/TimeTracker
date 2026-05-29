@@ -154,7 +154,10 @@ def _finalize_login_after_verification(user: User, *, log_auth_method: str):
     except Exception:
         require_admin_2fa = False
     if require_admin_2fa and user.role == "admin" and not getattr(user, "two_factor_enabled", False):
-        flash(_("Administrator accounts must enable two-factor authentication."), "warning")
+        flash(
+            _("Administrator accounts must enable two-factor authentication."),
+            "warning",
+        )
         return redirect(url_for("auth.two_factor_setup"))
 
     next_page = request.args.get("next")
@@ -177,7 +180,10 @@ def forgot_password():
     except Exception:
         auth_method = "local"
     if not forgot_password_available(auth_method):
-        flash(_("Password reset is not available for this authentication method."), "warning")
+        flash(
+            _("Password reset is not available for this authentication method."),
+            "warning",
+        )
         return redirect(url_for("auth.login"))
 
     if current_app.config.get("DEMO_MODE"):
@@ -219,7 +225,12 @@ def forgot_password():
                     url=reset_url,
                 )
                 html_body = render_template("auth/emails/password_reset.html", reset_url=reset_url, user=user)
-                send_email(subject=subject, recipients=[user.email], text_body=text_body, html_body=html_body)
+                send_email(
+                    subject=subject,
+                    recipients=[user.email],
+                    text_body=text_body,
+                    html_body=html_body,
+                )
                 log_event("auth.password_reset_requested", user_id=user.id)
             except Exception:
                 # Never leak details; logging handled by email util.
@@ -243,7 +254,10 @@ def reset_password(token: str):
     max_age = int(getattr(Config, "PASSWORD_RESET_TOKEN_MAX_AGE_SECONDS", 3600) or 3600)
     user = _verify_password_reset_token(token, max_age_seconds=max_age)
     if not user:
-        flash(_("This reset link is invalid or has expired. Please request a new one."), "error")
+        flash(
+            _("This reset link is invalid or has expired. Please request a new one."),
+            "error",
+        )
         return redirect(url_for("auth.forgot_password"))
 
     if getattr(user, "auth_provider", "local") == "ldap":
@@ -283,7 +297,10 @@ def login():
     """Login page. Local username login is allowed only if AUTH_METHOD != 'oidc'."""
     if request.method == "GET":
         try:
-            current_app.logger.info("GET /login from %s", request.headers.get("X-Forwarded-For") or request.remote_addr)
+            current_app.logger.info(
+                "GET /login from %s",
+                request.headers.get("X-Forwarded-For") or request.remote_addr,
+            )
         except Exception:
             pass
 
@@ -331,8 +348,12 @@ def login():
                     raise ValueError("Username contains invalid characters")
                 if len(username) < 1 or len(username) > 100:
                     raise ValueError("Username must be between 1 and 100 characters")
-            except (ValueError, Exception) as e:
-                log_event("auth.login_failed", reason="invalid_username", auth_method=auth_method)
+            except (ValueError, Exception):
+                log_event(
+                    "auth.login_failed",
+                    reason="invalid_username",
+                    auth_method=auth_method,
+                )
                 flash(_("Invalid username format"), "error")
                 return render_template("auth/login.html", **_login_template_vars())
 
@@ -346,20 +367,32 @@ def login():
                         reason="demo_mode_only_demo_user",
                         auth_method=auth_method,
                     )
-                    flash(_("Only the demo account can be used. Please use the credentials shown below."), "error")
+                    flash(
+                        _("Only the demo account can be used. Please use the credentials shown below."),
+                        "error",
+                    )
                     return render_template("auth/login.html", **_login_template_vars())
 
             if auth_method == "ldap":
                 from app.services.ldap_service import LDAPService
 
                 if requires_password and not password:
-                    log_event("auth.login_failed", reason="password_required", auth_method=auth_method)
+                    log_event(
+                        "auth.login_failed",
+                        reason="password_required",
+                        auth_method=auth_method,
+                    )
                     flash(_("Password is required"), "error")
                     return render_template("auth/login.html", **_login_template_vars())
                 ldap_user = LDAPService.authenticate(username, password)
                 if ldap_user:
                     return _finalize_login_after_verification(ldap_user, log_auth_method="ldap")
-                log_event("auth.login_failed", username=username, reason="ldap_auth_failed", auth_method=auth_method)
+                log_event(
+                    "auth.login_failed",
+                    username=username,
+                    reason="ldap_auth_failed",
+                    auth_method=auth_method,
+                )
                 flash(_("Invalid username or password"), "error")
                 return render_template("auth/login.html", **_login_template_vars())
 
@@ -391,7 +424,10 @@ def login():
                             flash(_("Password is required to create an account."), "error")
                             return render_template("auth/login.html", **_login_template_vars())
                         if len(password) < 8:
-                            flash(_("Password must be at least 8 characters long."), "error")
+                            flash(
+                                _("Password must be at least 8 characters long."),
+                                "error",
+                            )
                             return render_template("auth/login.html", **_login_template_vars())
 
                     # Create new user, promote to admin if username is configured as admin
@@ -420,25 +456,42 @@ def login():
                         user.set_password(password)
                     db.session.add(user)
                     if not safe_commit("self_register_user", {"username": username}):
-                        current_app.logger.error("Self-registration failed for '%s' due to DB error", username)
+                        current_app.logger.error(
+                            "Self-registration failed for '%s' due to DB error",
+                            username,
+                        )
                         flash(
-                            _("Could not create your account due to a database error. Please try again later."), "error"
+                            _("Could not create your account due to a database error. Please try again later."),
+                            "error",
                         )
                         return render_template("auth/login.html", **_login_template_vars())
                     current_app.logger.info("Created new user '%s'", username)
 
                     # Track onboarding started for new user
                     track_onboarding_started(
-                        user.id, {"auth_method": auth_method, "self_registered": True, "is_admin": role_name == "admin"}
+                        user.id,
+                        {
+                            "auth_method": auth_method,
+                            "self_registered": True,
+                            "is_admin": role_name == "admin",
+                        },
                     )
 
                     flash(_("Welcome! Your account has been created."), "success")
                 else:
-                    log_event("auth.login_failed", username=username, reason="user_not_found", auth_method=auth_method)
+                    log_event(
+                        "auth.login_failed",
+                        username=username,
+                        reason="user_not_found",
+                        auth_method=auth_method,
+                    )
                     if auth_method == "all" and include_ldap:
                         flash(_("Invalid username or password"), "error")
                     else:
-                        flash(_("User not found. Please contact an administrator."), "error")
+                        flash(
+                            _("User not found. Please contact an administrator."),
+                            "error",
+                        )
                     return render_template("auth/login.html", **_login_template_vars())
             else:
                 # If existing user matches admin usernames, ensure admin role
@@ -446,12 +499,20 @@ def login():
                     user.role = "admin"
                     if not safe_commit("promote_admin_user", {"username": username}):
                         current_app.logger.error("Failed to promote '%s' to admin due to DB error", username)
-                        flash(_("Could not update your account role due to a database error."), "error")
+                        flash(
+                            _("Could not update your account role due to a database error."),
+                            "error",
+                        )
                         return render_template("auth/login.html", **_login_template_vars())
 
             # Check if user is active
             if not user.is_active:
-                log_event("auth.login_failed", user_id=user.id, reason="account_disabled", auth_method=auth_method)
+                log_event(
+                    "auth.login_failed",
+                    user_id=user.id,
+                    reason="account_disabled",
+                    auth_method=auth_method,
+                )
                 flash(_("Account is disabled. Please contact an administrator."), "error")
                 return render_template("auth/login.html", **_login_template_vars())
 
@@ -459,13 +520,23 @@ def login():
                 from app.services.ldap_service import LDAPService
 
                 if requires_password and not password:
-                    log_event("auth.login_failed", user_id=user.id, reason="password_required", auth_method=auth_method)
+                    log_event(
+                        "auth.login_failed",
+                        user_id=user.id,
+                        reason="password_required",
+                        auth_method=auth_method,
+                    )
                     flash(_("Password is required"), "error")
                     return render_template("auth/login.html", **_login_template_vars())
                 lu = LDAPService.authenticate(username, password)
                 if lu:
                     return _finalize_login_after_verification(lu, log_auth_method="ldap")
-                log_event("auth.login_failed", user_id=user.id, reason="ldap_auth_failed", auth_method=auth_method)
+                log_event(
+                    "auth.login_failed",
+                    user_id=user.id,
+                    reason="ldap_auth_failed",
+                    auth_method=auth_method,
+                )
                 flash(_("Invalid username or password"), "error")
                 return render_template("auth/login.html", **_login_template_vars())
 
@@ -476,14 +547,20 @@ def login():
                     # User has password set - verify it
                     if not password:
                         log_event(
-                            "auth.login_failed", user_id=user.id, reason="password_required", auth_method=auth_method
+                            "auth.login_failed",
+                            user_id=user.id,
+                            reason="password_required",
+                            auth_method=auth_method,
                         )
                         flash(_("Password is required"), "error")
                         return render_template("auth/login.html", **_login_template_vars())
 
                     if not user.check_password(password):
                         log_event(
-                            "auth.login_failed", user_id=user.id, reason="invalid_password", auth_method=auth_method
+                            "auth.login_failed",
+                            user_id=user.id,
+                            reason="invalid_password",
+                            auth_method=auth_method,
                         )
                         if auth_method == "all" and include_ldap:
                             from app.services.ldap_service import LDAPService
@@ -498,7 +575,10 @@ def login():
                     if not password:
                         # No password provided - prompt user to set one
                         log_event(
-                            "auth.login_failed", user_id=user.id, reason="no_password_set", auth_method=auth_method
+                            "auth.login_failed",
+                            user_id=user.id,
+                            reason="no_password_set",
+                            auth_method=auth_method,
                         )
                         flash(
                             _("No password is set for your account. Please enter a password to set one and log in."),
@@ -509,18 +589,28 @@ def login():
                     # Password provided - validate and set it
                     if len(password) < 8:
                         log_event(
-                            "auth.login_failed", user_id=user.id, reason="password_too_short", auth_method=auth_method
+                            "auth.login_failed",
+                            user_id=user.id,
+                            reason="password_too_short",
+                            auth_method=auth_method,
                         )
                         flash(_("Password must be at least 8 characters long."), "error")
                         return render_template("auth/login.html", **_login_template_vars())
 
                     # Set the password and continue to login
                     user.set_password(password)
-                    if not safe_commit("set_initial_password", {"user_id": user.id, "username": user.username}):
+                    if not safe_commit(
+                        "set_initial_password",
+                        {"user_id": user.id, "username": user.username},
+                    ):
                         current_app.logger.error(
-                            "Failed to set initial password for '%s' due to DB error", user.username
+                            "Failed to set initial password for '%s' due to DB error",
+                            user.username,
                         )
-                        flash(_("Could not set password due to a database error. Please try again."), "error")
+                        flash(
+                            _("Could not set password due to a database error. Please try again."),
+                            "error",
+                        )
                         return render_template("auth/login.html", **_login_template_vars())
                     current_app.logger.info("User '%s' set initial password during login", user.username)
                     flash(_("Password has been set. You are now logged in."), "success")
@@ -532,7 +622,10 @@ def login():
             return _finalize_login_after_verification(user, log_auth_method=auth_method)
         except Exception as e:
             current_app.logger.exception("Login error: %s", e)
-            flash(_("Unexpected error during login. Please try again or check server logs."), "error")
+            flash(
+                _("Unexpected error during login. Please try again or check server logs."),
+                "error",
+            )
             return render_template("auth/login.html", **_login_template_vars())
 
     return render_template("auth/login.html", **_login_template_vars())
@@ -623,7 +716,10 @@ def two_factor_setup():
                 flash(_("Two-factor authentication enabled."), "success")
             except Exception:
                 db.session.rollback()
-                flash(_("Could not enable two-factor authentication due to a database error."), "error")
+                flash(
+                    _("Could not enable two-factor authentication due to a database error."),
+                    "error",
+                )
             return redirect(url_for("auth.two_factor_setup"))
 
         if action == "disable":
@@ -652,7 +748,10 @@ def two_factor_setup():
                 flash(_("Two-factor authentication disabled."), "success")
             except Exception:
                 db.session.rollback()
-                flash(_("Could not disable two-factor authentication due to a database error."), "error")
+                flash(
+                    _("Could not disable two-factor authentication due to a database error."),
+                    "error",
+                )
             return redirect(url_for("auth.two_factor_setup"))
 
     # Ensure there is a secret available for enrollment preview.
@@ -810,16 +909,31 @@ def edit_profile():
         if file and getattr(file, "filename", ""):
             filename = file.filename
             if not allowed_avatar_file(filename):
-                flash(_("Invalid avatar file type. Allowed: PNG, JPG, JPEG, GIF, WEBP"), "error")
+                flash(
+                    _("Invalid avatar file type. Allowed: PNG, JPG, JPEG, GIF, WEBP"),
+                    "error",
+                )
                 return redirect(url_for("auth.edit_profile"))
-            # Validate image content with Pillow
+
+            # Buffer the upload once. PIL.Image.verify() closes the underlying
+            # stream as part of its contract, so verifying on file.stream and
+            # then calling Flask's .save() persists 0 bytes on disk.
             try:
+                file.stream.seek(0)
+            except Exception:
+                pass
+            avatar_bytes = file.stream.read()
+            if not avatar_bytes:
+                flash(_("Invalid image file."), "error")
+                return redirect(url_for("auth.edit_profile"))
+
+            try:
+                import io
+
                 from PIL import Image
 
-                file.stream.seek(0)
-                img = Image.open(file.stream)
+                img = Image.open(io.BytesIO(avatar_bytes))
                 img.verify()
-                file.stream.seek(0)
             except Exception:
                 flash(_("Invalid image file."), "error")
                 return redirect(url_for("auth.edit_profile"))
@@ -833,7 +947,8 @@ def edit_profile():
             folder = get_avatar_upload_folder()
             file_path = os.path.join(folder, unique_name)
             try:
-                file.save(file_path)
+                with open(file_path, "wb") as fh:
+                    fh.write(avatar_bytes)
             except Exception:
                 flash(_("Failed to save avatar on server."), "error")
                 return redirect(url_for("auth.edit_profile"))
@@ -976,7 +1091,8 @@ def login_oidc():
     """Start OIDC login using Authlib."""
     if current_app.config.get("DEMO_MODE"):
         flash(
-            _("Demo mode: only the demo account can be used. Please use the credentials on the login page."), "warning"
+            _("Demo mode: only the demo account can be used. Please use the credentials on the login page."),
+            "warning",
         )
         return redirect(url_for("auth.login"))
 
@@ -1034,7 +1150,8 @@ def login_oidc():
                         },
                     )
                     current_app.logger.info(
-                        "Successfully registered OIDC client via lazy loading for issuer %s", issuer
+                        "Successfully registered OIDC client via lazy loading for issuer %s",
+                        issuer,
                     )
                     # Clear lazy load config since we succeeded
                     current_app.config.pop("OIDC_ISSUER_FOR_LAZY_LOAD", None)
@@ -1065,7 +1182,10 @@ def login_oidc():
                 )
                 return redirect(url_for("auth.login"))
         else:
-            flash(_("Single Sign-On is not configured yet. Please contact an administrator."), "warning")
+            flash(
+                _("Single Sign-On is not configured yet. Please contact an administrator."),
+                "warning",
+            )
             return redirect(url_for("auth.login"))
 
     # Check if client has metadata loaded (for cases where registration succeeded but metadata fetch failed)
@@ -1106,7 +1226,10 @@ def login_oidc():
             current_app.logger.debug("Error checking client metadata: %s", e)
 
     if not client:
-        flash(_("Single Sign-On is not configured yet. Please contact an administrator."), "warning")
+        flash(
+            _("Single Sign-On is not configured yet. Please contact an administrator."),
+            "warning",
+        )
         return redirect(url_for("auth.login"))
 
     # Preserve next redirect
@@ -1164,7 +1287,10 @@ def oidc_callback():
                     token_err,
                 )
                 current_app.logger.info("OIDC callback redirect to login: reason=token_exchange_failed")
-                flash(_("SSO failed. If this repeats, check session cookie and proxy configuration."), "error")
+                flash(
+                    _("SSO failed. If this repeats, check session cookie and proxy configuration."),
+                    "error",
+                )
             return redirect(url_for("auth.login"))
 
         current_app.logger.info(
@@ -1192,24 +1318,33 @@ def oidc_callback():
                 claims = token.get("userinfo", {})
                 id_token_parsed = True
                 current_app.logger.info(
-                    "OIDC callback: ID token claims available from token, claims keys: %s", list(claims.keys())
+                    "OIDC callback: ID token claims available from token, claims keys: %s",
+                    list(claims.keys()),
                 )
             else:
                 # If not available, parse it manually with nonce from session
                 # Authlib stores the nonce in session during authorize_redirect()
                 nonce = session.get("_oidc_authlib_nonce_")
-                current_app.logger.debug("OIDC callback: Nonce from session: %s", "present" if nonce else "missing")
+                current_app.logger.debug(
+                    "OIDC callback: Nonce from session: %s",
+                    "present" if nonce else "missing",
+                )
                 parsed = client.parse_id_token(token, nonce=nonce)
                 if parsed:
                     claims = parsed
                     id_token_parsed = True
                     current_app.logger.info(
-                        "OIDC callback: ID token parsed successfully, claims keys: %s", list(claims.keys())
+                        "OIDC callback: ID token parsed successfully, claims keys: %s",
+                        list(claims.keys()),
                     )
                 else:
                     current_app.logger.warning("OIDC callback: parse_id_token returned None/empty")
         except Exception as e:
-            current_app.logger.error("OIDC callback: Failed to parse ID token: %s - %s", type(e).__name__, str(e))
+            current_app.logger.error(
+                "OIDC callback: Failed to parse ID token: %s - %s",
+                type(e).__name__,
+                str(e),
+            )
             # Try to decode the token manually to debug
             try:
                 if isinstance(token, dict) and "id_token" in token:
@@ -1217,10 +1352,16 @@ def oidc_callback():
 
                     # Decode without verification to inspect claims (for debugging only)
                     unverified = jwt.decode(token["id_token"], options={"verify_signature": False})
-                    current_app.logger.info("OIDC callback: Unverified ID token claims: %s", list(unverified.keys()))
+                    current_app.logger.info(
+                        "OIDC callback: Unverified ID token claims: %s",
+                        list(unverified.keys()),
+                    )
                     current_app.logger.debug("OIDC callback: Unverified token content: %s", unverified)
             except Exception as decode_err:
-                current_app.logger.error("OIDC callback: Could not decode ID token for debugging: %s", str(decode_err))
+                current_app.logger.error(
+                    "OIDC callback: Could not decode ID token for debugging: %s",
+                    str(decode_err),
+                )
 
         # Fetch userinfo endpoint as fallback or supplement
         userinfo = {}
@@ -1231,7 +1372,10 @@ def oidc_callback():
             if fetched:
                 userinfo = fetched
                 userinfo_fetched = True
-                current_app.logger.info("OIDC callback: Userinfo fetched successfully, keys: %s", list(userinfo.keys()))
+                current_app.logger.info(
+                    "OIDC callback: Userinfo fetched successfully, keys: %s",
+                    list(userinfo.keys()),
+                )
                 # If ID token parsing failed but userinfo succeeded, use userinfo for critical fields
                 if not id_token_parsed and userinfo:
                     current_app.logger.warning(
@@ -1241,7 +1385,11 @@ def oidc_callback():
             else:
                 current_app.logger.warning("OIDC callback: userinfo endpoint returned None/empty")
         except Exception as e:
-            current_app.logger.error("OIDC callback: Failed to fetch userinfo: %s - %s", type(e).__name__, str(e))
+            current_app.logger.error(
+                "OIDC callback: Failed to fetch userinfo: %s - %s",
+                type(e).__name__,
+                str(e),
+            )
 
         # Resolve fields from claims/userinfo
         issuer = (claims.get("iss") or userinfo.get("iss") or "").strip()
@@ -1307,7 +1455,8 @@ def oidc_callback():
                 list(userinfo.keys()),
             )
             flash(
-                _("Authentication failed: missing issuer or subject claim. Please check OIDC configuration."), "error"
+                _("Authentication failed: missing issuer or subject claim. Please check OIDC configuration."),
+                "error",
             )
             return redirect(url_for("auth.login"))
 
@@ -1342,7 +1491,10 @@ def oidc_callback():
             allow_self_register = ConfigManager.get_setting("allow_self_register", Config.ALLOW_SELF_REGISTER)
             if not allow_self_register:
                 current_app.logger.info("OIDC callback redirect to login: reason=self_registration_disabled")
-                flash(_("User account does not exist and self-registration is disabled."), "error")
+                flash(
+                    _("User account does not exist and self-registration is disabled."),
+                    "error",
+                )
                 return redirect(url_for("auth.login"))
             role_name = "user"
             try:
@@ -1455,7 +1607,9 @@ def oidc_callback():
                     user.roles.append(r)
                     roles_changed = True
                     current_app.logger.info(
-                        "OIDC role sync: added role %s to user %s (matched group)", r.name, user.username
+                        "OIDC role sync: added role %s to user %s (matched group)",
+                        r.name,
+                        user.username,
                     )
 
                 # REMOVE: only in sync mode AND only mapped roles (never revoke roles
@@ -1474,7 +1628,10 @@ def oidc_callback():
 
                 if roles_changed:
                     if not safe_commit("oidc_sync_roles", {"user_id": user.id}):
-                        current_app.logger.warning("DB commit failed syncing OIDC roles for user_id=%s", user.id)
+                        current_app.logger.warning(
+                            "DB commit failed syncing OIDC roles for user_id=%s",
+                            user.id,
+                        )
             elif getattr(Config, "_oidc_role_map_raw", None):
                 # User configured the env var but it failed to parse; surface once per login.
                 current_app.logger.warning(
@@ -1502,7 +1659,11 @@ def oidc_callback():
                 cache_key = f"oidc:id_token:{key}"
                 try:
                     ttl = int(
-                        getattr(current_app.config.get("PERMANENT_SESSION_LIFETIME"), "total_seconds", lambda: 86400)()
+                        getattr(
+                            current_app.config.get("PERMANENT_SESSION_LIFETIME"),
+                            "total_seconds",
+                            lambda: 86400,
+                        )()
                     )
                 except Exception:
                     ttl = 86400
@@ -1563,5 +1724,8 @@ def oidc_callback():
     except Exception as e:
         current_app.logger.exception("OIDC callback error: %s", e)
         current_app.logger.info("OIDC callback redirect to login: reason=exception")
-        flash(_("Unexpected error during SSO login. Please try again or contact support."), "error")
+        flash(
+            _("Unexpected error during SSO login. Please try again or contact support."),
+            "error",
+        )
         return redirect(url_for("auth.login"))

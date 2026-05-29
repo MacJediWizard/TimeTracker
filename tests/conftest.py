@@ -1228,3 +1228,75 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "security: Security tests")
     config.addinivalue_line("markers", "performance: Performance tests")
     config.addinivalue_line("markers", "slow: Slow running tests")
+
+
+# ----------------------------------------------------------------------------
+# PDF inspection helper (for tests that assert text appears in a generated PDF)
+# ----------------------------------------------------------------------------
+def _pdf_contains_text(pdf_bytes: bytes, needle) -> bool:
+    """Return True if *needle* appears in any decompressed page content stream.
+
+    ReportLab compresses page streams with ASCII85+FlateDecode by default, so
+    plain `needle in pdf_bytes` checks always fail. This helper decompresses
+    every page's content stream via pikepdf (already in requirements.txt) and
+    searches the decoded byte sequence.
+    """
+    import io as _io
+
+    import pikepdf as _pikepdf
+
+    if isinstance(needle, str):
+        needle = needle.encode("utf-8")
+
+    try:
+        pdf = _pikepdf.Pdf.open(_io.BytesIO(pdf_bytes))
+    except Exception:
+        return needle in pdf_bytes  # fall back to raw search
+    try:
+        for page in pdf.pages:
+            contents = page.obj.get("/Contents")
+            if contents is None:
+                continue
+            # /Contents may be a single stream or an array of streams
+            streams = contents if isinstance(contents, _pikepdf.Array) else [contents]
+            for s in streams:
+                try:
+                    raw = s.read_bytes()
+                except Exception:
+                    raw = b""
+                if needle in raw:
+                    return True
+    finally:
+        try:
+            pdf.close()
+        except Exception:
+            pass
+    return False
+
+
+@pytest.fixture
+def pdf_contains_text():
+    """Fixture returning a callable for PDF-text assertions."""
+    return _pdf_contains_text
+
+
+@pytest.fixture
+def sample_invoice(app, sample_user, sample_project, sample_client):
+    """Create a sample draft invoice for tests that need an Invoice row."""
+    from datetime import date, timedelta
+
+    from app.models import Invoice
+
+    invoice = Invoice(
+        invoice_number="INV-FIXTURE-001",
+        project_id=sample_project.id,
+        client_id=sample_client.id,
+        client_name=sample_client.name,
+        due_date=date.today() + timedelta(days=30),
+        created_by=sample_user.id,
+        status="draft",
+    )
+    db.session.add(invoice)
+    db.session.commit()
+    db.session.refresh(invoice)
+    return invoice

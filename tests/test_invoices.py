@@ -6,7 +6,7 @@ import pytest
 from factories import ClientFactory, InvoiceFactory, InvoiceItemFactory, PaymentFactory, ProjectFactory, UserFactory
 
 from app import db
-from app.models import Client, ClientPrepaidConsumption, ExtraGood, Invoice, InvoiceItem, Project, Settings, User
+from app.models import Client, ClientPrepaidConsumption, ExtraGood, Invoice, InvoiceItem, Project, Settings
 
 
 @pytest.fixture
@@ -38,7 +38,6 @@ def sample_project(app):
 def sample_invoice(app, sample_user, sample_project):
     """Create a sample invoice for testing."""
     # Create a client first
-    from app.models import Client
 
     client = ClientFactory(name="Sample Invoice Client", email="sample@test.com")
     db.session.commit()
@@ -119,7 +118,10 @@ def test_invoice_totals_calculation(app, sample_invoice):
     )
 
     item2 = InvoiceItemFactory(
-        invoice_id=sample_invoice.id, description="Design work", quantity=Decimal("5.00"), unit_price=Decimal("100.00")
+        invoice_id=sample_invoice.id,
+        description="Design work",
+        quantity=Decimal("5.00"),
+        unit_price=Decimal("100.00"),
     )
 
     db.session.commit()
@@ -135,7 +137,6 @@ def test_invoice_totals_calculation(app, sample_invoice):
 def test_invoice_with_tax(app, sample_user, sample_project):
     """Test invoice calculation with tax."""
     # Create a client first
-    from app.models import Client
 
     client = ClientFactory(name="Tax Test Client", email="tax@test.com")
     db.session.commit()
@@ -155,7 +156,10 @@ def test_invoice_with_tax(app, sample_user, sample_project):
 
     # Add item
     item = InvoiceItemFactory(
-        invoice_id=invoice.id, description="Development work", quantity=Decimal("10.00"), unit_price=Decimal("75.00")
+        invoice_id=invoice.id,
+        description="Development work",
+        quantity=Decimal("10.00"),
+        unit_price=Decimal("75.00"),
     )
     db.session.commit()
 
@@ -208,7 +212,6 @@ def test_invoice_number_generation_with_empty_pattern_uses_sequence(app):
 def test_invoice_overdue_status(app, sample_user, sample_project):
     """Test that invoices are marked as overdue correctly."""
     # Create a client first
-    from app.models import Client
 
     client = ClientFactory(name="Overdue Test Client", email="overdue@test.com")
     db.session.commit()
@@ -283,7 +286,10 @@ def test_invoice_to_dict(app, sample_invoice):
 def test_invoice_item_to_dict(app, sample_invoice):
     """Test that invoice item can be converted to dictionary."""
     item = InvoiceItemFactory(
-        invoice_id=sample_invoice.id, description="Test item", quantity=Decimal("5.00"), unit_price=Decimal("50.00")
+        invoice_id=sample_invoice.id,
+        description="Test item",
+        quantity=Decimal("5.00"),
+        unit_price=Decimal("50.00"),
     )
     db.session.commit()
 
@@ -305,7 +311,6 @@ def test_edit_invoice_template_has_expected_fields(app, client, user, project):
         sess["_fresh"] = True
 
     # Create client and invoice with an item
-    from app.models import Client, InvoiceItem
 
     cl = ClientFactory(name="Edit Test Client", email="edit@test.com", address="Street 1")
     db.session.commit()
@@ -325,7 +330,10 @@ def test_edit_invoice_template_has_expected_fields(app, client, user, project):
     db.session.commit()
 
     it = InvoiceItemFactory(
-        invoice_id=inv.id, description="Line A", quantity=Decimal("2.00"), unit_price=Decimal("50.00")
+        invoice_id=inv.id,
+        description="Line A",
+        quantity=Decimal("2.00"),
+        unit_price=Decimal("50.00"),
     )
     db.session.commit()
 
@@ -372,12 +380,17 @@ def test_generate_from_time_page_renders_lists(app, client, user, project):
     # Add an unbilled time entry and a project cost
     from factories import TimeEntryFactory
 
-    from app.models import ProjectCost, TimeEntry
+    from app.models import ProjectCost
 
     start = datetime.utcnow() - timedelta(hours=2)
     end = datetime.utcnow()
     TimeEntryFactory(
-        user_id=user.id, project_id=project.id, start_time=start, end_time=end, notes="Work A", billable=True
+        user_id=user.id,
+        project_id=project.id,
+        start_time=start,
+        end_time=end,
+        notes="Work A",
+        billable=True,
     )
 
     pc = ProjectCost(
@@ -411,7 +424,6 @@ def test_generate_from_time_applies_prepaid_hours(app, client, user):
     from factories import TimeEntryFactory
 
     from app import db
-    from app.models import TimeEntry
 
     # Authenticate
     with client.session_transaction() as sess:
@@ -419,12 +431,18 @@ def test_generate_from_time_applies_prepaid_hours(app, client, user):
         sess["_fresh"] = True
 
     prepaid_client = ClientFactory(
-        name="Prepaid Client", email="prepaid@example.com", prepaid_hours_monthly=Decimal("50.0"), prepaid_reset_day=1
+        name="Prepaid Client",
+        email="prepaid@example.com",
+        prepaid_hours_monthly=Decimal("50.0"),
+        prepaid_reset_day=1,
     )
     db.session.commit()
 
     project = ProjectFactory(
-        name="Prepaid Project", client_id=prepaid_client.id, billable=True, hourly_rate=Decimal("120.00")
+        name="Prepaid Project",
+        client_id=prepaid_client.id,
+        billable=True,
+        hourly_rate=Decimal("120.00"),
     )
     db.session.commit()
 
@@ -662,7 +680,11 @@ def test_multiple_payments(app, sample_invoice):
 
     # Second payment (70% - completing the payment)
     second_payment = Decimal("700.00")
-    sample_invoice.record_payment(amount=second_payment, payment_method="bank_transfer", payment_reference="TXN-002")
+    sample_invoice.record_payment(
+        amount=second_payment,
+        payment_method="bank_transfer",
+        payment_reference="TXN-002",
+    )
 
     # Check final payment status
     assert sample_invoice.amount_paid == total_amount
@@ -748,7 +770,6 @@ def test_invoice_to_dict_includes_payment_fields(app, sample_invoice):
 @pytest.mark.invoices
 def test_invoice_sorted_payments_property(app, sample_invoice, sample_user):
     """Test that the sorted_payments property returns payments in correct order."""
-    from app.models.payments import Payment
 
     # Create multiple payments with different dates
     payment1 = PaymentFactory(
@@ -796,13 +817,16 @@ def test_invoice_sorted_payments_with_same_date(app, sample_invoice, sample_user
     """Test that sorted_payments handles payments with same payment_date correctly."""
     from unittest.mock import patch
 
-    from app.models.payments import Payment
-
     # Deterministic created_at ordering without time.sleep (freezegun incompatible with Py3.14)
     t0 = datetime(2024, 1, 1, 10, 0, 0)
     t1 = datetime(2024, 1, 1, 10, 0, 1)
     with patch("app.models.payments.datetime") as mock_dt:
-        mock_dt.utcnow.side_effect = [t0, t0, t1, t1]  # created_at, updated_at per payment
+        mock_dt.utcnow.side_effect = [
+            t0,
+            t0,
+            t1,
+            t1,
+        ]  # created_at, updated_at per payment
         same_date = date.today()
 
         payment1 = PaymentFactory(
@@ -1103,7 +1127,7 @@ def test_pdf_export_with_extra_goods_smoke(app, sample_invoice, sample_user):
 
 @pytest.mark.unit
 @pytest.mark.invoices
-def test_pdf_reportlab_generator_includes_extra_goods(app, sample_invoice, sample_user):
+def test_pdf_reportlab_generator_includes_extra_goods(app, sample_invoice, sample_user, pdf_contains_text):
     """Test that main ReportLab PDF path includes both invoice items and extra goods in the PDF."""
     pytest.importorskip("reportlab")
     from app.utils.pdf_generator import InvoicePDFGenerator
@@ -1143,10 +1167,10 @@ def test_pdf_reportlab_generator_includes_extra_goods(app, sample_invoice, sampl
     assert len(pdf_bytes) > 0
     assert pdf_bytes[:4] == b"%PDF"
 
-    # PDF stores text in streams; item and extra good text should appear in raw bytes
-    assert b"Development work" in pdf_bytes
-    assert b"Hardware Component" in pdf_bytes
-    assert b"Raspberry Pi 4 Model B" in pdf_bytes or b"RPI4-4GB" in pdf_bytes
+    # PDF content streams are ASCII85+FlateDecode compressed; check after decompression
+    assert pdf_contains_text(pdf_bytes, "Development work")
+    assert pdf_contains_text(pdf_bytes, "Hardware Component")
+    assert pdf_contains_text(pdf_bytes, "Raspberry Pi 4 Model B") or pdf_contains_text(pdf_bytes, "RPI4-4GB")
 
 
 @pytest.mark.smoke
@@ -1416,7 +1440,6 @@ def test_invoice_deletion_with_all_related_data(app, sample_invoice, sample_user
 @pytest.mark.invoices
 def test_delete_invoice_route_success(app, client, user, project):
     """Test that the delete invoice route works correctly."""
-    from app.models import Client
 
     # Authenticate
     with client.session_transaction() as sess:
@@ -1458,7 +1481,6 @@ def test_delete_invoice_route_success(app, client, user, project):
 @pytest.mark.invoices
 def test_delete_invoice_route_permission_denied(app, client, user, project):
     """Test that users cannot delete invoices they don't own."""
-    from app.models import Client
 
     # Create another user
     other_user = UserFactory(username="otheruser", role="user")
@@ -1501,7 +1523,6 @@ def test_delete_invoice_route_permission_denied(app, client, user, project):
 @pytest.mark.invoices
 def test_delete_invoice_route_admin_can_delete_any(app, client, user, project):
     """Test that admins can delete any invoice."""
-    from app.models import Client
 
     # Create another user
     other_user = UserFactory(username="otheruseradmin", role="user")
@@ -1563,10 +1584,13 @@ def test_delete_invoice_route_not_found(app, client, user):
 @pytest.mark.invoices
 def test_invoice_view_has_delete_button(app, client, user, project):
     """Smoke test: Verify that the invoice view page has a delete button."""
-    from app.models import Client
 
     # Authenticate using login endpoint
-    client.post("/login", data={"username": user.username, "password": "password123"}, follow_redirects=True)
+    client.post(
+        "/login",
+        data={"username": user.username, "password": "password123"},
+        follow_redirects=True,
+    )
 
     # Create client and invoice
     cl = ClientFactory(name="Delete Button Test Client", email="button@test.com")
@@ -1649,7 +1673,11 @@ def test_invoice_list_has_delete_buttons(app, client, admin_user, project):
     project_id = project.id
 
     # Authenticate as admin using login endpoint
-    client.post("/login", data={"username": admin_user.username, "password": "password123"}, follow_redirects=True)
+    client.post(
+        "/login",
+        data={"username": admin_user.username, "password": "password123"},
+        follow_redirects=True,
+    )
 
     # Create client and invoices
     cl = Client(name="List Delete Test Client", email="listdelete@test.com")
@@ -1662,7 +1690,12 @@ def test_invoice_list_has_delete_buttons(app, client, admin_user, project):
     proj = ProjectModel.query.get(project_id)
     if proj is None:
         # Recreate a minimal billable project tied to the client for stability
-        proj = ProjectModel(name="Smoke Test Project", client_id=cl.id, billable=True, hourly_rate=Decimal("75.00"))
+        proj = ProjectModel(
+            name="Smoke Test Project",
+            client_id=cl.id,
+            billable=True,
+            hourly_rate=Decimal("75.00"),
+        )
         db.session.add(proj)
         db.session.commit()
         project_id = proj.id
@@ -1703,10 +1736,13 @@ def test_invoice_list_has_delete_buttons(app, client, admin_user, project):
 def test_delete_invoice_with_complex_data_smoke(app, client, user, project):
     """Smoke test: Delete an invoice with items, goods, and payments."""
     from app.models import Client
-    from app.models.payments import Payment
 
     # Authenticate using login endpoint
-    client.post("/login", data={"username": user.username, "password": "password123"}, follow_redirects=True)
+    client.post(
+        "/login",
+        data={"username": user.username, "password": "password123"},
+        follow_redirects=True,
+    )
 
     # Create client and invoice
     cl = Client(name="Complex Delete Test", email="complex@test.com")
@@ -1726,7 +1762,12 @@ def test_delete_invoice_with_complex_data_smoke(app, client, user, project):
 
     # Add items
     items = [
-        InvoiceItem(invoice_id=inv.id, description=f"Item {i}", quantity=Decimal("5.00"), unit_price=Decimal("50.00"))
+        InvoiceItem(
+            invoice_id=inv.id,
+            description=f"Item {i}",
+            quantity=Decimal("5.00"),
+            unit_price=Decimal("50.00"),
+        )
         for i in range(1, 4)
     ]
     for item in items:
@@ -1748,7 +1789,6 @@ def test_delete_invoice_with_complex_data_smoke(app, client, user, project):
         db.session.add(good)
 
     # Add payments
-    from app.models.payments import Payment
 
     payments = [
         PaymentFactory(

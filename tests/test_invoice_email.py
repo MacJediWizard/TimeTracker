@@ -7,13 +7,7 @@ from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 import pytest
-from factories import (
-    ClientFactory,
-    InvoiceFactory,
-    InvoiceItemFactory,
-    ProjectFactory,
-    UserFactory,
-)
+from factories import ClientFactory, InvoiceFactory, InvoiceItemFactory, ProjectFactory, UserFactory
 from flask import current_app
 
 from app import db
@@ -86,7 +80,7 @@ def test_invoice(app, test_user, test_project, test_client):
 @pytest.fixture
 def mock_pdf_generator():
     """Mock PDF generator"""
-    with patch("app.utils.email.InvoicePDFGenerator") as mock_gen:
+    with patch("app.utils.pdf_generator.InvoicePDFGenerator") as mock_gen:
         mock_instance = MagicMock()
         mock_instance.generate_pdf.return_value = b"fake_pdf_bytes"
         mock_gen.return_value = mock_instance
@@ -157,13 +151,13 @@ class TestSendInvoiceEmail:
             current_app.config["MAIL_DEFAULT_SENDER"] = "noreply@test.com"
 
             # Mock PDF generator to fail
-            with patch("app.utils.email.InvoicePDFGenerator") as mock_gen:
+            with patch("app.utils.pdf_generator.InvoicePDFGenerator") as mock_gen:
                 mock_instance = MagicMock()
                 mock_instance.generate_pdf.side_effect = Exception("PDF generation failed")
                 mock_gen.return_value = mock_instance
 
                 # Mock fallback generator to also fail
-                with patch("app.utils.email.InvoicePDFGeneratorFallback") as mock_fallback:
+                with patch("app.utils.pdf_generator_fallback.InvoicePDFGeneratorFallback") as mock_fallback:
                     mock_fallback_instance = MagicMock()
                     mock_fallback_instance.generate_pdf.side_effect = Exception("Fallback failed")
                     mock_fallback.return_value = mock_fallback_instance

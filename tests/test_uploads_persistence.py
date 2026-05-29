@@ -279,10 +279,12 @@ def test_multiple_logos_in_directory(authenticated_admin_client, app, cleanup_te
 
 
 @pytest.mark.integration
-def test_logo_path_is_in_uploads_directory(
-    authenticated_admin_client, sample_logo_image, app, uploads_dir, cleanup_test_files
-):
-    """Test that uploaded logos are stored in the correct uploads directory."""
+def test_logo_path_is_in_uploads_directory(authenticated_admin_client, sample_logo_image, app, cleanup_test_files):
+    """Test that uploaded logos are stored in the configured uploads directory.
+
+    The ``cleanup_test_files`` fixture yields the per-test isolated
+    LOGO_UPLOAD_FOLDER; assert the saved path lives inside it.
+    """
     with app.app_context():
         data = {
             "logo": (sample_logo_image, "test_logo_path.png", "image/png"),
@@ -298,13 +300,11 @@ def test_logo_path_is_in_uploads_directory(
         logo_path = settings.get_logo_path()
         assert logo_path is not None, "Logo path should not be None"
 
-        # Verify the logo is in the uploads/logos directory
-        assert "uploads" in logo_path, f"Logo not in uploads directory: {logo_path}"
+        # The configured upload folder is what cleanup_test_files yielded.
         assert "logos" in logo_path, f"Logo not in logos subdirectory: {logo_path}"
-
-        # Verify the path structure
-        expected_dir = os.path.join(uploads_dir, "logos")
-        assert expected_dir in logo_path, f"Logo not in expected directory: {logo_path}"
+        assert (
+            str(cleanup_test_files) in logo_path
+        ), f"Logo not in expected directory: {logo_path} (expected under {cleanup_test_files})"
 
 
 # ============================================================================

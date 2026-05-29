@@ -1,6 +1,6 @@
 """Model tests for project archiving functionality"""
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import pytest
 
@@ -300,7 +300,12 @@ class TestProjectArchiveProperties:
         assert project.archived_by_user is None
 
     def test_archived_by_user_property_returns_none_when_user_deleted(self, app, project, test_client):
-        """Test archived_by_user handles deleted users gracefully"""
+        """Test archived_by_user handles deleted users gracefully.
+
+        Project.archived_by is declared with ON DELETE SET NULL (see
+        app/models/project.py), so deleting the user clears the column.
+        ``archived_by_user`` must also resolve to ``None``.
+        """
         from app import db
         from app.models import User
 
@@ -314,13 +319,14 @@ class TestProjectArchiveProperties:
         # Archive with temp user
         project.archive(user_id=temp_user_id, reason="Test")
         db.session.commit()
+        assert project.archived_by == temp_user_id
 
-        # Delete the user
+        # Delete the user — ondelete=SET NULL clears project.archived_by
         db.session.delete(temp_user)
         db.session.commit()
+        db.session.refresh(project)
 
-        # archived_by should still be set but user query returns None
-        assert project.archived_by == temp_user_id
+        assert project.archived_by is None
         assert project.archived_by_user is None
 
 
@@ -422,14 +428,28 @@ class TestProjectArchiveEdgeCases:
         assert project.archived_reason == special_reason
 
     def test_archive_with_invalid_user_id(self, app, project):
-        """Test that archiving with non-existent user_id still works"""
+        """Test that archiving with non-existent user_id is rejected at commit.
+
+        Under PostgreSQL (and SQLite with foreign-key enforcement enabled
+        in conftest) inserting an ``archived_by`` that doesn't match any
+        users.id row triggers an IntegrityError on commit, which is the
+        correct database behaviour. Capture the error and assert that
+        the project's archive metadata was not persisted.
+        """
+        from sqlalchemy.exc import IntegrityError
+
         from app import db
 
-        # Use a user ID that doesn't exist
         project.archive(user_id=999999, reason="Test")
-        db.session.commit()
+        with pytest.raises(IntegrityError):
+            db.session.commit()
+        db.session.rollback()
 
-        assert project.status == "archived"
-        assert project.archived_by == 999999
-        # archived_by_user should return None for invalid ID
-        assert project.archived_by_user is None
+        # Reload from the DB and confirm no state leaked through.
+        db.session.expire_all()
+        from app.models import Project
+
+        reloaded = db.session.get(Project, project.id)
+        assert reloaded is not None
+        assert reloaded.archived_by is None
+        assert reloaded.status != "archived"

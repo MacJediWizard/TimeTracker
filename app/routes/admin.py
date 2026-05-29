@@ -1,7 +1,6 @@
 import os
 import shutil
 import threading
-import time
 import uuid
 from datetime import datetime
 
@@ -26,18 +25,7 @@ from werkzeug.utils import secure_filename
 import app as app_module
 from app import db, limiter
 from app.config.analytics_defaults import get_analytics_config
-from app.models import (
-    DonationInteraction,
-    Invoice,
-    Project,
-    Quote,
-    QuoteItem,
-    Role,
-    Settings,
-    TimeEntry,
-    User,
-    UserClient,
-)
+from app.models import DonationInteraction, Invoice, Project, Quote, Role, Settings, TimeEntry, User, UserClient
 from app.utils.auth_method import auth_includes_ldap, auth_includes_oidc, normalize_auth_method
 from app.utils.backup import create_backup, get_backup_root_dir, restore_backup
 from app.utils.db import safe_commit
@@ -113,7 +101,6 @@ def _convert_json_template_to_html_css(template_json, page_size="A4", invoice=No
         tuple: (html_string, css_string)
     """
     import html as html_escape
-    import json as json_module
 
     from app.utils.pdf_template_schema import get_page_dimensions_points
 
@@ -248,7 +235,10 @@ body {{
     def get_font_family(font_name):
         if not font_name:
             return "Arial, Helvetica, sans-serif"
-        return font_map.get(font_name, font_map.get(font_name.split("-")[0], "Arial, Helvetica, sans-serif"))
+        return font_map.get(
+            font_name,
+            font_map.get(font_name.split("-")[0], "Arial, Helvetica, sans-serif"),
+        )
 
     # Helper function to get font weight from font name
     def get_font_weight(font_name):
@@ -271,7 +261,16 @@ body {{
         if not color:
             return "#000000"
         # If already hex or named color, return as-is
-        if color.startswith("#") or color in ["black", "white", "red", "blue", "green", "yellow", "cyan", "magenta"]:
+        if color.startswith("#") or color in [
+            "black",
+            "white",
+            "red",
+            "blue",
+            "green",
+            "yellow",
+            "cyan",
+            "magenta",
+        ]:
             return color
         # If RGB tuple/list, convert to hex
         if isinstance(color, (list, tuple)) and len(color) >= 3:
@@ -546,7 +545,12 @@ body {{
                             else:
                                 items = [resolved]
                 except Exception as e:
-                    safe_log(current_app.logger, "warning", "Dashboard data resolution failed: %s", e)
+                    safe_log(
+                        current_app.logger,
+                        "warning",
+                        "Dashboard data resolution failed: %s",
+                        e,
+                    )
             # Fallback: use data_obj.items (e.g. when data source not set or resolution failed)
             if not items and data_obj and hasattr(data_obj, "items"):
                 try:
@@ -557,7 +561,12 @@ body {{
                     else:
                         items = list(data_obj.items) if data_obj.items else []
                 except Exception as e:
-                    safe_log(current_app.logger, "debug", "Dashboard data fallback items failed: %s", e)
+                    safe_log(
+                        current_app.logger,
+                        "debug",
+                        "Dashboard data fallback items failed: %s",
+                        e,
+                    )
                     items = []
 
             # If no items available, create sample row from template
@@ -581,7 +590,13 @@ body {{
                             else:
                                 value = ""
                         except Exception as e:
-                            safe_log(current_app.logger, "debug", "Template value for field %s failed: %s", field, e)
+                            safe_log(
+                                current_app.logger,
+                                "debug",
+                                "Template value for field %s failed: %s",
+                                field,
+                                e,
+                            )
                             value = ""
 
                         value_escaped = html_escape.escape(str(value))
@@ -650,7 +665,7 @@ def admin_dashboard():
     """Admin dashboard"""
     from datetime import datetime, timedelta
 
-    from sqlalchemy import case, func
+    from sqlalchemy import func
 
     from app.config import Config
 
@@ -765,7 +780,12 @@ def admin_dashboard():
         try:
             _cache.set("admin:dashboard:chart", chart_data, ttl=600)
         except Exception as e:
-            safe_log(current_app.logger, "debug", "Admin dashboard chart cache set failed: %s", e)
+            safe_log(
+                current_app.logger,
+                "debug",
+                "Admin dashboard chart cache set failed: %s",
+                e,
+            )
 
     # Build stats object expected by the template
     stats = {
@@ -855,7 +875,10 @@ def create_user():
             # Fallback: if role doesn't exist, try to use "user" role
             role_obj = Role.query.filter_by(name="user").first()
             if not role_obj:
-                flash(_("Default 'user' role not found. Please run 'flask seed_permissions_cmd' first."), "error")
+                flash(
+                    _("Default 'user' role not found. Please run 'flask seed_permissions_cmd' first."),
+                    "error",
+                )
                 all_roles = Role.query.order_by(Role.name).all()
                 return render_template("admin/user_form.html", user=None, all_roles=all_roles)
 
@@ -866,7 +889,12 @@ def create_user():
             settings = Settings.get_settings()
             user.standard_hours_per_day = float(getattr(settings, "default_daily_working_hours", 8.0) or 8.0)
         except Exception as e:
-            safe_log(current_app.logger, "debug", "Default daily working hours for new user failed: %s", e)
+            safe_log(
+                current_app.logger,
+                "debug",
+                "Default daily working hours for new user failed: %s",
+                e,
+            )
 
         # Assign the role from the new Role system
         user.roles.append(role_obj)
@@ -879,7 +907,10 @@ def create_user():
 
         db.session.add(user)
         if not safe_commit("admin_create_user", {"username": username}):
-            flash(_("Could not create user due to a database error. Please check server logs."), "error")
+            flash(
+                _("Could not create user due to a database error. Please check server logs."),
+                "error",
+            )
             all_roles = Role.query.order_by(Role.name).all()
             return render_template("admin/user_form.html", user=None, all_roles=all_roles)
 
@@ -949,7 +980,10 @@ def edit_user(user_id):
             # Fallback: if role doesn't exist, try to use "user" role
             role_obj = Role.query.filter_by(name="user").first()
             if not role_obj:
-                flash(_("Default 'user' role not found. Please run 'flask seed_permissions_cmd' first."), "error")
+                flash(
+                    _("Default 'user' role not found. Please run 'flask seed_permissions_cmd' first."),
+                    "error",
+                )
                 return render_template(
                     "admin/user_form.html",
                     user=user,
@@ -991,7 +1025,11 @@ def edit_user(user_id):
                 user.password_change_required = True
             else:
                 user.password_change_required = False
-            current_app.logger.info("Admin '%s' reset password for user '%s'", current_user.username, user.username)
+            current_app.logger.info(
+                "Admin '%s' reset password for user '%s'",
+                current_user.username,
+                user.username,
+            )
 
         # Update user
         user.username = username
@@ -1029,7 +1067,10 @@ def edit_user(user_id):
                     db.session.add(UserClient(user_id=user.id, client_id=cid))
 
         if not safe_commit("admin_edit_user", {"user_id": user.id}):
-            flash(_("Could not update user due to a database error. Please check server logs."), "error")
+            flash(
+                _("Could not update user due to a database error. Please check server logs."),
+                "error",
+            )
             return render_template(
                 "admin/user_form.html",
                 user=user,
@@ -1039,13 +1080,26 @@ def edit_user(user_id):
             )
 
         if new_password:
-            flash(_('Password reset successfully for user "%(username)s"', username=username), "success")
+            flash(
+                _(
+                    'Password reset successfully for user "%(username)s"',
+                    username=username,
+                ),
+                "success",
+            )
         else:
-            flash(_('User "%(username)s" updated successfully', username=username), "success")
+            flash(
+                _('User "%(username)s" updated successfully', username=username),
+                "success",
+            )
         return redirect(url_for("admin.list_users"))
 
     return render_template(
-        "admin/user_form.html", user=user, clients=clients, all_roles=all_roles, assigned_client_ids=assigned_client_ids
+        "admin/user_form.html",
+        user=user,
+        clients=clients,
+        all_roles=all_roles,
+        assigned_client_ids=assigned_client_ids,
     )
 
 
@@ -1084,7 +1138,10 @@ def delete_user(user_id):
     username = user.username
     db.session.delete(user)
     if not safe_commit("admin_delete_user", {"user_id": user.id}):
-        flash(_("Could not delete user due to a database error. Please check server logs."), "error")
+        flash(
+            _("Could not delete user due to a database error. Please check server logs."),
+            "error",
+        )
         return redirect(url_for("admin.list_users"))
 
     flash(_('User "%(username)s" deleted successfully', username=username), "success")
@@ -1132,7 +1189,12 @@ def telemetry_dashboard():
     app_module.log_event("admin.telemetry_dashboard_viewed", user_id=current_user.id)
     app_module.track_event(current_user.id, "admin.telemetry_dashboard_viewed", {})
 
-    return render_template("admin/telemetry.html", telemetry=telemetry_data, grafana=grafana_data, sentry=sentry_data)
+    return render_template(
+        "admin/telemetry.html",
+        telemetry=telemetry_data,
+        grafana=grafana_data,
+        sentry=sentry_data,
+    )
 
 
 @admin_bp.route("/admin/telemetry/toggle", methods=["POST"])
@@ -1158,9 +1220,15 @@ def toggle_telemetry():
     app_module.track_event(current_user.id, "admin.telemetry_toggled", {"enabled": new_state})
 
     if new_state:
-        flash(_("Telemetry has been enabled. Thank you for helping us improve!"), "success")
+        flash(
+            _("Telemetry has been enabled. Thank you for helping us improve!"),
+            "success",
+        )
     else:
-        flash(_("Detailed analytics has been disabled. Anonymous base telemetry remains active."), "info")
+        flash(
+            _("Detailed analytics has been disabled. Anonymous base telemetry remains active."),
+            "info",
+        )
 
     return redirect(url_for("admin.telemetry_dashboard"))
 
@@ -1215,7 +1283,10 @@ def manage_modules():
 
             locked_client = Client.query.get(locked_client_id)
             if not locked_client or getattr(locked_client, "status", None) != "active":
-                flash(_("Selected locked client does not exist or is not active."), "error")
+                flash(
+                    _("Selected locked client does not exist or is not active."),
+                    "error",
+                )
                 return render_template(
                     "admin/modules.html",
                     modules_by_category=modules_by_category,
@@ -1272,7 +1343,8 @@ def manage_modules():
 
             if not safe_commit("admin_update_module_visibility"):
                 flash(
-                    _("Could not update module visibility due to a database error. Please check server logs."), "error"
+                    _("Could not update module visibility due to a database error. Please check server logs."),
+                    "error",
                 )
                 return render_template(
                     "admin/modules.html",
@@ -1386,7 +1458,10 @@ def settings():
         invoice_start_number_form = request.form.get("invoice_start_number", 1000)
         is_valid_pattern, pattern_error = validate_invoice_pattern(invoice_number_pattern_form)
         if not is_valid_pattern:
-            flash(_("Invalid invoice number pattern: %(reason)s", reason=pattern_error), "error")
+            flash(
+                _("Invalid invoice number pattern: %(reason)s", reason=pattern_error),
+                "error",
+            )
             system_instance_id = Settings.get_system_instance_id()
             return render_template(
                 "admin/settings.html",
@@ -1560,7 +1635,11 @@ def settings():
 
         # Log analytics preference change if it changed
         if old_analytics_state != allow_analytics:
-            app_module.log_event("admin.analytics_toggled", user_id=current_user.id, new_state=allow_analytics)
+            app_module.log_event(
+                "admin.analytics_toggled",
+                user_id=current_user.id,
+                new_state=allow_analytics,
+            )
             app_module.track_event(current_user.id, "admin.analytics_toggled", {"enabled": allow_analytics})
 
         # Ensure settings object is in the session (important for new instances)
@@ -1568,7 +1647,10 @@ def settings():
             db.session.add(settings_obj)
 
         if not safe_commit("admin_update_settings"):
-            flash(_("Could not update settings due to a database error. Please check server logs."), "error")
+            flash(
+                _("Could not update settings due to a database error. Please check server logs."),
+                "error",
+            )
             system_instance_id = Settings.get_system_instance_id()
             return render_template(
                 "admin/settings.html",
@@ -1832,7 +1914,10 @@ def pdf_layout():
                 current_app.logger.error(
                     f"[PDF_TEMPLATE] ERROR: template_json is invalid (missing 'page' property) - PageSize: '{page_size}', TemplateID: {template.id}, User: {current_user.username}"
                 )
-                flash(_("Error: Template JSON is invalid. Please try saving again."), "error")
+                flash(
+                    _("Error: Template JSON is invalid. Please try saving again."),
+                    "error",
+                )
                 return redirect(url_for("admin.pdf_layout", size=page_size))
             element_count = len(template_json_dict_validate.get("elements", []))
             current_app.logger.info(
@@ -1842,7 +1927,10 @@ def pdf_layout():
             current_app.logger.error(
                 f"[PDF_TEMPLATE] ERROR: template_json is not valid JSON - PageSize: '{page_size}', TemplateID: {template.id}, Error: {str(e)}, User: {current_user.username}"
             )
-            flash(_("Error: Template JSON is not valid JSON. Please try saving again."), "error")
+            flash(
+                _("Error: Template JSON is not valid JSON. Please try saving again."),
+                "error",
+            )
             return redirect(url_for("admin.pdf_layout", size=page_size))
 
         # Update template (save both legacy HTML/CSS and new JSON format)
@@ -1891,7 +1979,8 @@ def pdf_layout():
                     f"[PDF_TEMPLATE] WARNING: Template saved but template_json verification failed - PageSize: '{page_size}', TemplateID: {template.id}, HasJSON: {bool(template.template_json)}, User: {current_user.username}"
                 )
                 flash(
-                    _("PDF layout saved but template JSON verification failed. Please check the template."), "warning"
+                    _("PDF layout saved but template JSON verification failed. Please check the template."),
+                    "warning",
                 )
         return redirect(url_for("admin.pdf_layout", size=page_size))
 
@@ -2189,7 +2278,10 @@ def quote_pdf_layout():
                 current_app.logger.error(
                     f"[PDF_TEMPLATE] ERROR: Quote template_json is invalid (missing 'page' property) - PageSize: '{page_size}', TemplateID: {template.id}, User: {current_user.username}"
                 )
-                flash(_("Error: Template JSON is invalid. Please try saving again."), "error")
+                flash(
+                    _("Error: Template JSON is invalid. Please try saving again."),
+                    "error",
+                )
                 return redirect(url_for("admin.quote_pdf_layout", size=page_size))
             element_count = len(template_json_dict_validate.get("elements", []))
             current_app.logger.info(
@@ -2199,7 +2291,10 @@ def quote_pdf_layout():
             current_app.logger.error(
                 f"[PDF_TEMPLATE] ERROR: Quote template_json is not valid JSON - PageSize: '{page_size}', TemplateID: {template.id}, Error: {str(e)}, User: {current_user.username}"
             )
-            flash(_("Error: Template JSON is not valid JSON. Please try saving again."), "error")
+            flash(
+                _("Error: Template JSON is not valid JSON. Please try saving again."),
+                "error",
+            )
             return redirect(url_for("admin.quote_pdf_layout", size=page_size))
 
         template.template_json = template_json  # ReportLab template JSON (always present now)
@@ -2227,7 +2322,8 @@ def quote_pdf_layout():
                     f"[PDF_TEMPLATE] WARNING: Quote template saved but template_json verification failed - PageSize: '{page_size}', TemplateID: {template.id}, HasJSON: {bool(template.template_json)}, User: {current_user.username}"
                 )
                 flash(
-                    _("PDF layout saved but template JSON verification failed. Please check the template."), "warning"
+                    _("PDF layout saved but template JSON verification failed. Please check the template."),
+                    "warning",
                 )
         return redirect(url_for("admin.quote_pdf_layout", size=page_size))
 
@@ -2275,13 +2371,23 @@ def quote_pdf_layout():
                 m = _re.search(r"<body[^>]*>([\s\S]*?)</body>", html_src, _re.IGNORECASE)
                 initial_html = m.group(1).strip() if m else html_src
             except Exception as e:
-                safe_log(current_app.logger, "debug", "Quote PDF template body regex failed: %s", e)
+                safe_log(
+                    current_app.logger,
+                    "debug",
+                    "Quote PDF template body regex failed: %s",
+                    e,
+                )
         if not initial_css:
             env = current_app.jinja_env
             css_src, _unused3, _unused4 = env.loader.get_source(env, "quotes/pdf_styles_default.css")
             initial_css = css_src
     except Exception as e:
-        safe_log(current_app.logger, "warning", "Quote PDF layout initialization failed: %s", e)
+        safe_log(
+            current_app.logger,
+            "warning",
+            "Quote PDF layout initialization failed: %s",
+            e,
+        )
 
     # Normalize @page size in initial CSS to match the selected page size
     # This ensures the editor always shows the correct page size
@@ -2632,9 +2738,19 @@ def pdf_layout_default():
             if match:
                 html_src = match.group(1).strip()
         except Exception as e:
-            safe_log(current_app.logger, "debug", "Invoice PDF template body regex failed: %s", e)
+            safe_log(
+                current_app.logger,
+                "debug",
+                "Invoice PDF template body regex failed: %s",
+                e,
+            )
     except Exception as e:
-        safe_log(current_app.logger, "warning", "Invoice PDF layout initialization failed: %s", e)
+        safe_log(
+            current_app.logger,
+            "warning",
+            "Invoice PDF layout initialization failed: %s",
+            e,
+        )
         html_src = "<div class=\"wrapper\"><h1>{{ _('INVOICE') }} {{ invoice.invoice_number }}</h1></div>"
     try:
         css_src, _, _ = env.loader.get_source(env, "invoices/pdf_styles_default.css")
@@ -2778,7 +2894,11 @@ def pdf_layout_preview():
         )
     # Ensure at least one sample item to avoid undefined 'item' in templates that reference it outside loops
     sample_item = SimpleNamespace(
-        description="Sample item", quantity=1.0, unit_price=0.0, total_amount=0.0, time_entry_ids=""
+        description="Sample item",
+        quantity=1.0,
+        unit_price=0.0,
+        total_amount=0.0,
+        time_entry_ids="",
     )
 
     # Create a wrapper object with converted Query objects to lists
@@ -2977,7 +3097,11 @@ def pdf_layout_preview():
         try:
             # Convert JSON template to HTML/CSS with actual invoice data for better table rendering
             html, css = _convert_json_template_to_html_css(
-                template_json_parsed, page_size, invoice=invoice, quote=None, settings=settings_obj
+                template_json_parsed,
+                page_size,
+                invoice=invoice,
+                quote=None,
+                settings=settings_obj,
             )
             items_count = len(invoice.items) if hasattr(invoice, "items") and invoice.items else 0
             current_app.logger.info(
@@ -3030,7 +3154,12 @@ def pdf_layout_preview():
                 editor_page_rule = update_page_size_in_css(editor_page_rule, page_size)
                 # Remove @page from saved CSS and add normalized editor's @page rule
                 if saved_css:
-                    saved_css_no_page = re.sub(r"@page\s*\{[^}]*\}", "", saved_css, flags=re.IGNORECASE | re.DOTALL)
+                    saved_css_no_page = re.sub(
+                        r"@page\s*\{[^}]*\}",
+                        "",
+                        saved_css,
+                        flags=re.IGNORECASE | re.DOTALL,
+                    )
                 else:
                     saved_css_no_page = ""
                 # Remove @page rule from editor CSS and merge
@@ -3076,7 +3205,10 @@ def pdf_layout_preview():
                 # Try to fix it by replacing any existing @page size
                 # Use a more robust regex that handles quotes and whitespace
                 css = re.sub(
-                    r"size\s*:\s*['\"]?[^;}\n]+['\"]?", f"size: {page_size}", css, flags=re.IGNORECASE | re.MULTILINE
+                    r"size\s*:\s*['\"]?[^;}\n]+['\"]?",
+                    f"size: {page_size}",
+                    css,
+                    flags=re.IGNORECASE | re.MULTILINE,
                 )
     else:
         # No CSS provided, add default @page rule
@@ -3130,7 +3262,12 @@ def pdf_layout_preview():
         # Match <style> tags and remove @page rules from them
         style_pattern = r"(<style[^>]*>)(.*?)(</style>)"
         if re.search(style_pattern, html_text, re.IGNORECASE | re.DOTALL):
-            html_text = re.sub(style_pattern, remove_from_style_tag, html_text, flags=re.IGNORECASE | re.DOTALL)
+            html_text = re.sub(
+                style_pattern,
+                remove_from_style_tag,
+                html_text,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
 
         return html_text
 
@@ -3618,7 +3755,11 @@ def quote_pdf_layout_preview():
     if template_json_parsed:
         try:
             html, css = _convert_json_template_to_html_css(
-                template_json_parsed, page_size, invoice=None, quote=quote, settings=settings_obj
+                template_json_parsed,
+                page_size,
+                invoice=None,
+                quote=quote,
+                settings=settings_obj,
             )
             items_count = len(quote.items) if hasattr(quote, "items") and quote.items else 0
             current_app.logger.info(
@@ -3666,7 +3807,12 @@ def quote_pdf_layout_preview():
                 editor_page_rule = update_page_size_in_css(editor_page_rule, page_size)
                 # Remove @page from saved CSS and add normalized editor's @page rule
                 if saved_css:
-                    saved_css_no_page = re.sub(r"@page\s*\{[^}]*\}", "", saved_css, flags=re.IGNORECASE | re.DOTALL)
+                    saved_css_no_page = re.sub(
+                        r"@page\s*\{[^}]*\}",
+                        "",
+                        saved_css,
+                        flags=re.IGNORECASE | re.DOTALL,
+                    )
                 else:
                     saved_css_no_page = ""
                 # Remove @page rule from editor CSS and merge
@@ -3713,7 +3859,10 @@ def quote_pdf_layout_preview():
                 # Try to fix it by replacing any existing @page size
                 # Use a more robust regex that handles quotes and whitespace
                 css = re.sub(
-                    r"size\s*:\s*['\"]?[^;}\n]+['\"]?", f"size: {page_size}", css, flags=re.IGNORECASE | re.MULTILINE
+                    r"size\s*:\s*['\"]?[^;}\n]+['\"]?",
+                    f"size: {page_size}",
+                    css,
+                    flags=re.IGNORECASE | re.MULTILINE,
                 )
     else:
         # No CSS provided, add default @page rule
@@ -3767,7 +3916,12 @@ def quote_pdf_layout_preview():
         # Match <style> tags and remove @page rules from them
         style_pattern = r"(<style[^>]*>)(.*?)(</style>)"
         if re.search(style_pattern, html_text, re.IGNORECASE | re.DOTALL):
-            html_text = re.sub(style_pattern, remove_from_style_tag, html_text, flags=re.IGNORECASE | re.DOTALL)
+            html_text = re.sub(
+                style_pattern,
+                remove_from_style_tag,
+                html_text,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
 
         return html_text
 
@@ -4036,14 +4190,28 @@ def upload_logo():
         file_extension = file.filename.rsplit(".", 1)[1].lower()
         unique_filename = f"company_logo_{uuid.uuid4().hex[:8]}.{file_extension}"
 
+        # Read the upload bytes once. PIL.Image.verify() closes the underlying
+        # stream, so verifying via file.stream directly leaves the original
+        # FileStorage handle in a state where Flask's .save() writes 0 bytes.
+        # Buffering the bytes ourselves lets us verify a copy and persist the
+        # original payload deterministically.
+        try:
+            file.stream.seek(0)
+        except Exception:
+            pass
+        upload_bytes = file.stream.read()
+        if not upload_bytes:
+            flash(_("Invalid image file."), "error")
+            return redirect(url_for("admin.settings"))
+
         # Basic server-side validation: verify image type
         try:
+            import io
+
             from PIL import Image
 
-            file.stream.seek(0)
-            img = Image.open(file.stream)
+            img = Image.open(io.BytesIO(upload_bytes))
             img.verify()
-            file.stream.seek(0)
         except Exception:
             flash(_("Invalid image file."), "error")
             return redirect(url_for("admin.settings"))
@@ -4051,13 +4219,14 @@ def upload_logo():
         # Save file
         upload_folder = get_upload_folder()
         file_path = os.path.join(upload_folder, unique_filename)
-        file.save(file_path)
+        with open(file_path, "wb") as fh:
+            fh.write(upload_bytes)
 
         # Log successful save
         current_app.logger.info(f"Logo saved successfully: {file_path}")
         current_app.logger.info(f"File exists check: {os.path.exists(file_path)}")
         current_app.logger.info(
-            f'File size: {os.path.getsize(file_path) if os.path.exists(file_path) else "N/A"} bytes'
+            f"File size: {os.path.getsize(file_path) if os.path.exists(file_path) else 'N/A'} bytes"
         )
 
         # Update settings
@@ -4074,7 +4243,10 @@ def upload_logo():
 
         settings_obj.company_logo_filename = unique_filename
         if not safe_commit("admin_upload_logo"):
-            flash(_("Could not save logo due to a database error. Please check server logs."), "error")
+            flash(
+                _("Could not save logo due to a database error. Please check server logs."),
+                "error",
+            )
             return redirect(url_for("admin.settings"))
 
         flash(
@@ -4084,7 +4256,10 @@ def upload_logo():
             "success",
         )
     else:
-        flash(_("Invalid file type. Allowed types: PNG, JPG, JPEG, GIF, SVG, WEBP"), "error")
+        flash(
+            _("Invalid file type. Allowed types: PNG, JPG, JPEG, GIF, SVG, WEBP"),
+            "error",
+        )
 
     return redirect(url_for("admin.settings"))
 
@@ -4108,9 +4283,15 @@ def remove_logo():
         # Clear filename from database
         settings_obj.company_logo_filename = ""
         if not safe_commit("admin_remove_logo"):
-            flash(_("Could not remove logo due to a database error. Please check server logs."), "error")
+            flash(
+                _("Could not remove logo due to a database error. Please check server logs."),
+                "error",
+            )
             return redirect(url_for("admin.settings"))
-        flash(_("Company logo removed successfully. Upload a new logo in the section below if needed."), "success")
+        flash(
+            _("Company logo removed successfully. Upload a new logo in the section below if needed."),
+            "success",
+        )
     else:
         flash(_("No logo to remove"), "info")
 
@@ -4153,7 +4334,10 @@ def upload_template_image():
     file.seek(0)
 
     if file_size > MAX_FILE_SIZE:
-        return jsonify({"error": f"File size exceeds maximum allowed size ({MAX_FILE_SIZE / (1024*1024):.0f} MB)"}), 400
+        return (
+            jsonify({"error": f"File size exceeds maximum allowed size ({MAX_FILE_SIZE / (1024 * 1024):.0f} MB)"}),
+            400,
+        )
 
     # Save file
     original_filename = secure_filename(file.filename)
@@ -4289,7 +4473,10 @@ def delete_backup(filename):
     try:
         if os.path.exists(filepath):
             os.remove(filepath)
-            flash(_('Backup "%(filename)s" deleted successfully', filename=filename), "success")
+            flash(
+                _('Backup "%(filename)s" deleted successfully', filename=filename),
+                "success",
+            )
         else:
             flash(_("Backup file not found"), "error")
     except Exception as e:
@@ -4312,7 +4499,10 @@ def restore(filename=None):
         if filename:
             filename = secure_filename(filename)
             if not filename.lower().endswith(".zip"):
-                flash(_("Invalid file type. Please select a .zip backup archive."), "error")
+                flash(
+                    _("Invalid file type. Please select a .zip backup archive."),
+                    "error",
+                )
                 return redirect(url_for("admin.backups_management"))
             temp_path = os.path.join(backups_dir, filename)
             if not os.path.exists(temp_path):
@@ -4327,7 +4517,10 @@ def restore(filename=None):
             file = request.files["backup_file"]
             uploaded_filename = secure_filename(file.filename)
             if not uploaded_filename.lower().endswith(".zip"):
-                flash(_("Invalid file type. Please upload a .zip backup archive."), "error")
+                flash(
+                    _("Invalid file type. Please upload a .zip backup archive."),
+                    "error",
+                )
                 return redirect(url_for("admin.restore"))
             # Save temporarily under project backups
             os.makedirs(backups_dir, exist_ok=True)
@@ -4339,17 +4532,29 @@ def restore(filename=None):
 
         # Initialize progress state
         token = uuid.uuid4().hex[:8]
-        RESTORE_PROGRESS[token] = {"status": "starting", "percent": 0, "message": "Queued"}
+        RESTORE_PROGRESS[token] = {
+            "status": "starting",
+            "percent": 0,
+            "message": "Queued",
+        }
 
         def progress_cb(label, percent):
-            RESTORE_PROGRESS[token] = {"status": "running", "percent": int(percent), "message": label}
+            RESTORE_PROGRESS[token] = {
+                "status": "running",
+                "percent": int(percent),
+                "message": label,
+            }
 
         # Capture the real Flask app object for use in a background thread
         app_obj = current_app._get_current_object()
 
         def _do_restore():
             try:
-                RESTORE_PROGRESS[token] = {"status": "running", "percent": 5, "message": "Starting restore"}
+                RESTORE_PROGRESS[token] = {
+                    "status": "running",
+                    "percent": 5,
+                    "message": "Starting restore",
+                }
                 success, message = restore_backup(app_obj, temp_path, progress_callback=progress_cb)
                 RESTORE_PROGRESS[token] = {
                     "status": "done" if success else "error",
@@ -4476,7 +4681,12 @@ def oidc_debug():
             .all()
         )
     except Exception as e:
-        safe_log(current_app.logger, "debug", "OIDC users query failed (columns may not exist): %s", e)
+        safe_log(
+            current_app.logger,
+            "debug",
+            "OIDC users query failed (columns may not exist): %s",
+            e,
+        )
 
     return render_template(
         "admin/oidc_debug.html",
@@ -4502,12 +4712,14 @@ def oidc_test():
         detect_docker_environment,
         fetch_oidc_metadata,
         resolve_hostname_multiple_strategies,
-        test_dns_resolution,
     )
 
     auth_method = normalize_auth_method(getattr(Config, "AUTH_METHOD", "local"))
     if not auth_includes_oidc(auth_method):
-        flash(_('OIDC is not enabled. Set AUTH_METHOD to "oidc", "both", or "all".'), "warning")
+        flash(
+            _('OIDC is not enabled. Set AUTH_METHOD to "oidc", "both", or "all".'),
+            "warning",
+        )
         return redirect(url_for("admin.oidc_debug"))
 
     issuer = getattr(Config, "OIDC_ISSUER", None)
@@ -4547,7 +4759,11 @@ def oidc_test():
             # Mask IP for display (show only first octet)
             masked_ip = ip.split(".")[0] + ".xxx.xxx.xxx" if ip and "." in ip else "N/A"
             flash(
-                _("✓ DNS resolution successful using %(strategy)s strategy: %(ip)s", strategy=strategy, ip=masked_ip),
+                _(
+                    "✓ DNS resolution successful using %(strategy)s strategy: %(ip)s",
+                    strategy=strategy,
+                    ip=masked_ip,
+                ),
                 "success",
             )
         else:
@@ -4562,7 +4778,10 @@ def oidc_test():
 
     # Check Docker environment
     if detect_docker_environment():
-        flash(_("ℹ Docker environment detected - internal service names may be available"), "info")
+        flash(
+            _("ℹ Docker environment detected - internal service names may be available"),
+            "info",
+        )
 
     # Test 2: Fetch discovery document using enhanced metadata fetcher
     well_known_url = f"{issuer.rstrip('/')}/.well-known/openid-configuration"
@@ -4586,7 +4805,13 @@ def oidc_test():
 
         if metadata:
             discovery_doc = metadata
-            flash(_("✓ Discovery document fetched successfully from %(url)s", url=well_known_url), "success")
+            flash(
+                _(
+                    "✓ Discovery document fetched successfully from %(url)s",
+                    url=well_known_url,
+                ),
+                "success",
+            )
             if diagnostics:
                 dns_info = diagnostics.get("dns_resolution", {})
                 strategy_used = dns_info.get("strategy", "unknown")
@@ -4594,10 +4819,17 @@ def oidc_test():
                     _("✓ DNS strategy used: %(strategy)s", strategy=strategy_used),
                     "info",
                 )
-            current_app.logger.info("OIDC Test: Discovery document retrieved, issuer=%s", discovery_doc.get("issuer"))
+            current_app.logger.info(
+                "OIDC Test: Discovery document retrieved, issuer=%s",
+                discovery_doc.get("issuer"),
+            )
         else:
             flash(
-                _("✗ Failed to fetch discovery document: %(error)s", error=metadata_error or "Unknown error"), "error"
+                _(
+                    "✗ Failed to fetch discovery document: %(error)s",
+                    error=metadata_error or "Unknown error",
+                ),
+                "error",
             )
             current_app.logger.error("OIDC Test: Failed to fetch discovery document: %s", metadata_error)
             return redirect(url_for("admin.oidc_debug"))
@@ -4625,12 +4857,26 @@ def oidc_test():
         current_app.logger.error("OIDC Test: Failed to create OAuth client: %s", str(e))
 
     # Test 3: Verify required endpoints are present
-    required_endpoints = ["authorization_endpoint", "token_endpoint", "userinfo_endpoint"]
+    required_endpoints = [
+        "authorization_endpoint",
+        "token_endpoint",
+        "userinfo_endpoint",
+    ]
     for endpoint in required_endpoints:
         if endpoint in discovery_doc:
-            flash(_("✓ %(endpoint)s: %(url)s", endpoint=endpoint, url=discovery_doc[endpoint]), "info")
+            flash(
+                _(
+                    "✓ %(endpoint)s: %(url)s",
+                    endpoint=endpoint,
+                    url=discovery_doc[endpoint],
+                ),
+                "info",
+            )
         else:
-            flash(_("✗ Missing %(endpoint)s in discovery document", endpoint=endpoint), "warning")
+            flash(
+                _("✗ Missing %(endpoint)s in discovery document", endpoint=endpoint),
+                "warning",
+            )
 
     # Test 4: Check supported scopes
     supported_scopes = discovery_doc.get("scopes_supported", [])
@@ -4651,7 +4897,13 @@ def oidc_test():
     # Test 5: Check claims
     supported_claims = discovery_doc.get("claims_supported", [])
     if supported_claims:
-        flash(_("ℹ Provider supports claims: %(claims)s", claims=", ".join(supported_claims)), "info")
+        flash(
+            _(
+                "ℹ Provider supports claims: %(claims)s",
+                claims=", ".join(supported_claims),
+            ),
+            "info",
+        )
 
         # Check if configured claims are supported
         claim_checks = {
@@ -4737,7 +4989,7 @@ def oidc_wizard_test_connection():
     """Test DNS resolution and metadata fetch for OIDC issuer"""
     from urllib.parse import urlparse
 
-    from app.utils.oidc_metadata import fetch_oidc_metadata, resolve_hostname_multiple_strategies, test_dns_resolution
+    from app.utils.oidc_metadata import fetch_oidc_metadata, test_dns_resolution
 
     data = request.get_json() or {}
     issuer = data.get("issuer", "").strip()
@@ -4834,7 +5086,12 @@ def oidc_wizard_validate_config():
     # Validate auth method
     auth_method = normalize_auth_method(data.get("auth_method", ""))
     if not auth_includes_oidc(auth_method):
-        errors.append({"field": "auth_method", "message": "Auth method must be 'oidc', 'both', or 'all'"})
+        errors.append(
+            {
+                "field": "auth_method",
+                "message": "Auth method must be 'oidc', 'both', or 'all'",
+            }
+        )
 
     # Validate redirect URI if provided
     redirect_uri = data.get("redirect_uri", "").strip()
@@ -5082,7 +5339,12 @@ def ldap_wizard_validate_config():
         try:
             p = int(port_raw)
             if p < 1 or p > 65535:
-                errors.append({"field": "LDAP_PORT", "message": "Port must be between 1 and 65535"})
+                errors.append(
+                    {
+                        "field": "LDAP_PORT",
+                        "message": "Port must be between 1 and 65535",
+                    }
+                )
         except (TypeError, ValueError):
             errors.append({"field": "LDAP_PORT", "message": "Port must be a number"})
 
@@ -5091,7 +5353,12 @@ def ldap_wizard_validate_config():
         try:
             t = int(timeout_raw)
             if t < 1 or t > 120:
-                errors.append({"field": "LDAP_TIMEOUT", "message": "Timeout must be between 1 and 120 seconds"})
+                errors.append(
+                    {
+                        "field": "LDAP_TIMEOUT",
+                        "message": "Timeout must be between 1 and 120 seconds",
+                    }
+                )
         except (TypeError, ValueError):
             errors.append({"field": "LDAP_TIMEOUT", "message": "Timeout must be a number"})
 
@@ -5141,7 +5408,12 @@ def ldap_wizard_generate_config():
             return jsonify({"success": False, "error": f"{req_key} is required"}), 400
 
     optional_skip_if_empty = frozenset(
-        {"LDAP_ADMIN_GROUP", "LDAP_REQUIRED_GROUP", "LDAP_TLS_CA_CERT_FILE", "LDAP_USER_DN"}
+        {
+            "LDAP_ADMIN_GROUP",
+            "LDAP_REQUIRED_GROUP",
+            "LDAP_TLS_CA_CERT_FILE",
+            "LDAP_USER_DN",
+        }
     )
 
     env_lines = []
@@ -5234,7 +5506,13 @@ def create_api_token():
         )
 
         return (
-            jsonify({"message": "API token created successfully", "token": plain_token, "token_id": api_token.id}),
+            jsonify(
+                {
+                    "message": "API token created successfully",
+                    "token": plain_token,
+                    "token_id": api_token.id,
+                }
+            ),
             201,
         )
 
@@ -5329,8 +5607,17 @@ def test_email():
 
     # Log the test
     current_app.logger.info(f"[EMAIL TEST API] Result: {'SUCCESS' if success else 'FAILED'} - {message}")
-    app_module.log_event("admin.email_test_sent", user_id=current_user.id, recipient=recipient, success=success)
-    app_module.track_event(current_user.id, "admin.email_test_sent", {"success": success, "configured": success})
+    app_module.log_event(
+        "admin.email_test_sent",
+        user_id=current_user.id,
+        recipient=recipient,
+        success=success,
+    )
+    app_module.track_event(
+        current_user.id,
+        "admin.email_test_sent",
+        {"success": success, "configured": success},
+    )
 
     if success:
         return jsonify({"success": True, "message": message}), 200
@@ -5393,16 +5680,40 @@ def save_email_config():
     # Validate
     if settings.mail_enabled and not settings.mail_server:
         current_app.logger.warning("[EMAIL CONFIG] Validation failed: mail server required")
-        return jsonify({"success": False, "message": "Mail server is required when email is enabled"}), 400
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "message": "Mail server is required when email is enabled",
+                }
+            ),
+            400,
+        )
 
     if settings.mail_use_tls and settings.mail_use_ssl:
         current_app.logger.warning("[EMAIL CONFIG] Validation failed: both TLS and SSL enabled")
-        return jsonify({"success": False, "message": "Cannot use both TLS and SSL. Please choose one."}), 400
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "message": "Cannot use both TLS and SSL. Please choose one.",
+                }
+            ),
+            400,
+        )
 
     # Save to database
     if not safe_commit("admin_save_email_config"):
         current_app.logger.error("[EMAIL CONFIG] Failed to save to database")
-        return jsonify({"success": False, "message": "Failed to save email configuration to database"}), 500
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "message": "Failed to save email configuration to database",
+                }
+            ),
+            500,
+        )
 
     current_app.logger.info("[EMAIL CONFIG] ✓ Configuration saved to database")
 
@@ -5413,9 +5724,15 @@ def save_email_config():
         current_app.logger.info(f"[EMAIL CONFIG] Mail config reload: {'SUCCESS' if reload_result else 'FAILED'}")
 
     # Log the change
-    app_module.log_event("admin.email_config_saved", user_id=current_user.id, enabled=settings.mail_enabled)
+    app_module.log_event(
+        "admin.email_config_saved",
+        user_id=current_user.id,
+        enabled=settings.mail_enabled,
+    )
     app_module.track_event(
-        current_user.id, "admin.email_config_saved", {"enabled": settings.mail_enabled, "source": "database"}
+        current_user.id,
+        "admin.email_config_saved",
+        {"enabled": settings.mail_enabled, "source": "database"},
     )
 
     current_app.logger.info("[EMAIL CONFIG] ✓ Email configuration update complete")
@@ -5481,13 +5798,21 @@ def create_email_template():
         if not name:
             flash(_("Template name is required"), "error")
             return render_template(
-                "admin/email_templates/create.html", name=name, description=description, html=html, css=css
+                "admin/email_templates/create.html",
+                name=name,
+                description=description,
+                html=html,
+                css=css,
             )
 
         if not html:
             flash(_("HTML template content is required"), "error")
             return render_template(
-                "admin/email_templates/create.html", name=name, description=description, html=html, css=css
+                "admin/email_templates/create.html",
+                name=name,
+                description=description,
+                html=html,
+                css=css,
             )
 
         # Check for duplicate name
@@ -5495,7 +5820,11 @@ def create_email_template():
         if existing:
             flash(_("A template with this name already exists"), "error")
             return render_template(
-                "admin/email_templates/create.html", name=name, description=description, html=html, css=css
+                "admin/email_templates/create.html",
+                name=name,
+                description=description,
+                html=html,
+                css=css,
             )
 
         # If setting as default, unset other defaults
@@ -5515,7 +5844,11 @@ def create_email_template():
         if not safe_commit("create_email_template", {"name": name}):
             flash(_("Could not create email template due to a database error."), "error")
             return render_template(
-                "admin/email_templates/create.html", name=name, description=description, html=html, css=css
+                "admin/email_templates/create.html",
+                name=name,
+                description=description,
+                html=html,
+                css=css,
             )
 
         flash(_("Email template created successfully"), "success")
@@ -5636,14 +5969,20 @@ def delete_email_template(template_id):
 
     # Check if template is in use
     if template.invoices.count() > 0 or template.recurring_invoices.count() > 0:
-        flash(_("Cannot delete template that is in use by invoices or recurring invoices"), "error")
+        flash(
+            _("Cannot delete template that is in use by invoices or recurring invoices"),
+            "error",
+        )
         return redirect(url_for("admin.list_email_templates"))
 
     db.session.delete(template)
     if not safe_commit("delete_email_template", {"template_id": template_id}):
         flash(_("Could not delete email template due to a database error."), "error")
     else:
-        flash(_('Email template "%(name)s" deleted successfully', name=template_name), "success")
+        flash(
+            _('Email template "%(name)s" deleted successfully', name=template_name),
+            "success",
+        )
 
     return redirect(url_for("admin.list_email_templates"))
 

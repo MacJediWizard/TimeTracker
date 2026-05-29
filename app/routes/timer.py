@@ -1,16 +1,6 @@
 from datetime import datetime, timedelta
 
-from flask import (
-    Blueprint,
-    current_app,
-    flash,
-    jsonify,
-    redirect,
-    render_template,
-    request,
-    session,
-    url_for,
-)
+from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, session, url_for
 from flask_babel import gettext as _
 from flask_login import current_user, login_required
 from sqlalchemy import inspect, text
@@ -24,16 +14,9 @@ from app.services.project_service import ProjectService
 from app.services.time_tracking_service import TimeTrackingService
 from app.utils.db import safe_commit
 from app.utils.error_handling import safe_log
-from app.utils.posthog_funnels import (
-    track_onboarding_first_time_entry,
-    track_onboarding_first_timer,
-)
+from app.utils.posthog_funnels import track_onboarding_first_time_entry, track_onboarding_first_timer
 from app.utils.scope_filter import user_can_access_client, user_can_access_project
-from app.utils.timezone import (
-    parse_local_datetime,
-    parse_user_local_datetime,
-    utc_to_local,
-)
+from app.utils.timezone import parse_local_datetime, parse_user_local_datetime, utc_to_local
 
 _project_service = ProjectService()
 _client_service = ClientService()
@@ -64,7 +47,11 @@ def _edit_timer_form_projects_tasks(timer, can_edit_schedule):
     if current_user.is_admin or scope_p is not None or can_edit_schedule:
         projects = projects_query.all()
         if timer.project_id:
-            tasks = Task.query.filter_by(project_id=timer.project_id).order_by(Task.name).all()
+            tasks = (
+                Task.query.filter_by(project_id=timer.project_id)
+                .order_by(Task.name)
+                .all()
+            )
     return projects, tasks
 
 
@@ -103,7 +90,9 @@ def start_timer():
     if template_id:
         from app.models import TimeEntryTemplate
 
-        template = TimeEntryTemplate.query.filter_by(id=template_id, user_id=current_user.id).first()
+        template = TimeEntryTemplate.query.filter_by(
+            id=template_id, user_id=current_user.id
+        ).first()
         if template:
             # Override with template values if not explicitly set
             if not project_id and template.project_id:
@@ -119,7 +108,9 @@ def start_timer():
     # Require either project or client
     if not project_id and not client_id:
         flash(_("Either a project or a client is required"), "error")
-        current_app.logger.warning("Start timer failed: missing project_id and client_id")
+        current_app.logger.warning(
+            "Start timer failed: missing project_id and client_id"
+        )
         return redirect(url_for("main.dashboard"))
 
     project = None
@@ -130,25 +121,37 @@ def start_timer():
         project = _project_service.get_by_id(project_id)
         if not project:
             flash(_("Invalid project selected"), "error")
-            current_app.logger.warning("Start timer failed: invalid project_id=%s", project_id)
+            current_app.logger.warning(
+                "Start timer failed: invalid project_id=%s", project_id
+            )
             return redirect(url_for("main.dashboard"))
 
         locked_id = get_locked_client_id()
-        if locked_id and getattr(project, "client_id", None) and int(project.client_id) != int(locked_id):
+        if (
+            locked_id
+            and getattr(project, "client_id", None)
+            and int(project.client_id) != int(locked_id)
+        ):
             flash(_("Selected project does not match the locked client."), "error")
             return redirect(url_for("main.dashboard"))
 
         # Check if project is active (not archived or inactive)
         if project.status == "archived":
             flash(
-                _("Cannot start timer for an archived project. Please unarchive the project first."),
+                _(
+                    "Cannot start timer for an archived project. Please unarchive the project first."
+                ),
                 "error",
             )
-            current_app.logger.warning("Start timer failed: project_id=%s is archived", project_id)
+            current_app.logger.warning(
+                "Start timer failed: project_id=%s is archived", project_id
+            )
             return redirect(url_for("main.dashboard"))
         elif project.status != "active":
             flash(_("Cannot start timer for an inactive project"), "error")
-            current_app.logger.warning("Start timer failed: project_id=%s is not active", project_id)
+            current_app.logger.warning(
+                "Start timer failed: project_id=%s is not active", project_id
+            )
             return redirect(url_for("main.dashboard"))
 
         # If a task is provided, validate it belongs to the project
@@ -172,7 +175,9 @@ def start_timer():
         client = _client_service.get_by_id(client_id)
         if not client or client.status != "active":
             flash(_("Invalid client selected"), "error")
-            current_app.logger.warning("Start timer failed: invalid client_id=%s", client_id)
+            current_app.logger.warning(
+                "Start timer failed: invalid client_id=%s", client_id
+            )
             return redirect(url_for("main.dashboard"))
 
         # Tasks are not allowed for client-only timers
@@ -188,11 +193,19 @@ def start_timer():
     # Subcontractor scope: only allow starting timer on assigned project/client
     if project_id and not user_can_access_project(current_user, project_id):
         flash(_("You do not have access to this project"), "error")
-        current_app.logger.warning("Start timer denied: user has no access to project_id=%s", project_id)
+        current_app.logger.warning(
+            "Start timer denied: user has no access to project_id=%s", project_id
+        )
         return redirect(url_for("main.dashboard"))
-    if client_id and not project_id and not user_can_access_client(current_user, client_id):
+    if (
+        client_id
+        and not project_id
+        and not user_can_access_client(current_user, client_id)
+    ):
         flash(_("You do not have access to this client"), "error")
-        current_app.logger.warning("Start timer denied: user has no access to client_id=%s", client_id)
+        current_app.logger.warning(
+            "Start timer denied: user has no access to client_id=%s", client_id
+        )
         return redirect(url_for("main.dashboard"))
 
     can_start, _unused = TimeTrackingService().can_start_timer(current_user.id)
@@ -243,7 +256,9 @@ def start_timer():
         },
     ):
         flash(
-            _("Could not start timer due to a database error. Please check server logs."),
+            _(
+                "Could not start timer due to a database error. Please check server logs."
+            ),
             "error",
         )
         return redirect(url_for("main.dashboard"))
@@ -293,7 +308,11 @@ def start_timer():
         action="started",
         entity_type="time_entry",
         entity_id=new_timer.id,
-        entity_name=(f"{project.name}" if project else f"{client.name if client else _('Unknown')}")
+        entity_name=(
+            f"{project.name}"
+            if project
+            else f"{client.name if client else _('Unknown')}"
+        )
         + (f" - {task.name}" if task else ""),
         description=(
             f"Started timer for {project.name}"
@@ -311,7 +330,9 @@ def start_timer():
     )
 
     # Check if this is user's first timer (onboarding milestone)
-    timer_count = TimeEntry.query.filter_by(user_id=current_user.id, source="auto").count()
+    timer_count = TimeEntry.query.filter_by(
+        user_id=current_user.id, source="auto"
+    ).count()
 
     if timer_count == 1:  # First timer ever
         track_onboarding_first_timer(
@@ -353,7 +374,9 @@ def start_timer():
         from app.utils.cache import invalidate_dashboard_for_user
 
         invalidate_dashboard_for_user(current_user.id)
-        current_app.logger.debug("Invalidated dashboard cache for user %s", current_user.id)
+        current_app.logger.debug(
+            "Invalidated dashboard cache for user %s", current_user.id
+        )
     except Exception as e:
         current_app.logger.warning("Failed to invalidate dashboard cache: %s", e)
 
@@ -375,7 +398,9 @@ def start_timer_from_template(template_id):
     from app.models import TimeEntryTemplate
 
     # Load template
-    template = TimeEntryTemplate.query.filter_by(id=template_id, user_id=current_user.id).first_or_404()
+    template = TimeEntryTemplate.query.filter_by(
+        id=template_id, user_id=current_user.id
+    ).first_or_404()
 
     can_start, _unused = TimeTrackingService().can_start_timer(current_user.id)
     if not can_start:
@@ -425,7 +450,9 @@ def start_timer_from_template(template_id):
 
     if not safe_commit("start_timer_from_template", {"template_id": template_id}):
         flash(
-            _("Could not start timer due to a database error. Please check server logs."),
+            _(
+                "Could not start timer due to a database error. Please check server logs."
+            ),
             "error",
         )
         return redirect(url_for("time_entry_templates.list_templates"))
@@ -464,7 +491,9 @@ def start_timer_from_template(template_id):
         from app.utils.cache import invalidate_dashboard_for_user
 
         invalidate_dashboard_for_user(current_user.id)
-        current_app.logger.debug("Invalidated dashboard cache for user %s", current_user.id)
+        current_app.logger.debug(
+            "Invalidated dashboard cache for user %s", current_user.id
+        )
     except Exception as e:
         current_app.logger.warning("Failed to invalidate dashboard cache: %s", e)
 
@@ -488,25 +517,35 @@ def start_timer_for_project(project_id):
     project = _project_service.get_by_id(project_id)
     if not project:
         flash(_("Invalid project selected"), "error")
-        current_app.logger.warning("Start timer (GET) failed: invalid project_id=%s", project_id)
+        current_app.logger.warning(
+            "Start timer (GET) failed: invalid project_id=%s", project_id
+        )
         return redirect(url_for("main.dashboard"))
 
     # Check if project is active (not archived or inactive)
     if project.status == "archived":
         flash(
-            _("Cannot start timer for an archived project. Please unarchive the project first."),
+            _(
+                "Cannot start timer for an archived project. Please unarchive the project first."
+            ),
             "error",
         )
-        current_app.logger.warning("Start timer (GET) failed: project_id=%s is archived", project_id)
+        current_app.logger.warning(
+            "Start timer (GET) failed: project_id=%s is archived", project_id
+        )
         return redirect(url_for("main.dashboard"))
     elif project.status != "active":
         flash(_("Cannot start timer for an inactive project"), "error")
-        current_app.logger.warning("Start timer (GET) failed: project_id=%s is not active", project_id)
+        current_app.logger.warning(
+            "Start timer (GET) failed: project_id=%s is not active", project_id
+        )
         return redirect(url_for("main.dashboard"))
 
     if not user_can_access_project(current_user, project_id):
         flash(_("You do not have access to this project"), "error")
-        current_app.logger.warning("Start timer (GET) denied: user has no access to project_id=%s", project_id)
+        current_app.logger.warning(
+            "Start timer (GET) denied: user has no access to project_id=%s", project_id
+        )
         return redirect(url_for("main.dashboard"))
 
     can_start, _unused = TimeTrackingService().can_start_timer(current_user.id)
@@ -515,7 +554,9 @@ def start_timer_for_project(project_id):
             _("You already have an active timer. Stop it before starting a new one."),
             "error",
         )
-        current_app.logger.info("Start timer (GET) blocked: user already has an active timer")
+        current_app.logger.info(
+            "Start timer (GET) blocked: user already has an active timer"
+        )
         return redirect(url_for("main.dashboard"))
 
     # Create new timer
@@ -535,7 +576,9 @@ def start_timer_for_project(project_id):
         {"user_id": current_user.id, "project_id": project_id, "task_id": task_id},
     ):
         flash(
-            _("Could not start timer due to a database error. Please check server logs."),
+            _(
+                "Could not start timer due to a database error. Please check server logs."
+            ),
             "error",
         )
         return redirect(url_for("main.dashboard"))
@@ -578,7 +621,9 @@ def start_timer_for_project(project_id):
         from app.utils.cache import invalidate_dashboard_for_user
 
         invalidate_dashboard_for_user(current_user.id)
-        current_app.logger.debug("Invalidated dashboard cache for user %s", current_user.id)
+        current_app.logger.debug(
+            "Invalidated dashboard cache for user %s", current_user.id
+        )
     except Exception as e:
         current_app.logger.warning("Failed to invalidate dashboard cache: %s", e)
 
@@ -610,15 +655,21 @@ def stop_timer():
     # Stop the timer
     try:
         active_timer.stop_timer()
-        current_app.logger.info("Stopped timer id=%s for user=%s", active_timer.id, current_user.username)
+        current_app.logger.info(
+            "Stopped timer id=%s for user=%s", active_timer.id, current_user.username
+        )
 
         from app.telemetry.otel_setup import business_span
 
-        duration_seconds = active_timer.duration_seconds if active_timer.duration_seconds else 0
+        duration_seconds = (
+            active_timer.duration_seconds if active_timer.duration_seconds else 0
+        )
         with business_span(
             "timer.stop",
             user_id=current_user.id,
-            duration_seconds=int(duration_seconds) if duration_seconds is not None else 0,
+            duration_seconds=int(duration_seconds)
+            if duration_seconds is not None
+            else 0,
         ):
             pass
 
@@ -643,7 +694,9 @@ def stop_timer():
         )
 
         # Log activity
-        project_name = active_timer.project.name if active_timer.project else "No project"
+        project_name = (
+            active_timer.project.name if active_timer.project else "No project"
+        )
         task_name = active_timer.task.name if active_timer.task else None
         Activity.log(
             user_id=current_user.id,
@@ -664,7 +717,11 @@ def stop_timer():
         )
 
         # Check if this is user's first completed time entry (onboarding milestone)
-        entry_count = TimeEntry.query.filter_by(user_id=current_user.id).filter(TimeEntry.end_time.isnot(None)).count()
+        entry_count = (
+            TimeEntry.query.filter_by(user_id=current_user.id)
+            .filter(TimeEntry.end_time.isnot(None))
+            .count()
+        )
 
         if entry_count == 1:  # First completed time entry ever
             track_onboarding_first_time_entry(
@@ -702,7 +759,9 @@ def stop_timer():
             from app.utils.cache import invalidate_dashboard_for_user
 
             invalidate_dashboard_for_user(current_user.id)
-            current_app.logger.debug("Invalidated dashboard cache for user %s", current_user.id)
+            current_app.logger.debug(
+                "Invalidated dashboard cache for user %s", current_user.id
+            )
         except Exception as e:
             current_app.logger.warning("Failed to invalidate dashboard cache: %s", e)
 
@@ -726,7 +785,9 @@ def stop_timer():
     except Exception as e:
         current_app.logger.exception("Error stopping timer: %s", e)
         flash(
-            _("Could not stop timer due to an error. Please try again or contact support if the problem persists."),
+            _(
+                "Could not stop timer due to an error. Please try again or contact support if the problem persists."
+            ),
             "error",
         )
         return redirect(url_for("main.dashboard"))
@@ -753,7 +814,9 @@ def pause_timer():
 
         invalidate_dashboard_for_user(current_user.id)
     except Exception as e:
-        safe_log(current_app.logger, "debug", "Dashboard cache invalidation failed: %s", e)
+        safe_log(
+            current_app.logger, "debug", "Dashboard cache invalidation failed: %s", e
+        )
     return redirect(url_for("main.dashboard"))
 
 
@@ -778,7 +841,9 @@ def resume_timer():
 
         invalidate_dashboard_for_user(current_user.id)
     except Exception as e:
-        safe_log(current_app.logger, "debug", "Dashboard cache invalidation failed: %s", e)
+        safe_log(
+            current_app.logger, "debug", "Dashboard cache invalidation failed: %s", e
+        )
     return redirect(url_for("main.dashboard"))
 
 
@@ -818,10 +883,14 @@ def adjust_timer():
 
         invalidate_dashboard_for_user(current_user.id)
     except Exception as e:
-        safe_log(current_app.logger, "debug", "Dashboard cache invalidation failed: %s", e)
+        safe_log(
+            current_app.logger, "debug", "Dashboard cache invalidation failed: %s", e
+        )
 
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-        return jsonify({"success": True, "start_time": active_timer.start_time.isoformat()})
+        return jsonify(
+            {"success": True, "start_time": active_timer.start_time.isoformat()}
+        )
     return redirect(url_for("main.dashboard"))
 
 
@@ -839,13 +908,19 @@ def timer_status():
             "active": True,
             "timer": {
                 "id": active_timer.id,
-                "project_name": active_timer.project.name if active_timer.project else None,
-                "client_name": active_timer.client.name if active_timer.client else None,
+                "project_name": active_timer.project.name
+                if active_timer.project
+                else None,
+                "client_name": active_timer.client.name
+                if active_timer.client
+                else None,
                 "start_time": active_timer.start_time.isoformat(),
                 "current_duration": active_timer.current_duration_seconds,
                 "duration_formatted": active_timer.duration_formatted,
                 "paused": getattr(active_timer, "is_paused", False),
-                "paused_at": active_timer.paused_at.isoformat() if active_timer.paused_at else None,
+                "paused_at": active_timer.paused_at.isoformat()
+                if active_timer.paused_at
+                else None,
                 "break_seconds": getattr(active_timer, "break_seconds", None) or 0,
                 "break_formatted": getattr(active_timer, "break_formatted", "00:00:00"),
             },
@@ -860,7 +935,8 @@ def edit_timer(timer_id):
     timer = TimeEntry.query.get_or_404(timer_id)
 
     can_edit_schedule = current_user.is_admin or (
-        timer.user_id == current_user.id and current_user.has_permission("edit_own_time_entries")
+        timer.user_id == current_user.id
+        and current_user.has_permission("edit_own_time_entries")
     )
     show_source_dropdown = current_user.is_admin
 
@@ -873,7 +949,10 @@ def edit_timer(timer_id):
         from app.utils.validation import sanitize_input
 
         # Get reason for change
-        reason = sanitize_input(request.form.get("reason", "").strip(), max_length=500) or None
+        reason = (
+            sanitize_input(request.form.get("reason", "").strip(), max_length=500)
+            or None
+        )
 
         # Use service layer for update to get enhanced audit logging
         from app.services import TimeTrackingService
@@ -906,14 +985,18 @@ def edit_timer(timer_id):
             # Update project if changed
             new_project_id = request.form.get("project_id", type=int)
             if new_project_id and new_project_id != timer.project_id:
-                new_project = Project.query.filter_by(id=new_project_id, status="active").first()
+                new_project = Project.query.filter_by(
+                    id=new_project_id, status="active"
+                ).first()
                 if new_project:
                     update_params["project_id"] = new_project_id
                 else:
                     flash(_("Invalid project selected"), "error")
                     return render_template(
                         "timer/edit_timer.html",
-                        **_edit_timer_render_kwargs(timer, can_edit_schedule, show_source_dropdown),
+                        **_edit_timer_render_kwargs(
+                            timer, can_edit_schedule, show_source_dropdown
+                        ),
                     )
             else:
                 update_params["project_id"] = None  # Don't change if not provided
@@ -929,10 +1012,14 @@ def edit_timer(timer_id):
                     if new_task:
                         update_params["task_id"] = new_task_id
                     else:
-                        flash(_("Invalid task selected for the chosen project"), "error")
+                        flash(
+                            _("Invalid task selected for the chosen project"), "error"
+                        )
                         return render_template(
                             "timer/edit_timer.html",
-                            **_edit_timer_render_kwargs(timer, can_edit_schedule, show_source_dropdown),
+                            **_edit_timer_render_kwargs(
+                                timer, can_edit_schedule, show_source_dropdown
+                            ),
                         )
                 else:
                     update_params["task_id"] = None
@@ -960,7 +1047,9 @@ def edit_timer(timer_id):
                         flash(_("Start time cannot be in the future"), "error")
                         return render_template(
                             "timer/edit_timer.html",
-                            **_edit_timer_render_kwargs(timer, can_edit_schedule, show_source_dropdown),
+                            **_edit_timer_render_kwargs(
+                                timer, can_edit_schedule, show_source_dropdown
+                            ),
                         )
 
                     update_params["start_time"] = new_start_time
@@ -968,7 +1057,9 @@ def edit_timer(timer_id):
                     flash(_("Invalid start date/time format"), "error")
                     return render_template(
                         "timer/edit_timer.html",
-                        **_edit_timer_render_kwargs(timer, can_edit_schedule, show_source_dropdown),
+                        **_edit_timer_render_kwargs(
+                            timer, can_edit_schedule, show_source_dropdown
+                        ),
                     )
             else:
                 update_params["start_time"] = None
@@ -980,12 +1071,16 @@ def edit_timer(timer_id):
                     new_end_time = utc_to_local(parsed_end_utc).replace(tzinfo=None)
 
                     # Validate that end time is after start time
-                    start_time_for_validation = update_params.get("start_time") or timer.start_time
+                    start_time_for_validation = (
+                        update_params.get("start_time") or timer.start_time
+                    )
                     if new_end_time <= start_time_for_validation:
                         flash(_("End time must be after start time"), "error")
                         return render_template(
                             "timer/edit_timer.html",
-                            **_edit_timer_render_kwargs(timer, can_edit_schedule, show_source_dropdown),
+                            **_edit_timer_render_kwargs(
+                                timer, can_edit_schedule, show_source_dropdown
+                            ),
                         )
 
                     update_params["end_time"] = new_end_time
@@ -993,7 +1088,9 @@ def edit_timer(timer_id):
                     flash(_("Invalid end date/time format"), "error")
                     return render_template(
                         "timer/edit_timer.html",
-                        **_edit_timer_render_kwargs(timer, can_edit_schedule, show_source_dropdown),
+                        **_edit_timer_render_kwargs(
+                            timer, can_edit_schedule, show_source_dropdown
+                        ),
                     )
             else:
                 update_params["end_time"] = None
@@ -1003,7 +1100,9 @@ def edit_timer(timer_id):
 
             if break_time:
                 m = re.match(r"^(\d{1,3}):([0-5]\d)$", break_time.strip())
-                update_params["break_seconds"] = (int(m.group(1)) * 3600 + int(m.group(2)) * 60) if m else 0
+                update_params["break_seconds"] = (
+                    (int(m.group(1)) * 3600 + int(m.group(2)) * 60) if m else 0
+                )
             else:
                 update_params["break_seconds"] = 0
 
@@ -1014,14 +1113,20 @@ def edit_timer(timer_id):
             flash(_(result.get("message", "Could not update timer")), "error")
             return render_template(
                 "timer/edit_timer.html",
-                **_edit_timer_render_kwargs(timer, can_edit_schedule, show_source_dropdown),
+                **_edit_timer_render_kwargs(
+                    timer, can_edit_schedule, show_source_dropdown
+                ),
             )
 
         entry = result.get("entry")
 
         # Log activity
         if entry:
-            entity_name = entry.project.name if entry.project else (entry.client.name if entry.client else "Unknown")
+            entity_name = (
+                entry.project.name
+                if entry.project
+                else (entry.client.name if entry.client else "Unknown")
+            )
             task_name = entry.task.name if entry.task else None
 
             Activity.log(
@@ -1030,7 +1135,8 @@ def edit_timer(timer_id):
                 entity_type="time_entry",
                 entity_id=entry.id,
                 entity_name=f"{entity_name}" + (f" - {task_name}" if task_name else ""),
-                description=f"Updated time entry for {entity_name}" + (f" - {task_name}" if task_name else ""),
+                description=f"Updated time entry for {entity_name}"
+                + (f" - {task_name}" if task_name else ""),
                 extra_data={
                     "project_name": entry.project.name if entry.project else None,
                     "client_name": entry.client.name if entry.client else None,
@@ -1068,7 +1174,9 @@ def view_timer(timer_id):
     timer = TimeEntry.query.get_or_404(timer_id)
 
     # Check if user can view this timer
-    can_view_all = current_user.is_admin or current_user.has_permission("view_all_time_entries")
+    can_view_all = current_user.is_admin or current_user.has_permission(
+        "view_all_time_entries"
+    )
     if not can_view_all and timer.user_id != current_user.id:
         flash(_("You do not have permission to view this time entry"), "error")
         return redirect(url_for("main.dashboard"))
@@ -1085,7 +1193,9 @@ def view_timer(timer_id):
     except ProgrammingError as e:
         # Handle case where link_templates table doesn't exist (migration not run)
         if "does not exist" in str(e.orig) or "relation" in str(e.orig).lower():
-            current_app.logger.warning("link_templates table does not exist. Run migration: flask db upgrade")
+            current_app.logger.warning(
+                "link_templates table does not exist. Run migration: flask db upgrade"
+            )
             link_templates_by_field = {}
         else:
             raise
@@ -1162,7 +1272,9 @@ def delete_timer(timer_id):
 
             TimeEntryApproval.query.filter_by(time_entry_id=entry_id).delete()
         except Exception as e:
-            current_app.logger.warning(f"Could not delete related approvals for time entry {entry_id}: {e}")
+            current_app.logger.warning(
+                f"Could not delete related approvals for time entry {entry_id}: {e}"
+            )
             # Continue with deletion anyway
 
     # If the approvals table doesn't exist, we need to prevent SQLAlchemy from
@@ -1172,11 +1284,17 @@ def delete_timer(timer_id):
             # Expunge the object from the session to prevent relationship queries
             db.session.expunge(timer)
             # Use a direct SQL delete to avoid relationship queries
-            db.session.execute(text("DELETE FROM time_entries WHERE id = :id"), {"id": entry_id})
+            db.session.execute(
+                text("DELETE FROM time_entries WHERE id = :id"), {"id": entry_id}
+            )
         except Exception as e:
-            current_app.logger.error(f"Error deleting time entry {entry_id} with direct SQL: {e}")
+            current_app.logger.error(
+                f"Error deleting time entry {entry_id} with direct SQL: {e}"
+            )
             flash(
-                _("Could not delete timer due to a database error. Please check server logs."),
+                _(
+                    "Could not delete timer due to a database error. Please check server logs."
+                ),
                 "error",
             )
             return redirect(url_for("main.dashboard"))
@@ -1186,7 +1304,9 @@ def delete_timer(timer_id):
 
     if not safe_commit("delete_timer", {"timer_id": entry_id}):
         flash(
-            _("Could not delete timer due to a database error. Please check server logs."),
+            _(
+                "Could not delete timer due to a database error. Please check server logs."
+            ),
             "error",
         )
         return redirect(url_for("main.dashboard"))
@@ -1250,7 +1370,9 @@ def bulk_delete_time_entries():
     from app.services import TimeTrackingService
 
     entry_ids = request.form.getlist("entry_ids[]")
-    reason = request.form.get("reason", "").strip() or None  # Optional reason for bulk deletion
+    reason = (
+        request.form.get("reason", "").strip() or None
+    )  # Optional reason for bulk deletion
 
     if not entry_ids:
         flash(_("No time entries selected"), "warning")
@@ -1269,7 +1391,9 @@ def bulk_delete_time_entries():
         return redirect(url_for("timer.time_entries_overview"))
 
     # Permission check
-    can_view_all = current_user.is_admin or current_user.has_permission("view_all_time_entries")
+    can_view_all = current_user.is_admin or current_user.has_permission(
+        "view_all_time_entries"
+    )
     deleted_count = 0
     skipped_count = 0
 
@@ -1351,10 +1475,7 @@ def manual_entry():
     from app.utils.client_lock import enforce_locked_client_id, get_locked_client_id
 
     # Get active projects and clients for dropdown (scoped for subcontractors)
-    from app.utils.scope_filter import (
-        apply_client_scope_to_model,
-        apply_project_scope_to_model,
-    )
+    from app.utils.scope_filter import apply_client_scope_to_model, apply_project_scope_to_model
 
     projects_query = Project.query.filter_by(status="active").order_by(Project.name)
     scope_p = apply_project_scope_to_model(Project, current_user)
@@ -1381,7 +1502,9 @@ def manual_entry():
     if template_id:
         from app.models import TimeEntryTemplate
 
-        template = TimeEntryTemplate.query.filter_by(id=template_id, user_id=current_user.id).first()
+        template = TimeEntryTemplate.query.filter_by(
+            id=template_id, user_id=current_user.id
+        ).first()
         if template:
             template_data = {
                 "project_id": template.project_id,
@@ -1408,7 +1531,9 @@ def manual_entry():
         end_date = request.form.get("end_date")
         end_time = request.form.get("end_time")
         worked_time = (request.form.get("worked_time") or "").strip()
-        worked_time_mode = (request.form.get("worked_time_mode") or "").strip()  # 'explicit' when user typed duration
+        worked_time_mode = (
+            request.form.get("worked_time_mode") or ""
+        ).strip()  # 'explicit' when user typed duration
         break_time = (request.form.get("break_time") or "").strip()
         notes = sanitize_input(request.form.get("notes", "").strip(), max_length=2000)
         tags = sanitize_input(request.form.get("tags", "").strip(), max_length=500)
@@ -1438,7 +1563,9 @@ def manual_entry():
         # Validate time input: either full start/end, or duration-only.
         if not has_all_times and not has_duration:
             flash(
-                _("Please provide either start/end date+time or a worked time duration (HH:MM)."),
+                _(
+                    "Please provide either start/end date+time or a worked time duration (HH:MM)."
+                ),
                 "error",
             )
             return render_template(
@@ -1492,7 +1619,11 @@ def manual_entry():
         locked_id = get_locked_client_id()
         if locked_id and project_id:
             project = _project_service.get_by_id(project_id)
-            if project and getattr(project, "client_id", None) and int(project.client_id) != int(locked_id):
+            if (
+                project
+                and getattr(project, "client_id", None)
+                and int(project.client_id) != int(locked_id)
+            ):
                 flash(_("Selected project does not match the locked client."), "error")
                 return redirect(url_for("timer.manual_entry"))
 
@@ -1502,7 +1633,9 @@ def manual_entry():
             project = _project_service.get_by_id(project_id)
             if project and project.status == "archived":
                 flash(
-                    _("Cannot create time entries for an archived project. Please unarchive the project first."),
+                    _(
+                        "Cannot create time entries for an archived project. Please unarchive the project first."
+                    ),
                     "error",
                 )
                 return render_template(
@@ -1550,15 +1683,21 @@ def manual_entry():
 
         try:
             if has_all_times:
-                start_time_parsed = parse_user_local_datetime(start_date, start_time, current_user)
-                end_time_parsed = parse_user_local_datetime(end_date, end_time, current_user)
+                start_time_parsed = parse_user_local_datetime(
+                    start_date, start_time, current_user
+                )
+                end_time_parsed = parse_user_local_datetime(
+                    end_date, end_time, current_user
+                )
                 if worked_time_mode == "explicit" and has_duration:
                     duration_seconds_override = worked_minutes * 60
                 # When we have start/end and break, we pass break_seconds and do not override duration;
                 # calculate_duration() will compute (end - start) - break_seconds
             elif has_duration and start_date and start_time:
                 # Combined: worked time + start date/time (user can set date and duration)
-                start_time_parsed = parse_user_local_datetime(start_date, start_time, current_user)
+                start_time_parsed = parse_user_local_datetime(
+                    start_date, start_time, current_user
+                )
                 end_time_parsed = start_time_parsed + timedelta(minutes=worked_minutes)
                 duration_seconds_override = worked_minutes * 60
             else:
@@ -1594,7 +1733,9 @@ def manual_entry():
 
         # When user entered both duration override and break, net duration = duration - break
         if duration_seconds_override is not None and break_seconds is not None:
-            duration_seconds_override = max(0, duration_seconds_override - break_seconds)
+            duration_seconds_override = max(
+                0, duration_seconds_override - break_seconds
+            )
 
         # Validate time range
         if end_time_parsed <= start_time_parsed:
@@ -1690,9 +1831,17 @@ def manual_entry():
                 )
 
             # Log activity
-            entity_name = entry.project.name if entry.project else (entry.client.name if entry.client else "Unknown")
+            entity_name = (
+                entry.project.name
+                if entry.project
+                else (entry.client.name if entry.client else "Unknown")
+            )
             task_name = entry.task.name if entry.task else None
-            duration_formatted = entry.duration_formatted if hasattr(entry, "duration_formatted") else "0:00"
+            duration_formatted = (
+                entry.duration_formatted
+                if hasattr(entry, "duration_formatted")
+                else "0:00"
+            )
 
             Activity.log(
                 user_id=current_user.id,
@@ -1708,7 +1857,9 @@ def manual_entry():
                     "client_name": entry.client.name if entry.client else None,
                     "task_name": task_name,
                     "duration_formatted": duration_formatted,
-                    "duration_hours": entry.duration_hours if hasattr(entry, "duration_hours") else None,
+                    "duration_hours": entry.duration_hours
+                    if hasattr(entry, "duration_hours")
+                    else None,
                 },
                 ip_address=request.remote_addr,
                 user_agent=request.headers.get("User-Agent"),
@@ -1764,7 +1915,9 @@ def manual_entry_for_project(project_id):
         return redirect(url_for("main.dashboard"))
 
     # Get active projects and clients for dropdown
-    active_projects = Project.query.filter_by(status="active").order_by(Project.name).all()
+    active_projects = (
+        Project.query.filter_by(status="active").order_by(Project.name).all()
+    )
     active_clients = Client.query.filter_by(status="active").order_by(Client.name).all()
     only_one_client = len(active_clients) == 1
     single_client = active_clients[0] if only_one_client else None
@@ -1792,7 +1945,9 @@ def manual_entry_for_project(project_id):
 def bulk_entry():
     """Create bulk time entries for multiple days"""
     # Get active projects for dropdown
-    active_projects = Project.query.filter_by(status="active").order_by(Project.name).all()
+    active_projects = (
+        Project.query.filter_by(status="active").order_by(Project.name).all()
+    )
 
     # Get project_id and task_id from query parameters for pre-filling
     project_id = request.args.get("project_id", type=int)
@@ -1834,7 +1989,9 @@ def bulk_entry():
         # Check if project is active (not archived or inactive)
         if project.status == "archived":
             flash(
-                _("Cannot create time entries for an archived project. Please unarchive the project first."),
+                _(
+                    "Cannot create time entries for an archived project. Please unarchive the project first."
+                ),
                 "error",
             )
             return render_template(
@@ -1926,7 +2083,9 @@ def bulk_entry():
 
         while current_date <= end_date_obj:
             # Skip weekends if requested
-            if skip_weekends and current_date.weekday() >= 5:  # Saturday = 5, Sunday = 6
+            if (
+                skip_weekends and current_date.weekday() >= 5
+            ):  # Saturday = 5, Sunday = 6
                 current_date += timedelta(days=1)
                 continue
 
@@ -2005,7 +2164,9 @@ def bulk_entry():
                 },
             ):
                 flash(
-                    _("Could not create bulk entries due to a database error. Please check server logs."),
+                    _(
+                        "Could not create bulk entries due to a database error. Please check server logs."
+                    ),
                     "error",
                 )
                 return render_template(
@@ -2055,7 +2216,9 @@ def timer_page():
     active_timer = current_user.active_timer
 
     # Get active projects and clients for dropdown
-    active_projects = Project.query.filter_by(status="active").order_by(Project.name).all()
+    active_projects = (
+        Project.query.filter_by(status="active").order_by(Project.name).all()
+    )
     active_clients = Client.query.filter_by(status="active").order_by(Client.name).all()
     only_one_client = len(active_clients) == 1
     single_client = active_clients[0] if only_one_client else None
@@ -2106,7 +2269,9 @@ def timer_page():
     from app.models import TimeEntryTemplate
 
     templates = (
-        TimeEntryTemplate.query.options(joinedload(TimeEntryTemplate.project), joinedload(TimeEntryTemplate.task))
+        TimeEntryTemplate.query.options(
+            joinedload(TimeEntryTemplate.project), joinedload(TimeEntryTemplate.task)
+        )
         .filter_by(user_id=current_user.id)
         .order_by(desc(TimeEntryTemplate.last_used_at))
         .limit(5)
@@ -2136,7 +2301,9 @@ def timer_page():
 def calendar_view():
     """Calendar UI combining day/week/month with list toggle."""
     # Provide projects for quick assignment during drag-create
-    active_projects = Project.query.filter_by(status="active").order_by(Project.name).all()
+    active_projects = (
+        Project.query.filter_by(status="active").order_by(Project.name).all()
+    )
     return render_template("timer/calendar.html", projects=active_projects)
 
 
@@ -2153,7 +2320,9 @@ def bulk_entry_for_project(project_id):
         return redirect(url_for("main.dashboard"))
 
     # Get active projects for dropdown
-    active_projects = Project.query.filter_by(status="active").order_by(Project.name).all()
+    active_projects = (
+        Project.query.filter_by(status="active").order_by(Project.name).all()
+    )
 
     return render_template(
         "timer/bulk_entry.html",
@@ -2177,7 +2346,9 @@ def duplicate_timer(timer_id):
         return redirect(url_for("main.dashboard"))
 
     # Get active projects and clients for dropdown
-    active_projects = Project.query.filter_by(status="active").order_by(Project.name).all()
+    active_projects = (
+        Project.query.filter_by(status="active").order_by(Project.name).all()
+    )
     active_clients = Client.query.filter_by(status="active").order_by(Client.name).all()
     only_one_client = len(active_clients) == 1
     single_client = active_clients[0] if only_one_client else None
@@ -2204,7 +2375,9 @@ def duplicate_timer(timer_id):
 
     # Render the manual entry form with pre-filled data
     break_sec = getattr(timer, "break_seconds", None) or 0
-    prefill_break = f"{break_sec // 3600}:{(break_sec % 3600) // 60:02d}" if break_sec else ""
+    prefill_break = (
+        f"{break_sec // 3600}:{(break_sec % 3600) // 60:02d}" if break_sec else ""
+    )
     return render_template(
         "timer/manual_entry.html",
         projects=active_projects,
@@ -2240,7 +2413,9 @@ def resume_timer_by_id(timer_id):
             "You already have an active timer. Stop it before resuming another one.",
             "error",
         )
-        current_app.logger.info("Resume timer blocked: user already has an active timer")
+        current_app.logger.info(
+            "Resume timer blocked: user already has an active timer"
+        )
         return redirect(url_for("main.dashboard"))
 
     project = None
@@ -2258,7 +2433,9 @@ def resume_timer_by_id(timer_id):
 
         if project.status == "archived":
             flash(
-                _("Cannot start timer for an archived project. Please unarchive the project first."),
+                _(
+                    "Cannot start timer for an archived project. Please unarchive the project first."
+                ),
                 "error",
             )
             return redirect(url_for("main.dashboard"))
@@ -2270,7 +2447,9 @@ def resume_timer_by_id(timer_id):
 
         # Validate task if it exists
         if timer.task_id:
-            task = Task.query.filter_by(id=timer.task_id, project_id=timer.project_id).first()
+            task = Task.query.filter_by(
+                id=timer.task_id, project_id=timer.project_id
+            ).first()
             if not task:
                 # Task was deleted, continue without it
                 task_id = None
@@ -2317,7 +2496,9 @@ def resume_timer_by_id(timer_id):
         },
     ):
         flash(
-            _("Could not resume timer due to a database error. Please check server logs."),
+            _(
+                "Could not resume timer due to a database error. Please check server logs."
+            ),
             "error",
         )
         return redirect(url_for("main.dashboard"))
@@ -2362,7 +2543,9 @@ def resume_timer_by_id(timer_id):
         task = Task.query.get(task_id) if task_id else None
         task_name = task.name if task else None
         entity_name = f"{project_name}" + (f" - {task_name}" if task_name else "")
-        description = f"Resumed timer for {project_name}" + (f" - {task_name}" if task_name else "")
+        description = f"Resumed timer for {project_name}" + (
+            f" - {task_name}" if task_name else ""
+        )
     elif client:
         client_name = client.name
         entity_name = client_name
@@ -2415,7 +2598,9 @@ def resume_timer_by_id(timer_id):
         from app.utils.cache import invalidate_dashboard_for_user
 
         invalidate_dashboard_for_user(current_user.id)
-        current_app.logger.debug("Invalidated dashboard cache for user %s", current_user.id)
+        current_app.logger.debug(
+            "Invalidated dashboard cache for user %s", current_user.id
+        )
     except Exception as e:
         current_app.logger.warning("Failed to invalidate dashboard cache: %s", e)
 
@@ -2463,12 +2648,16 @@ def time_entries_overview():
 
     active_definitions = CustomFieldDefinition.get_active_definitions()
     for definition in active_definitions:
-        field_value = request.args.get(f"custom_field_{definition.field_key}", "").strip()
+        field_value = request.args.get(
+            f"custom_field_{definition.field_key}", ""
+        ).strip()
         if field_value:
             client_custom_field[definition.field_key] = field_value
 
     # Permission check: can user view all entries?
-    can_view_all = current_user.is_admin or current_user.has_permission("view_all_time_entries")
+    can_view_all = current_user.is_admin or current_user.has_permission(
+        "view_all_time_entries"
+    )
 
     # Build query with eager loading to avoid N+1 queries
     query = TimeEntry.query.options(
@@ -2539,7 +2728,8 @@ def time_entries_overview():
 
                     # Match exact value in custom_fields JSONB
                     custom_field_conditions.append(
-                        db.cast(Client.custom_fields[field_key].astext, String) == str(field_value)
+                        db.cast(Client.custom_fields[field_key].astext, String)
+                        == str(field_value)
                     )
                 except Exception as e:
                     # Fallback to Python filtering if JSONB fails
@@ -2615,7 +2805,11 @@ def time_entries_overview():
                         if not field_key or not field_value:
                             continue
 
-                        client_value = entry.client.custom_fields.get(field_key) if entry.client.custom_fields else None
+                        client_value = (
+                            entry.client.custom_fields.get(field_key)
+                            if entry.client.custom_fields
+                            else None
+                        )
                         if str(client_value) != str(field_value):
                             matches = False
                             break
@@ -2642,7 +2836,9 @@ def time_entries_overview():
                     items=time_entries,
                 )
         except Exception as e:
-            current_app.logger.warning("Time entries list filtering failed, using original results: %s", e)
+            current_app.logger.warning(
+                "Time entries list filtering failed, using original results: %s", e
+            )
 
     # Get filter options
     projects = []
@@ -2659,10 +2855,14 @@ def time_entries_overview():
         # For non-admin users, only show their projects
         # Get projects from user's time entries
         time_entry_repo = TimeEntryRepository()
-        user_project_ids = time_entry_repo.get_distinct_project_ids_for_user(current_user.id)
+        user_project_ids = time_entry_repo.get_distinct_project_ids_for_user(
+            current_user.id
+        )
         if user_project_ids:
             projects = (
-                Project.query.filter(Project.id.in_(user_project_ids), Project.status == "active")
+                Project.query.filter(
+                    Project.id.in_(user_project_ids), Project.status == "active"
+                )
                 .order_by(Project.name)
                 .all()
             )
@@ -2670,7 +2870,9 @@ def time_entries_overview():
             client_ids = set(p.client_id for p in projects if p.client_id)
             if client_ids:
                 clients = (
-                    Client.query.filter(Client.id.in_(client_ids), Client.status == "active")
+                    Client.query.filter(
+                        Client.id.in_(client_ids), Client.status == "active"
+                    )
                     .order_by(Client.name)
                     .all()
                 )
@@ -2681,7 +2883,9 @@ def time_entries_overview():
 
     # Calculate totals
     total_hours = sum(entry.duration_hours for entry in time_entries)
-    total_billable_hours = sum(entry.duration_hours for entry in time_entries if entry.billable)
+    total_billable_hours = sum(
+        entry.duration_hours for entry in time_entries if entry.billable
+    )
     total_paid_hours = sum(entry.duration_hours for entry in time_entries if entry.paid)
 
     # Track page view
@@ -2690,7 +2894,14 @@ def time_entries_overview():
         "time_entries_overview.viewed",
         {
             "has_filters": bool(
-                user_id or project_id or client_id or start_date or end_date or paid_filter or billable_filter or search
+                user_id
+                or project_id
+                or client_id
+                or start_date
+                or end_date
+                or paid_filter
+                or billable_filter
+                or search
             ),
             "page": page,
             "per_page": per_page,
@@ -2715,7 +2926,9 @@ def time_entries_overview():
     # Passing client_custom_field (a dict) or page into url_for breaks URL building and can
     # cause 500s. Pagination links pass page explicitly, so we omit it here.
     url_filters = {
-        k: v for k, v in filters_dict.items() if k not in ("client_custom_field", "page") and v is not None and v != ""
+        k: v
+        for k, v in filters_dict.items()
+        if k not in ("client_custom_field", "page") and v is not None and v != ""
     }
     for k, v in (filters_dict.get("client_custom_field") or {}).items():
         if v:
@@ -2738,7 +2951,9 @@ def time_entries_overview():
     except ProgrammingError as e:
         # Handle case where link_templates table doesn't exist (migration not run)
         if "does not exist" in str(e.orig) or "relation" in str(e.orig).lower():
-            current_app.logger.warning("link_templates table does not exist. Run migration: flask db upgrade")
+            current_app.logger.warning(
+                "link_templates table does not exist. Run migration: flask db upgrade"
+            )
             link_templates_by_field = {}
         else:
             raise
@@ -2838,11 +3053,15 @@ def export_time_entries_csv():
 
     active_definitions = CustomFieldDefinition.get_active_definitions()
     for definition in active_definitions:
-        field_value = request.args.get(f"custom_field_{definition.field_key}", "").strip()
+        field_value = request.args.get(
+            f"custom_field_{definition.field_key}", ""
+        ).strip()
         if field_value:
             client_custom_field[definition.field_key] = field_value
 
-    can_view_all = current_user.is_admin or current_user.has_permission("view_all_time_entries")
+    can_view_all = current_user.is_admin or current_user.has_permission(
+        "view_all_time_entries"
+    )
 
     query = TimeEntry.query.options(
         joinedload(TimeEntry.user),
@@ -2894,7 +3113,8 @@ def export_time_entries_csv():
                     from sqlalchemy import String
 
                     custom_field_conditions.append(
-                        db.cast(Client.custom_fields[field_key].astext, String) == str(field_value)
+                        db.cast(Client.custom_fields[field_key].astext, String)
+                        == str(field_value)
                     )
                 except Exception as e:
                     current_app.logger.debug(
@@ -2914,7 +3134,9 @@ def export_time_entries_csv():
             pass
     if end_date:
         try:
-            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59
+            )
             query = query.filter(TimeEntry.start_time <= end_dt)
         except ValueError:
             pass
@@ -2953,7 +3175,11 @@ def export_time_entries_csv():
             for field_key, field_value in client_custom_field.items():
                 if not field_key or not field_value:
                     continue
-                client_value = entry.client.custom_fields.get(field_key) if entry.client.custom_fields else None
+                client_value = (
+                    entry.client.custom_fields.get(field_key)
+                    if entry.client.custom_fields
+                    else None
+                )
                 if str(client_value) != str(field_value):
                     matches = False
                     break
@@ -2991,7 +3217,9 @@ def export_time_entries_csv():
 
         for entry in entries:
             # Project.client is a property returning the client name string
-            client_name = (entry.client.name if entry.client else "") or (entry.project.client if entry.project else "")
+            client_name = (entry.client.name if entry.client else "") or (
+                entry.project.client if entry.project else ""
+            )
             writer.writerow(
                 [
                     entry.id,
@@ -3027,7 +3255,9 @@ def export_time_entries_csv():
             download_name=filename,
         )
     except Exception:
-        current_app.logger.exception("CSV export failed (timer.export_time_entries_csv)")
+        current_app.logger.exception(
+            "CSV export failed (timer.export_time_entries_csv)"
+        )
         raise
 
 
@@ -3060,11 +3290,15 @@ def export_time_entries_pdf():
 
     active_definitions = CustomFieldDefinition.get_active_definitions()
     for definition in active_definitions:
-        field_value = request.args.get(f"custom_field_{definition.field_key}", "").strip()
+        field_value = request.args.get(
+            f"custom_field_{definition.field_key}", ""
+        ).strip()
         if field_value:
             client_custom_field[definition.field_key] = field_value
 
-    can_view_all = current_user.is_admin or current_user.has_permission("view_all_time_entries")
+    can_view_all = current_user.is_admin or current_user.has_permission(
+        "view_all_time_entries"
+    )
 
     query = TimeEntry.query.options(
         joinedload(TimeEntry.user),
@@ -3116,7 +3350,8 @@ def export_time_entries_pdf():
                     from sqlalchemy import String
 
                     custom_field_conditions.append(
-                        db.cast(Client.custom_fields[field_key].astext, String) == str(field_value)
+                        db.cast(Client.custom_fields[field_key].astext, String)
+                        == str(field_value)
                     )
                 except Exception as e:
                     current_app.logger.debug(
@@ -3136,7 +3371,9 @@ def export_time_entries_pdf():
             pass
     if end_date:
         try:
-            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59
+            )
             query = query.filter(TimeEntry.start_time <= end_dt)
         except ValueError:
             pass
@@ -3175,7 +3412,11 @@ def export_time_entries_pdf():
             for field_key, field_value in client_custom_field.items():
                 if not field_key or not field_value:
                     continue
-                client_value = entry.client.custom_fields.get(field_key) if entry.client.custom_fields else None
+                client_value = (
+                    entry.client.custom_fields.get(field_key)
+                    if entry.client.custom_fields
+                    else None
+                )
                 if str(client_value) != str(field_value):
                     matches = False
                     break
@@ -3213,7 +3454,9 @@ def export_time_entries_pdf():
             filters=pdf_filters if pdf_filters else None,
         )
     except Exception as e:
-        current_app.logger.warning("Time entries PDF export failed: %s", e, exc_info=True)
+        current_app.logger.warning(
+            "Time entries PDF export failed: %s", e, exc_info=True
+        )
         flash(_("PDF export failed: %(error)s", error=str(e)), "error")
         return redirect(url_for("timer.time_entries_overview"))
 
@@ -3263,7 +3506,9 @@ def bulk_mark_paid():
         return redirect(url_for("timer.time_entries_overview"))
 
     # Permission check
-    can_view_all = current_user.is_admin or current_user.has_permission("view_all_time_entries")
+    can_view_all = current_user.is_admin or current_user.has_permission(
+        "view_all_time_entries"
+    )
     updated_count = 0
     skipped_count = 0
 
@@ -3305,7 +3550,9 @@ def bulk_mark_paid():
     if updated_count > 0:
         if not safe_commit("bulk_mark_paid", {"count": updated_count, "paid": is_paid}):
             flash(
-                _("Could not update time entries due to a database error. Please check server logs."),
+                _(
+                    "Could not update time entries due to a database error. Please check server logs."
+                ),
                 "error",
             )
             return redirect(url_for("timer.time_entries_overview"))

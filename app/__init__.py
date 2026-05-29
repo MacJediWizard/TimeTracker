@@ -50,12 +50,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 scheduler = BackgroundScheduler()
 
 # Initialize Prometheus metrics
-REQUEST_COUNT = Counter(
-    "tt_requests_total", "Total requests", ["method", "endpoint", "http_status"]
-)
-REQUEST_LATENCY = Histogram(
-    "tt_request_latency_seconds", "Request latency seconds", ["endpoint"]
-)
+REQUEST_COUNT = Counter("tt_requests_total", "Total requests", ["method", "endpoint", "http_status"])
+REQUEST_LATENCY = Histogram("tt_request_latency_seconds", "Request latency seconds", ["endpoint"])
 
 # Initialize JSON logger for structured logging
 json_logger = logging.getLogger("timetracker")
@@ -148,9 +144,7 @@ def create_app(config=None):
             if is_production:
                 app.logger.error("Environment validation failed - see details below")
             else:
-                app.logger.warning(
-                    "Environment validation warnings - see details below"
-                )
+                app.logger.warning("Environment validation warnings - see details below")
 
             if results.get("warnings"):
                 for warning in results["warnings"]:
@@ -220,9 +214,7 @@ def create_app(config=None):
             and ":memory:" in db_uri
         ):
             # Use a file-based SQLite database during tests to ensure consistent behavior across contexts
-            db_file = os.path.join(
-                tempfile.gettempdir(), f"timetracker_pytest_{os.getpid()}.sqlite"
-            )
+            db_file = os.path.join(tempfile.gettempdir(), f"timetracker_pytest_{os.getpid()}.sqlite")
             app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_file}"
             # Also keep permissive engine options for SQLite
             engine_opts = dict(app.config.get("SQLALCHEMY_ENGINE_OPTIONS") or {})
@@ -253,20 +245,14 @@ def create_app(config=None):
         not app.config.get("TESTING")
         and isinstance(current_url, str)
         and current_url.startswith("sqlite")
-        and (
-            os.getenv("POSTGRES_DB")
-            or os.getenv("POSTGRES_USER")
-            or os.getenv("POSTGRES_PASSWORD")
-        )
+        and (os.getenv("POSTGRES_DB") or os.getenv("POSTGRES_USER") or os.getenv("POSTGRES_PASSWORD"))
         and not (explicit_database_url and explicit_database_url.startswith("sqlite"))
     ):
         pg_user = os.getenv("POSTGRES_USER", "timetracker")
         pg_pass = os.getenv("POSTGRES_PASSWORD", "timetracker")
         pg_db = os.getenv("POSTGRES_DB", "timetracker")
         pg_host = os.getenv("POSTGRES_HOST", "db")
-        app.config["SQLALCHEMY_DATABASE_URI"] = (
-            f"postgresql+psycopg2://{pg_user}:{pg_pass}@{pg_host}:5432/{pg_db}"
-        )
+        app.config["SQLALCHEMY_DATABASE_URI"] = f"postgresql+psycopg2://{pg_user}:{pg_pass}@{pg_host}:5432/{pg_db}"
 
     # Initialize extensions
     db.init_app(app)
@@ -308,12 +294,8 @@ def create_app(config=None):
                 # Register with the session class that the sessionmaker creates
                 session_class = sessionmaker.class_
                 if session_class:
-                    event.listen(
-                        session_class, "before_flush", audit.receive_before_flush
-                    )
-                    event.listen(
-                        session_class, "after_flush", audit.receive_after_flush
-                    )
+                    event.listen(session_class, "before_flush", audit.receive_before_flush)
+                    event.listen(session_class, "after_flush", audit.receive_after_flush)
                     logger.info(
                         f"Registered audit logging with Flask-SQLAlchemy session class: {session_class.__name__}"
                     )
@@ -353,9 +335,7 @@ def create_app(config=None):
             except Exception as e:
                 # Don't fail app startup if Settings initialization fails
                 # (e.g., database not ready yet, migration not run)
-                app.logger.warning(
-                    f"Could not initialize Settings from environment: {e}"
-                )
+                app.logger.warning(f"Could not initialize Settings from environment: {e}")
 
     # Initialize Flask-Mail
     from app.utils.email import init_mail
@@ -389,9 +369,7 @@ def create_app(config=None):
         raw = app.config.get("RATELIMIT_DEFAULT")
         if raw:
             # support semicolon or comma separated limits
-            parts = [
-                p.strip() for p in str(raw).replace(",", ";").split(";") if p.strip()
-            ]
+            parts = [p.strip() for p in str(raw).replace(",", ";").split(";") if p.strip()]
             if parts:
                 default_limits = parts
         limiter._default_limits = default_limits  # set after init
@@ -402,18 +380,14 @@ def create_app(config=None):
     # Configure absolute translation directories before Babel init.
     # Do NOT run subprocess-based compilation during app creation (slow, noisy).
     try:
-        translations_dirs = (
-            app.config.get("BABEL_TRANSLATION_DIRECTORIES") or "translations"
-        ).split(",")
+        translations_dirs = (app.config.get("BABEL_TRANSLATION_DIRECTORIES") or "translations").split(",")
         base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         abs_dirs = []
         for d in translations_dirs:
             d = d.strip()
             if not d:
                 continue
-            abs_dirs.append(
-                d if os.path.isabs(d) else os.path.abspath(os.path.join(base_path, d))
-            )
+            abs_dirs.append(d if os.path.isabs(d) else os.path.abspath(os.path.join(base_path, d)))
         if abs_dirs:
             app.config["BABEL_TRANSLATION_DIRECTORIES"] = os.pathsep.join(abs_dirs)
         # Optional: best-effort compile missing/stale .mo files (Python-only, incremental).
@@ -446,9 +420,7 @@ def create_app(config=None):
                 return _normalize_locale(session.get("preferred_language"))
             # 3) Best match with Accept-Language
             supported = list(app.config.get("LANGUAGES", {}).keys()) or ["en"]
-            matched = request.accept_languages.best_match(supported) or app.config.get(
-                "BABEL_DEFAULT_LOCALE", "en"
-            )
+            matched = request.accept_languages.best_match(supported) or app.config.get("BABEL_DEFAULT_LOCALE", "en")
             return _normalize_locale(matched)
         except Exception:
             return app.config.get("BABEL_DEFAULT_LOCALE", "en")
@@ -549,9 +521,7 @@ def create_app(config=None):
                         except (ValueError, TypeError):
                             user = None
                         else:
-                            user = safe_query(
-                                lambda: User.query.get(user_id_int), default=None
-                            )
+                            user = safe_query(lambda: User.query.get(user_id_int), default=None)
 
                         if user and getattr(user, "is_active", True):
                             login_user(user, remember=True)
@@ -598,9 +568,7 @@ def create_app(config=None):
                 return
 
             # API discovery and mobile login must stay JSON (not HTML redirect) during install
-            if request.path.startswith("/api/v1/info") or request.path.startswith(
-                "/api/v1/health"
-            ):
+            if request.path.startswith("/api/v1/info") or request.path.startswith("/api/v1/health"):
                 return
             if request.path == "/api/v1/auth/login" and request.method == "POST":
                 return
@@ -627,15 +595,9 @@ def create_app(config=None):
     def handle_api_cors_preflight():
         if request.method == "OPTIONS" and request.path.startswith("/api/v1/"):
             response = app.response_class(status=204)
-            response.headers["Access-Control-Allow-Origin"] = (
-                request.headers.get("Origin") or "*"
-            )
-            response.headers["Access-Control-Allow-Methods"] = (
-                "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-            )
-            response.headers["Access-Control-Allow-Headers"] = (
-                "Authorization, Content-Type, Accept, X-Request-ID"
-            )
+            response.headers["Access-Control-Allow-Origin"] = request.headers.get("Origin") or "*"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, Accept, X-Request-ID"
             response.headers["Access-Control-Max-Age"] = "600"
             return response
 
@@ -684,12 +646,8 @@ def create_app(config=None):
                 record_http_server_metrics,
             )
 
-            route = getattr(request.url_rule, "rule", None) or (
-                request.endpoint or "unknown"
-            )
-            record_http_server_metrics(
-                request.method, route, response.status_code, latency
-            )
+            route = getattr(request.url_rule, "rule", None) or (request.endpoint or "unknown")
+            record_http_server_metrics(request.method, route, response.status_code, latency)
             response = inject_traceparent_headers(response)
         except Exception:
             pass
@@ -709,9 +667,7 @@ def create_app(config=None):
         return response
 
     # Configure session
-    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(
-        seconds=int(os.getenv("PERMANENT_SESSION_LIFETIME", 86400))
-    )
+    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(seconds=int(os.getenv("PERMANENT_SESSION_LIFETIME", 86400)))
 
     # Setup logging (including JSON logging)
     from app.utils.setup_logging import setup_logging as _setup_logging
@@ -750,9 +706,7 @@ def create_app(config=None):
 
     # Log analytics status (for transparency)
     if has_analytics_configured():
-        app.logger.info(
-            "TimeTracker with analytics configured (telemetry opt-in via admin dashboard)"
-        )
+        app.logger.info("TimeTracker with analytics configured (telemetry opt-in via admin dashboard)")
     else:
         app.logger.info("TimeTracker build without analytics configuration")
 
@@ -788,23 +742,15 @@ def create_app(config=None):
             "your-secret-key-change-this",
             "your-secret-key-here",
         }
-        if (
-            (not secret)
-            or (secret in placeholder_values)
-            or (isinstance(secret, str) and len(secret) < 32)
-        ):
-            app.logger.error(
-                "Invalid SECRET_KEY configured in production; refusing to start"
-            )
+        if (not secret) or (secret in placeholder_values) or (isinstance(secret, str) and len(secret) < 32):
+            app.logger.error("Invalid SECRET_KEY configured in production; refusing to start")
             raise RuntimeError("Invalid SECRET_KEY in production")
 
         # Check for debug mode in production - this is a security risk
         flask_debug = app.config.get("FLASK_DEBUG", False)
         if flask_debug or app.debug:
             app.logger.error("Debug mode is enabled in production; refusing to start")
-            app.logger.error(
-                "Debug mode can leak sensitive information and should never be enabled in production"
-            )
+            app.logger.error("Debug mode can leak sensitive information and should never be enabled in production")
             raise RuntimeError("Debug mode cannot be enabled in production")
 
     # Apply security headers and a basic CSP
@@ -832,9 +778,7 @@ def create_app(config=None):
             if not response.headers.get("Referrer-Policy"):
                 response.headers["Referrer-Policy"] = "no-referrer"
             if not response.headers.get("Permissions-Policy"):
-                response.headers["Permissions-Policy"] = (
-                    "geolocation=(), microphone=(), camera=()"
-                )
+                response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
         except Exception:
             pass
 
@@ -843,16 +787,10 @@ def create_app(config=None):
         # If CSRF is disabled, explicitly clear any existing CSRF cookie to avoid confusion
         try:
             if request.path.startswith("/api/v1/"):
-                response.headers["Access-Control-Allow-Origin"] = (
-                    request.headers.get("Origin") or "*"
-                )
+                response.headers["Access-Control-Allow-Origin"] = request.headers.get("Origin") or "*"
                 response.headers["Vary"] = "Origin"
-                response.headers["Access-Control-Allow-Methods"] = (
-                    "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-                )
-                response.headers["Access-Control-Allow-Headers"] = (
-                    "Authorization, Content-Type, Accept, X-Request-ID"
-                )
+                response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+                response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, Accept, X-Request-ID"
         except Exception:
             pass
 
@@ -861,9 +799,7 @@ def create_app(config=None):
                 # Only for safe, HTML page responses
                 if request.method == "GET":
                     content_type = response.headers.get("Content-Type", "")
-                    if isinstance(content_type, str) and content_type.startswith(
-                        "text/html"
-                    ):
+                    if isinstance(content_type, str) and content_type.startswith("text/html"):
                         cookie_name = app.config.get("CSRF_COOKIE_NAME", "XSRF-TOKEN")
                         has_cookie = bool(request.cookies.get(cookie_name))
                         if not has_cookie:
@@ -880,18 +816,12 @@ def create_app(config=None):
                                     app.config.get("SESSION_COOKIE_SECURE", False),
                                 )
                             )
-                            cookie_httponly = bool(
-                                app.config.get("CSRF_COOKIE_HTTPONLY", False)
-                            )
-                            cookie_samesite = app.config.get(
-                                "CSRF_COOKIE_SAMESITE", "Lax"
-                            )
+                            cookie_httponly = bool(app.config.get("CSRF_COOKIE_HTTPONLY", False))
+                            cookie_samesite = app.config.get("CSRF_COOKIE_SAMESITE", "Lax")
                             cookie_domain = app.config.get("CSRF_COOKIE_DOMAIN") or None
                             cookie_path = app.config.get("CSRF_COOKIE_PATH", "/")
                             try:
-                                max_age = int(
-                                    app.config.get("WTF_CSRF_TIME_LIMIT", 3600)
-                                )
+                                max_age = int(app.config.get("WTF_CSRF_TIME_LIMIT", 3600))
                             except Exception:
                                 max_age = 3600
                             response.set_cookie(
@@ -949,11 +879,7 @@ def create_app(config=None):
             try:
                 from flask_login import current_user as _cu
 
-                user_id = (
-                    getattr(_cu, "id", None)
-                    if getattr(_cu, "is_authenticated", False)
-                    else None
-                )
+                user_id = getattr(_cu, "id", None) if getattr(_cu, "is_authenticated", False) else None
             except Exception:
                 user_id = None
             app.logger.warning(
@@ -969,14 +895,10 @@ def create_app(config=None):
         except Exception:
             pass
 
-        if request.method == "POST" and (
-            is_classic_form or (request.form and not request.is_json)
-        ):
+        if request.method == "POST" and (is_classic_form or (request.form and not request.is_json)):
             try:
                 flash(
-                    _(
-                        "Your session expired or the page was open too long. Please try again."
-                    ),
+                    _("Your session expired or the page was open too long. Please try again."),
                     "warning",
                 )
             except Exception:
@@ -1003,8 +925,7 @@ def create_app(config=None):
             wants_json = (
                 request.is_json
                 or request.headers.get("X-Requested-With") == "XMLHttpRequest"
-                or request.accept_mimetypes["application/json"]
-                >= request.accept_mimetypes["text/html"]
+                or request.accept_mimetypes["application/json"] >= request.accept_mimetypes["text/html"]
             )
         except Exception:
             wants_json = False
@@ -1015,9 +936,7 @@ def create_app(config=None):
         # Default to HTML-friendly behavior
         try:
             flash(
-                _(
-                    "Your session expired or the page was open too long. Please try again."
-                ),
+                _("Your session expired or the page was open too long. Please try again."),
                 "warning",
             )
         except Exception:
@@ -1060,9 +979,7 @@ def create_app(config=None):
         # If CSRF is disabled, return empty token
         if not app.config.get("WTF_CSRF_ENABLED"):
             resp = jsonify(csrf_token="", csrf_enabled=False)
-            resp.headers["Cache-Control"] = (
-                "no-store, no-cache, must-revalidate, max-age=0"
-            )
+            resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
             return resp
 
         try:
@@ -1073,9 +990,7 @@ def create_app(config=None):
             token = ""
         resp = jsonify(csrf_token=token, csrf_enabled=True)
         try:
-            resp.headers["Cache-Control"] = (
-                "no-store, no-cache, must-revalidate, max-age=0"
-            )
+            resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         except Exception:
             pass
         # Also set/update a CSRF cookie for double-submit pattern and SPA helpers
@@ -1200,9 +1115,7 @@ def create_app(config=None):
                     )
                     app.logger.info("OIDC client registered with issuer %s", issuer)
                 except Exception as e:
-                    app.logger.error(
-                        "Failed to register OIDC client after metadata fetch: %s", e
-                    )
+                    app.logger.error("Failed to register OIDC client after metadata fetch: %s", e)
             else:
                 # Metadata fetch failed - try to register anyway (Authlib will attempt fetch)
                 # If that also fails, we'll handle it gracefully and store config for lazy loading
@@ -1239,11 +1152,7 @@ def create_app(config=None):
                         app.config["OIDC_CLIENT_ID_FOR_LAZY_LOAD"] = client_id
                         app.config["OIDC_CLIENT_SECRET_FOR_LAZY_LOAD"] = client_secret
                         app.config["OIDC_SCOPES_FOR_LAZY_LOAD"] = scopes
-                        issuer_host = (
-                            urlparse(issuer).netloc.split(":")[0]
-                            if issuer
-                            else "unknown"
-                        )
+                        issuer_host = urlparse(issuer).netloc.split(":")[0] if issuer else "unknown"
                         app.logger.warning(
                             "OIDC client registration failed due to DNS resolution error: %s. "
                             "Client will be created lazily on first login attempt. "
@@ -1256,11 +1165,7 @@ def create_app(config=None):
                             issuer_host,
                         )
                     else:
-                        issuer_host = (
-                            urlparse(issuer).netloc.split(":")[0]
-                            if issuer
-                            else "unknown"
-                        )
+                        issuer_host = urlparse(issuer).netloc.split(":")[0] if issuer else "unknown"
                         app.logger.error(
                             "Failed to register OIDC client: %s\n"
                             "Troubleshooting:\n"
@@ -1289,17 +1194,11 @@ def create_app(config=None):
                     max_retries = int(app.config.get("OIDC_METADATA_RETRY_ATTEMPTS", 3))
                     retry_delay = int(app.config.get("OIDC_METADATA_RETRY_DELAY", 2))
                     timeout = int(app.config.get("OIDC_METADATA_FETCH_TIMEOUT", 10))
-                    dns_strategy = app.config.get(
-                        "OIDC_DNS_RESOLUTION_STRATEGY", "auto"
-                    )
+                    dns_strategy = app.config.get("OIDC_DNS_RESOLUTION_STRATEGY", "auto")
                     use_ip_directly = app.config.get("OIDC_USE_IP_DIRECTLY", True)
-                    use_docker_internal = app.config.get(
-                        "OIDC_USE_DOCKER_INTERNAL", True
-                    )
+                    use_docker_internal = app.config.get("OIDC_USE_DOCKER_INTERNAL", True)
 
-                    app.logger.info(
-                        "Background OIDC metadata refresh started for issuer %s", issuer
-                    )
+                    app.logger.info("Background OIDC metadata refresh started for issuer %s", issuer)
                     metadata, metadata_error, diagnostics = fetch_oidc_metadata(
                         issuer,
                         max_retries=max_retries,
@@ -1316,9 +1215,7 @@ def create_app(config=None):
                             "Background OIDC metadata refresh successful (issuer: %s, strategy: %s)",
                             metadata.get("issuer"),
                             (
-                                diagnostics.get("dns_resolution", {}).get(
-                                    "strategy", "unknown"
-                                )
+                                diagnostics.get("dns_resolution", {}).get("strategy", "unknown")
                                 if diagnostics
                                 else "unknown"
                             ),
@@ -1329,9 +1226,7 @@ def create_app(config=None):
                             metadata_error,
                         )
                 except Exception as e:
-                    app.logger.error(
-                        "Error in background OIDC metadata refresh: %s", str(e)
-                    )
+                    app.logger.error("Error in background OIDC metadata refresh: %s", str(e))
 
             # Schedule the refresh task
             try:
@@ -1343,13 +1238,9 @@ def create_app(config=None):
                     replace_existing=True,
                     max_instances=1,
                 )
-                app.logger.info(
-                    "Scheduled OIDC metadata refresh every %d seconds", refresh_interval
-                )
+                app.logger.info("Scheduled OIDC metadata refresh every %d seconds", refresh_interval)
             except Exception as e:
-                app.logger.warning(
-                    "Failed to schedule OIDC metadata refresh: %s", str(e)
-                )
+                app.logger.warning("Failed to schedule OIDC metadata refresh: %s", str(e))
 
     # Prometheus metrics endpoint
     @app.route("/metrics")
@@ -1397,9 +1288,7 @@ def create_app(config=None):
 
             if not current_user or not getattr(current_user, "is_authenticated", False):
                 return
-            admin_usernames = [
-                u.strip().lower() for u in app.config.get("ADMIN_USERNAMES", ["admin"])
-            ]
+            admin_usernames = [u.strip().lower() for u in app.config.get("ADMIN_USERNAMES", ["admin"])]
             if (
                 current_user.username
                 and current_user.username.lower() in admin_usernames
@@ -1443,9 +1332,7 @@ def create_app(config=None):
 
             # Create default admin user or demo user if it doesn't exist
             if app.config.get("DEMO_MODE"):
-                demo_username = (
-                    (app.config.get("DEMO_USERNAME") or "demo").strip().lower()
-                )
+                demo_username = (app.config.get("DEMO_USERNAME") or "demo").strip().lower()
                 from app.models import Role
 
                 demo_user = User.query.filter_by(username=demo_username).first()
@@ -1535,9 +1422,7 @@ def init_database(app):
 
             # Create default admin user or demo user if it doesn't exist
             if app.config.get("DEMO_MODE"):
-                demo_username = (
-                    (app.config.get("DEMO_USERNAME") or "demo").strip().lower()
-                )
+                demo_username = (app.config.get("DEMO_USERNAME") or "demo").strip().lower()
                 from app.models import Role
 
                 demo_user = User.query.filter_by(username=demo_username).first()

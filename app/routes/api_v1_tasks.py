@@ -47,9 +47,7 @@ def list_tasks():
         "next_page": pagination.page + 1 if pagination.has_next else None,
         "prev_page": pagination.page - 1 if pagination.has_prev else None,
     }
-    return jsonify(
-        {"tasks": [t.to_dict() for t in result["tasks"]], "pagination": pagination_dict}
-    )
+    return jsonify({"tasks": [t.to_dict() for t in result["tasks"]], "pagination": pagination_dict})
 
 
 @api_v1_tasks_bp.route("/tasks/<int:task_id>", methods=["GET"])
@@ -100,12 +98,8 @@ def create_task():
         tags=data.get("tags"),
     )
     if not result.get("success"):
-        return error_response(
-            result.get("message", "Could not create task"), status_code=400
-        )
-    return jsonify(
-        {"message": "Task created successfully", "task": result["task"].to_dict()}
-    ), 201
+        return error_response(result.get("message", "Could not create task"), status_code=400)
+    return jsonify({"message": "Task created successfully", "task": result["task"].to_dict()}), 201
 
 
 @api_v1_tasks_bp.route("/tasks/<int:task_id>", methods=["PUT", "PATCH"])
@@ -134,16 +128,10 @@ def update_task(task_id):
     if "tags" in data:
         update_kwargs["tags"] = data["tags"]
 
-    result = task_service.update_task(
-        task_id=task_id, user_id=g.api_user.id, **update_kwargs
-    )
+    result = task_service.update_task(task_id=task_id, user_id=g.api_user.id, **update_kwargs)
     if not result.get("success"):
-        return error_response(
-            result.get("message", "Could not update task"), status_code=400
-        )
-    return jsonify(
-        {"message": "Task updated successfully", "task": result["task"].to_dict()}
-    )
+        return error_response(result.get("message", "Could not update task"), status_code=400)
+    return jsonify({"message": "Task updated successfully", "task": result["task"].to_dict()})
 
 
 @api_v1_tasks_bp.route("/tasks/<int:task_id>", methods=["DELETE"])

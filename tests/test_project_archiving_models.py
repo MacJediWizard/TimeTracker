@@ -430,19 +430,17 @@ class TestProjectArchiveEdgeCases:
     def test_archive_with_invalid_user_id(self, app, project):
         """Test that archiving with non-existent user_id is rejected at commit.
 
-        Under PostgreSQL (and SQLite with foreign-key enforcement enabled
-        in conftest) inserting an ``archived_by`` that doesn't match any
-        users.id row triggers an IntegrityError on commit, which is the
-        correct database behaviour. Capture the error and assert that
-        the project's archive metadata was not persisted.
+        Project.archive() calls db.session.commit() internally, so the
+        IntegrityError fires inside the archive call (not on a subsequent
+        explicit commit). Capture it there and confirm no archive state
+        leaked through after rollback.
         """
         from sqlalchemy.exc import IntegrityError
 
         from app import db
 
-        project.archive(user_id=999999, reason="Test")
         with pytest.raises(IntegrityError):
-            db.session.commit()
+            project.archive(user_id=999999, reason="Test")
         db.session.rollback()
 
         # Reload from the DB and confirm no state leaked through.

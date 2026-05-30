@@ -1,15 +1,26 @@
 import pytest
 
 from app import db
-from app.models import Role, Settings, User
+from app.models import Role, Settings
 from app.utils.module_registry import ModuleRegistry
 
 
 @pytest.mark.unit
 def test_module_registry_hides_module_if_all_roles_hide(app, user):
-    """If all assigned roles hide a module, ModuleRegistry should disable it."""
+    """If all assigned roles hide a module, ModuleRegistry should disable it.
+
+    The conftest user fixture's auto-migration adds the seeded 'user'
+    Role on first permission check (see User._auto_assign_role_from_legacy).
+    Strip those auto-migrated roles before assigning the hide-only role so
+    the 'all roles hide' branch in ModuleRegistry.is_enabled actually
+    applies to a single-role user.
+    """
     ModuleRegistry.initialize_defaults()
     settings = Settings.get_settings()
+
+    # Drop any auto-migrated roles so only the hide role applies.
+    user.roles = []
+    db.session.commit()
 
     r = Role(name="hide_analytics_role", hidden_module_ids=["analytics"])
     db.session.add(r)

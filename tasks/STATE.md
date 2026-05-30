@@ -201,3 +201,40 @@ local 88-col formatter hook ran. Re-applying pinned Black.
     FK silently succeeds; under enforced FKs commit raises
     IntegrityError. Updated to assert that behaviour and verify
     no state leaked through.
+
+## User chose option 3 — grind to 100% green
+- CI 26665421395 on 6f9126dc in flight
+- Continuing diagnosis of remaining tests:
+  * test_profile_avatar.test_remove_avatar — same PIL.verify() stream-
+    drain bug in app/routes/auth.py:817-825 (avatar upload). Apply
+    same buffered-bytes fix as logo upload
+  * test_invoice_email (3) — still need to dig
+  * test_project_archiving (5) — still need to dig
+  * test_role_module_visibility — still need to dig
+
+## Pushed `efb320c6` (real fixes batch 7)
+- app/routes/auth.py: avatar upload uses buffered-bytes pattern (same
+  PIL.verify() stream-drain root cause as the logo upload)
+
+## Still investigating (no commits yet, waiting on CI to confirm root cause)
+- test_invoice_email (3 of 17 module tests fail) — sent_by + status
+  refresh checks; the other 14 in the module PASS so it's likely a
+  fixture-level session/refresh ordering issue
+- test_role_module_visibility — User.roles list may be polluted by
+  auto-migration adding the legacy role; test expects only the new
+  hide_analytics_role
+- test_project_archiving (5 route-level tests) — need to look at
+  the archive_project route + activity log flow
+
+## CI 26665421395 on 6f9126dc still in flight
+- Will report when it lands
+
+## CI efb320c6 — down from 17 to 12 PG failures
+Still failing:
+- test_invoice_email (3)
+- test_profile_avatar.test_remove_avatar (1)
+- test_project_archiving_models.test_archive_with_invalid_user_id (1)
+  → fixed: wrap project.archive() in pytest.raises (archive commits itself)
+- test_project_archiving (5)
+- test_role_module_visibility (1)
+  → fixed: clear user.roles = [] before adding hide role

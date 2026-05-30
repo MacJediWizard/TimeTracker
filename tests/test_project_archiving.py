@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pytest
 
-from app.models import Activity, Project, TimeEntry
+from app.models import Activity, Project
 
 
 class TestProjectArchivingModel:
@@ -126,7 +126,9 @@ class TestProjectArchivingRoutes:
         reason = "Project completed successfully"
 
         response = admin_authenticated_client.post(
-            f"/projects/{project_id}/archive", data={"reason": reason}, follow_redirects=True
+            f"/projects/{project_id}/archive",
+            data={"reason": reason},
+            follow_redirects=True,
         )
 
         assert response.status_code == 200
@@ -187,7 +189,11 @@ class TestProjectArchivingRoutes:
 
         response = admin_authenticated_client.post(
             "/projects/bulk-status-change",
-            data={"project_ids[]": [project1.id, project2.id], "new_status": "archived", "archive_reason": reason},
+            data={
+                "project_ids[]": [project1.id, project2.id],
+                "new_status": "archived",
+                "archive_reason": reason,
+            },
             follow_redirects=True,
         )
 
@@ -228,7 +234,9 @@ class TestProjectArchivingRoutes:
         project_id = project.id
 
         response = authenticated_client.post(
-            f"/projects/{project_id}/archive", data={"reason": "Test"}, follow_redirects=True
+            f"/projects/{project_id}/archive",
+            data={"reason": "Test"},
+            follow_redirects=True,
         )
 
         assert response.status_code == 200
@@ -309,13 +317,17 @@ class TestArchivedProjectValidation:
         assert b"Cannot create time entries for an archived project" in response.data
 
     @pytest.mark.routes
-    def test_archived_projects_not_in_active_list(self, authenticated_client, app, test_client, admin_user):
-        """Test that archived projects don't appear in timer dropdown"""
+    def test_archived_projects_not_in_active_list(self, authenticated_client, app, test_client, user, admin_user):
+        """Test that archived projects don't appear in timer dropdown.
+
+        ``created_by`` is required for the per-user project-scope filter
+        (upstream PR #641) to surface these projects to the regular user
+        backing ``authenticated_client``.
+        """
         from app import db
 
-        # Create and archive a project
-        archived_project = Project(name="Archived Project", client_id=test_client.id)
-        active_project = Project(name="Active Project", client_id=test_client.id)
+        archived_project = Project(name="Archived Project", client_id=test_client.id, created_by=user.id)
+        active_project = Project(name="Active Project", client_id=test_client.id, created_by=user.id)
 
         db.session.add_all([archived_project, active_project])
         db.session.commit()
@@ -339,13 +351,14 @@ class TestArchivingActivityLogs:
     @pytest.mark.routes
     def test_archive_creates_activity_log(self, admin_authenticated_client, app, project):
         """Test that archiving a project creates an activity log"""
-        from app import db
 
         project_id = project.id
         reason = "Project completed"
 
         response = admin_authenticated_client.post(
-            f"/projects/{project_id}/archive", data={"reason": reason}, follow_redirects=True
+            f"/projects/{project_id}/archive",
+            data={"reason": reason},
+            follow_redirects=True,
         )
 
         assert response.status_code == 200
@@ -457,7 +470,9 @@ class TestArchivingSmokeTests:
         # 2. Archive the project with reason
         reason = "Complete smoke test"
         response = admin_authenticated_client.post(
-            f"/projects/{project_id}/archive", data={"reason": reason}, follow_redirects=True
+            f"/projects/{project_id}/archive",
+            data={"reason": reason},
+            follow_redirects=True,
         )
         assert response.status_code == 200
 

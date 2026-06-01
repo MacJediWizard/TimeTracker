@@ -5,7 +5,6 @@ This file contains common fixtures and test configuration used across all test m
 
 import os
 import tempfile
-import uuid
 
 import pytest
 
@@ -18,7 +17,7 @@ from decimal import Decimal
 
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
-from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import StaticPool
 
 from app import create_app, db
 
@@ -131,13 +130,22 @@ def app_config():
     """Base test configuration."""
     return {
         "TESTING": True,
-        # Use file-based SQLite to ensure consistent connections across contexts/threads
-        "SQLALCHEMY_DATABASE_URI": "sqlite:///pytest_main.sqlite",
-        # Mitigate SQLite 'database is locked' by increasing busy timeout and enabling pre-ping
+        # In-memory SQLite with a StaticPool: a single shared connection for the
+        # whole test. The app's audit-log listener issues a nested
+        # Settings.get_settings() query mid-flush (to resolve the app timezone);
+        # under the previous per-test *file* + NullPool config that nested query
+        # opened a second connection and SQLite serialised the writers at the
+        # file level, producing intermittent 'database is locked' errors and, on
+        # 2-worker xdist runs, hard deadlocks that stalled the whole suite.
+        # StaticPool keeps one connection so the main session and the listener
+        # share it and serialise in-process. check_same_thread=False lets the
+        # app's incidental background threads reuse it safely (SQLite still
+        # serialises access). Production runs on PostgreSQL, which handles the
+        # concurrent connections natively, so this only affects the test DB.
+        "SQLALCHEMY_DATABASE_URI": "sqlite://",
         "SQLALCHEMY_ENGINE_OPTIONS": {
-            "pool_pre_ping": True,
-            "connect_args": {"timeout": 30},
-            "poolclass": NullPool,
+            "connect_args": {"check_same_thread": False},
+            "poolclass": StaticPool,
         },
         "FLASK_ENV": "testing",
         "SQLALCHEMY_TRACK_MODIFICATIONS": False,
@@ -154,11 +162,15 @@ def app_config():
 
 @pytest.fixture(scope="function")
 def app(app_config):
-    """Create application for testing with function scope."""
-    # Use a unique SQLite file per test function to avoid Windows file locking
-    unique_db_path = os.path.join(tempfile.gettempdir(), f"pytest_{uuid.uuid4().hex}.sqlite")
+    """Create application for testing with function scope.
+
+    Each test gets a fresh in-memory SQLite database (StaticPool, single
+    connection) — see app_config for why. Isolation is per-test because every
+    test builds its own app/engine, so the in-memory DB is created and torn
+    down with the fixture.
+    """
     config = dict(app_config)
-    config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{unique_db_path}"
+    config["SQLALCHEMY_DATABASE_URI"] = "sqlite://"
     app = create_app(config)
 
     with app.app_context():

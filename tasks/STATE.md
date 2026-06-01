@@ -238,3 +238,38 @@ Still failing:
 - test_project_archiving (5)
 - test_role_module_visibility (1)
   → fixed: clear user.roles = [] before adding hide role
+
+## 2026-06-01 — systemic StaticPool fix (the big one)
+
+CI 26764219558 on 31d7ea65: down to 9 deterministic FAILED, but the
+suite kept stalling at ~74% (test_security CSRF test) due to SQLite
+file-lock deadlock under 2-worker xdist — which TRUNCATES the pytest
+failure summary so I can't get tracebacks for the 9.
+
+Root cause (shared by all 9 failures + the stall): the audit-log
+listener does a nested Settings.get_settings() query mid-flush to
+resolve the app timezone. Under the per-test FILE + NullPool config
+that nested query opened a 2nd connection → SQLite serialises writers
+at the file level → 'database is locked' / deadlock. Postgres (prod)
+handles this natively, so it's purely a test-DB artifact.
+
+FIX (proven on test_invoice_email module first): switch the GLOBAL
+conftest app fixture to in-memory sqlite:// + StaticPool +
+check_same_thread=False. One connection per test, serialised
+in-process, zero file locks.
+
+The 9 deterministic failures were (from run 26764219558):
+- test_invoice_email (3): success, updates_draft_status,
+  does_not_update_non_draft_status  (all assert invoice.status after
+  the audit-listener-triggering status change)
+- test_project_archiving (5): activity-log + route tests
+- test_routes.py::test_edit_client_updates_prepaid_fields (1)
+
+Expectation: StaticPool should fix most/all of these (they're the
+same lock root cause) AND eliminate the stall so the suite completes
+and prints any genuinely-remaining tracebacks.
+
+Branch: main. Committing conftest change, dispatching CI.
+Risk: global app-fixture change touches ~200 test files. If it
+regresses broadly, revert this commit. invoice_email already proved
+the config works with the full app stack.

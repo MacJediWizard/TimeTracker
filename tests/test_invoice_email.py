@@ -9,10 +9,46 @@ from unittest.mock import MagicMock, patch
 import pytest
 from factories import ClientFactory, InvoiceFactory, InvoiceItemFactory, ProjectFactory, UserFactory
 from flask import current_app
+from sqlalchemy.pool import StaticPool
 
-from app import db
+from app import create_app, db
 from app.models import InvoiceEmail
 from app.utils.email import send_invoice_email, send_invoice_template_test_email
+
+
+@pytest.fixture
+def app():
+    """Per-test isolated app using an in-memory SQLite + StaticPool.
+
+    The default conftest app fixture uses a per-test SQLite *file* with
+    NullPool. NullPool spins a new connection for every operation, so
+    the audit-log listener's mid-flush INSERT can race against the main
+    session's INSERT on the same file and trip
+    ``sqlite3.OperationalError: database is locked`` under xdist. A
+    StaticPool keeps a single in-memory connection for the entire test,
+    eliminating that race.
+    """
+    test_app = create_app(
+        {
+            "TESTING": True,
+            "WTF_CSRF_ENABLED": False,
+            "SQLALCHEMY_DATABASE_URI": "sqlite://",
+            "SQLALCHEMY_ENGINE_OPTIONS": {
+                "connect_args": {"check_same_thread": False},
+                "poolclass": StaticPool,
+            },
+            "SECRET_KEY": "a" * 64,
+            "MAIL_DEFAULT_SENDER": "noreply@test.com",
+        }
+    )
+    with test_app.app_context():
+        db.create_all()
+        yield test_app
+        db.session.remove()
+        try:
+            db.drop_all()
+        except Exception:
+            pass
 
 
 @pytest.fixture

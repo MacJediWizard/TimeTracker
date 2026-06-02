@@ -2,23 +2,21 @@
 Tests for ProjectService.
 """
 
-from datetime import datetime
-
 import pytest
 
 from app import db
-from app.models import Client, Project, User
+from app.models import Project
 from app.services import ProjectService
 
 
 @pytest.mark.unit
-def test_create_project_success(app, test_client_model, test_user):
+def test_create_project_success(app, sample_client, test_user):
     """Test successful project creation"""
     service = ProjectService()
 
     result = service.create_project(
         name="Test Project",
-        client_id=test_client_model.id,
+        client_id=sample_client.id,
         description="Test description",
         billable=True,
         created_by=test_user.id,
@@ -27,7 +25,7 @@ def test_create_project_success(app, test_client_model, test_user):
     assert result["success"] is True
     assert result["project"] is not None
     assert result["project"].name == "Test Project"
-    assert result["project"].client_id == test_client_model.id
+    assert result["project"].client_id == sample_client.id
 
 
 @pytest.mark.unit
@@ -36,7 +34,9 @@ def test_create_project_invalid_client(app, test_user):
     service = ProjectService()
 
     result = service.create_project(
-        name="Test Project", client_id=99999, created_by=test_user.id  # Non-existent client
+        name="Test Project",
+        client_id=99999,
+        created_by=test_user.id,  # Non-existent client
     )
 
     assert result["success"] is False
@@ -44,12 +44,12 @@ def test_create_project_invalid_client(app, test_user):
 
 
 @pytest.mark.unit
-def test_list_projects_with_eager_loading(app, test_client_model, test_user):
+def test_list_projects_with_eager_loading(app, sample_client, test_user):
     """Test listing projects with eager loading prevents N+1"""
     service = ProjectService()
 
     # Create a project
-    project = Project(name="Test Project", client_id=test_client_model.id, created_by=test_user.id)
+    project = Project(name="Test Project", client_id=sample_client.id, created_by=test_user.id)
     db.session.add(project)
     db.session.commit()
 
@@ -61,24 +61,29 @@ def test_list_projects_with_eager_loading(app, test_client_model, test_user):
 
     # Verify client is loaded (no N+1 query)
     project = result["projects"][0]
-    # Accessing client should not trigger additional query
-    assert project.client is not None
-    assert project.client.id == test_client_model.id
+    # Accessing the client relationship should not trigger an additional query.
+    # `client_obj` is the Client relationship; `client` is the legacy name string.
+    assert project.client_obj is not None
+    assert project.client_obj.id == sample_client.id
 
 
 @pytest.mark.unit
-def test_get_project_with_details(app, test_client_model, test_user):
+def test_get_project_with_details(app, sample_client, test_user):
     """Test getting project with all details"""
     service = ProjectService()
 
     # Create a project
-    project = Project(name="Test Project", client_id=test_client_model.id, created_by=test_user.id)
+    project = Project(name="Test Project", client_id=sample_client.id, created_by=test_user.id)
     db.session.add(project)
     db.session.commit()
 
     # Get project details
     project = service.get_project_with_details(
-        project_id=project.id, include_time_entries=True, include_tasks=True, include_comments=True, include_costs=True
+        project_id=project.id,
+        include_time_entries=True,
+        include_tasks=True,
+        include_comments=True,
+        include_costs=True,
     )
 
     assert project is not None
@@ -88,14 +93,22 @@ def test_get_project_with_details(app, test_client_model, test_user):
 
 
 @pytest.mark.unit
-def test_list_projects_filtering(app, test_client_model, test_user):
+def test_list_projects_filtering(app, sample_client, test_user):
     """Test project list filtering"""
     service = ProjectService()
 
     # Create projects
-    project1 = Project(name="Active Project", client_id=test_client_model.id, status="active", created_by=test_user.id)
+    project1 = Project(
+        name="Active Project",
+        client_id=sample_client.id,
+        status="active",
+        created_by=test_user.id,
+    )
     project2 = Project(
-        name="Archived Project", client_id=test_client_model.id, status="archived", created_by=test_user.id
+        name="Archived Project",
+        client_id=sample_client.id,
+        status="archived",
+        created_by=test_user.id,
     )
     db.session.add_all([project1, project2])
     db.session.commit()

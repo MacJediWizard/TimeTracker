@@ -135,29 +135,34 @@ class TestSendInvoiceEmail:
 
     def test_send_invoice_email_success(self, app, test_invoice, test_user, mock_pdf_generator, mock_mail_send):
         """Test successfully sending an invoice email"""
-        with app.app_context():
-            # Configure mail server
-            current_app.config["MAIL_SERVER"] = "smtp.test.com"
-            current_app.config["MAIL_DEFAULT_SENDER"] = "noreply@test.com"
+        # The ``app`` fixture already yields inside an active app context, so the
+        # fixtures' session is the live ``db.session``. Pushing another
+        # ``app.app_context()`` here would create a second scoped session in which
+        # ``test_invoice`` is detached, silently dropping the status update and
+        # tripping ``db.session.refresh``. Run in the fixture's context (matches
+        # how the route calls send_invoice_email in production).
+        # Configure mail server
+        current_app.config["MAIL_SERVER"] = "smtp.test.com"
+        current_app.config["MAIL_DEFAULT_SENDER"] = "noreply@test.com"
 
-            success, invoice_email, message = send_invoice_email(
-                invoice=test_invoice,
-                recipient_email="client@test.com",
-                sender_user=test_user,
-            )
+        success, invoice_email, message = send_invoice_email(
+            invoice=test_invoice,
+            recipient_email="client@test.com",
+            sender_user=test_user,
+        )
 
-            assert success is True
-            assert invoice_email is not None
-            assert invoice_email.recipient_email == "client@test.com"
-            assert invoice_email.invoice_id == test_invoice.id
-            assert invoice_email.sent_by == test_user.id
-            assert invoice_email.status == "sent"
-            assert "successfully" in message.lower()
-            assert mock_mail_send.called
+        assert success is True
+        assert invoice_email is not None
+        assert invoice_email.recipient_email == "client@test.com"
+        assert invoice_email.invoice_id == test_invoice.id
+        assert invoice_email.sent_by == test_user.id
+        assert invoice_email.status == "sent"
+        assert "successfully" in message.lower()
+        assert mock_mail_send.called
 
-            # Verify invoice status was updated
-            db.session.refresh(test_invoice)
-            assert test_invoice.status == "sent"
+        # Verify invoice status was updated
+        db.session.refresh(test_invoice)
+        assert test_invoice.status == "sent"
 
     def test_send_invoice_email_with_custom_message(
         self, app, test_invoice, test_user, mock_pdf_generator, mock_mail_send
@@ -255,49 +260,49 @@ class TestSendInvoiceEmail:
         self, app, test_invoice, test_user, mock_pdf_generator, mock_mail_send
     ):
         """Test that draft invoice status is updated to 'sent'"""
-        with app.app_context():
-            current_app.config["MAIL_SERVER"] = "smtp.test.com"
-            current_app.config["MAIL_DEFAULT_SENDER"] = "noreply@test.com"
+        # Run in the fixture's app context (see test_send_invoice_email_success).
+        current_app.config["MAIL_SERVER"] = "smtp.test.com"
+        current_app.config["MAIL_DEFAULT_SENDER"] = "noreply@test.com"
 
-            # Ensure invoice is in draft status
-            test_invoice.status = "draft"
-            db.session.commit()
+        # Ensure invoice is in draft status
+        test_invoice.status = "draft"
+        db.session.commit()
 
-            success, invoice_email, message = send_invoice_email(
-                invoice=test_invoice,
-                recipient_email="client@test.com",
-                sender_user=test_user,
-            )
+        success, invoice_email, message = send_invoice_email(
+            invoice=test_invoice,
+            recipient_email="client@test.com",
+            sender_user=test_user,
+        )
 
-            assert success is True
+        assert success is True
 
-            # Verify status was updated
-            db.session.refresh(test_invoice)
-            assert test_invoice.status == "sent"
+        # Verify status was updated
+        db.session.refresh(test_invoice)
+        assert test_invoice.status == "sent"
 
     def test_send_invoice_email_does_not_update_non_draft_status(
         self, app, test_invoice, test_user, mock_pdf_generator, mock_mail_send
     ):
         """Test that non-draft invoice status is not changed"""
-        with app.app_context():
-            current_app.config["MAIL_SERVER"] = "smtp.test.com"
-            current_app.config["MAIL_DEFAULT_SENDER"] = "noreply@test.com"
+        # Run in the fixture's app context (see test_send_invoice_email_success).
+        current_app.config["MAIL_SERVER"] = "smtp.test.com"
+        current_app.config["MAIL_DEFAULT_SENDER"] = "noreply@test.com"
 
-            # Set invoice to 'sent' status
-            test_invoice.status = "sent"
-            db.session.commit()
+        # Set invoice to 'sent' status
+        test_invoice.status = "sent"
+        db.session.commit()
 
-            success, invoice_email, message = send_invoice_email(
-                invoice=test_invoice,
-                recipient_email="client@test.com",
-                sender_user=test_user,
-            )
+        success, invoice_email, message = send_invoice_email(
+            invoice=test_invoice,
+            recipient_email="client@test.com",
+            sender_user=test_user,
+        )
 
-            assert success is True
+        assert success is True
 
-            # Verify status remained 'sent'
-            db.session.refresh(test_invoice)
-            assert test_invoice.status == "sent"
+        # Verify status remained 'sent'
+        db.session.refresh(test_invoice)
+        assert test_invoice.status == "sent"
 
     def test_send_invoice_email_with_email_template(
         self, app, test_invoice, test_user, mock_pdf_generator, mock_mail_send

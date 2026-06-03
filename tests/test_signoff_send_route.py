@@ -16,6 +16,7 @@ import pytest
 from app import db
 from app.models.client import Client
 from app.models.esignature_request import ESignatureRequest, ESignatureStatus
+from app.models.integration import Integration
 from app.models.timesheet_period import TimesheetPeriod, TimesheetPeriodStatus
 from app.models.timesheet_signoff_request import TimesheetSignoffRequest, TimesheetSignoffStatus
 from app.models.timesheet_signoff_template import TimesheetSignoffTemplate
@@ -59,11 +60,16 @@ def send_setup(app, admin_user):
             columns_to_show=["time", "duration", "project", "task", "notes"],
         )
         db.session.add(template)
+        # ESignatureRequest.integration_id is an enforced FK; create the parent
+        # Integration so the e-signature rows below satisfy the constraint.
+        integration = Integration(name="DocuSeal", provider="docuseal", user_id=admin_user.id)
+        db.session.add(integration)
         db.session.commit()
         return {
             "period_id": period.id,
             "client_id": client_obj.id,
             "template_id": template.id,
+            "integration_id": integration.id,
         }
 
 
@@ -206,7 +212,7 @@ def test_download_signed_pdf_returns_404_when_file_missing(app, client, admin_us
     """Local artefact file gone (or never captured) → 404."""
     with app.app_context():
         esig = ESignatureRequest(
-            integration_id=1,
+            integration_id=send_setup["integration_id"],
             target_type="TimesheetSignoffRequest",
             target_id="1",
             external_id="ext-x",
@@ -240,7 +246,7 @@ def test_download_coc_returns_404_when_unset(app, client, admin_user, send_setup
     """No audit_certificate_path on the ESignatureRequest → 404."""
     with app.app_context():
         esig = ESignatureRequest(
-            integration_id=1,
+            integration_id=send_setup["integration_id"],
             target_type="TimesheetSignoffRequest",
             target_id="1",
             external_id="ext-y",

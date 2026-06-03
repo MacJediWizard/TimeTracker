@@ -19,3 +19,26 @@ import pytest
 def _service_app_context(app):
     """Provide an active app context to every service-layer test."""
     yield
+
+
+@pytest.fixture
+def other_user(app):
+    """A second non-admin user, distinct from the `user` fixture.
+
+    Used by ownership/access-denied tests that need a different user id than
+    the one owning the entity under test.
+    """
+    from app import db
+    from app.models import User
+
+    existing = User.query.filter_by(username="otheruser").first()
+    if existing:
+        return existing
+
+    user = User(username="otheruser", role="user", email="otheruser@example.com")
+    user.is_active = True
+    user.set_password("password123")
+    db.session.add(user)
+    db.session.commit()
+    db.session.refresh(user)
+    return user

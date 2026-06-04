@@ -3,10 +3,6 @@ Comprehensive tests for user settings routes and functionality.
 Tests settings page rendering, form validation, preference updates, and API endpoints.
 """
 
-import pytest
-import pytz
-from flask import url_for
-
 from app import db
 from app.models import User
 
@@ -81,7 +77,9 @@ class TestUserSettingsUpdate:
             sess["_user_id"] = str(user.id)
 
         response = client.post(
-            "/settings", data={"full_name": "John Doe", "email": "john.doe@example.com"}, follow_redirects=True
+            "/settings",
+            data={"full_name": "John Doe", "email": "john.doe@example.com"},
+            follow_redirects=True,
         )
 
         assert response.status_code == 200
@@ -271,7 +269,11 @@ class TestUserSettingsUpdate:
 
         response = client.post(
             "/settings",
-            data={"time_rounding_enabled": "on", "time_rounding_minutes": "15", "time_rounding_method": "up"},
+            data={
+                "time_rounding_enabled": "on",
+                "time_rounding_minutes": "15",
+                "time_rounding_method": "up",
+            },
             follow_redirects=True,
         )
 
@@ -291,7 +293,10 @@ class TestUserSettingsUpdate:
         for interval in valid_intervals:
             response = client.post(
                 "/settings",
-                data={"time_rounding_enabled": "on", "time_rounding_minutes": str(interval)},
+                data={
+                    "time_rounding_enabled": "on",
+                    "time_rounding_minutes": str(interval),
+                },
                 follow_redirects=True,
             )
 
@@ -308,7 +313,9 @@ class TestUserSettingsUpdate:
 
         for method in valid_methods:
             response = client.post(
-                "/settings", data={"time_rounding_enabled": "on", "time_rounding_method": method}, follow_redirects=True
+                "/settings",
+                data={"time_rounding_enabled": "on", "time_rounding_method": method},
+                follow_redirects=True,
             )
 
             assert response.status_code == 200
@@ -368,7 +375,10 @@ class TestUserSettingsUpdate:
 
         response = client.post(
             "/settings",
-            data={"overtime_calculation_mode": "weekly", "standard_hours_per_week": "0.5"},
+            data={
+                "overtime_calculation_mode": "weekly",
+                "standard_hours_per_week": "0.5",
+            },
             follow_redirects=True,
         )
         assert response.status_code == 200
@@ -376,7 +386,10 @@ class TestUserSettingsUpdate:
 
         response = client.post(
             "/settings",
-            data={"overtime_calculation_mode": "weekly", "standard_hours_per_week": "200"},
+            data={
+                "overtime_calculation_mode": "weekly",
+                "standard_hours_per_week": "200",
+            },
             follow_redirects=True,
         )
         assert response.status_code == 200
@@ -737,8 +750,15 @@ class TestUserSettingsIntegration:
             assert new_user.notification_task_assigned is True
             assert new_user.notification_task_comments is True
             assert new_user.notification_weekly_summary is False
-            assert new_user.date_format == "YYYY-MM-DD"
-            assert new_user.time_format == "24h"
+            # date_format/time_format default to None, meaning "follow the
+            # admin-configured system format". The effective default resolves to
+            # the system values (YYYY-MM-DD / 24h).
+            from app.utils.timezone import get_resolved_date_format_key, get_resolved_time_format_key
+
+            assert new_user.date_format is None
+            assert new_user.time_format is None
+            assert get_resolved_date_format_key(new_user) == "YYYY-MM-DD"
+            assert get_resolved_time_format_key(new_user) == "24h"
             assert new_user.week_start_day == 1
             assert new_user.time_rounding_enabled is True
             assert new_user.time_rounding_minutes == 1

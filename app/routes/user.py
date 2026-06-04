@@ -63,20 +63,6 @@ def settings():
         ("ui_show_analytics", _("Analytics")),
         ("ui_show_tools", _("Tools & Data")),
     ]
-    # Hide a toggle when the feature is disabled system-wide. The system gate is
-    # the matching ui_allow_<feature> attribute on Settings (when present); absent
-    # gates default to allowed so this stays forward-compatible.
-    try:
-        from app.models import Settings
-
-        _sys_settings = Settings.get_settings()
-        ui_visibility_flags = [
-            (flag, label)
-            for flag, label in ui_visibility_flags
-            if getattr(_sys_settings, flag.replace("ui_show_", "ui_allow_", 1), True)
-        ]
-    except Exception:
-        pass
     if request.method == "POST":
         try:
             # Notification preferences

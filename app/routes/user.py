@@ -46,6 +46,37 @@ def profile():
 @login_required
 def settings():
     """User settings and preferences page"""
+    # Feature-visibility toggles exposed in the UI Customization section. Kept as
+    # one list so the form and the POST reconciliation stay in sync; flags absent
+    # from this list keep their default (shown) and are never touched here.
+    ui_visibility_flags = [
+        ("ui_show_inventory", _("Inventory")),
+        ("ui_show_mileage", _("Mileage")),
+        ("ui_show_per_diem", _("Per Diem")),
+        ("ui_show_kanban_board", _("Kanban Board")),
+        ("ui_show_calendar", _("Calendar")),
+        ("ui_show_project_templates", _("Project Templates")),
+        ("ui_show_gantt_chart", _("Gantt Chart")),
+        ("ui_show_weekly_goals", _("Weekly Goals")),
+        ("ui_show_quotes", _("Quotes")),
+        ("ui_show_reports", _("Reports")),
+        ("ui_show_analytics", _("Analytics")),
+        ("ui_show_tools", _("Tools & Data")),
+    ]
+    # Hide a toggle when the feature is disabled system-wide. The system gate is
+    # the matching ui_allow_<feature> attribute on Settings (when present); absent
+    # gates default to allowed so this stays forward-compatible.
+    try:
+        from app.models import Settings
+
+        _sys_settings = Settings.get_settings()
+        ui_visibility_flags = [
+            (flag, label)
+            for flag, label in ui_visibility_flags
+            if getattr(_sys_settings, flag.replace("ui_show_", "ui_allow_", 1), True)
+        ]
+    except Exception:
+        pass
     if request.method == "POST":
         try:
             # Notification preferences
@@ -219,6 +250,17 @@ def settings():
                 else:
                     current_user.weekly_hour_limit_override = None
 
+            # UI Customization visibility flags (checkbox semantics). Only
+            # reconcile when this section was submitted — the hidden marker is
+            # present, or at least one of its flags came through — so other
+            # partial settings posts never wipe a user's feature visibility.
+            if request.form.get("ui_customization") or any(
+                flag in request.form for flag, _label in ui_visibility_flags
+            ):
+                for flag, _label in ui_visibility_flags:
+                    if hasattr(current_user, flag):
+                        setattr(current_user, flag, flag in request.form)
+
             # Save changes
             if safe_commit(db.session):
                 # Log activity
@@ -265,6 +307,7 @@ def settings():
         languages=languages,
         rounding_intervals=rounding_intervals,
         rounding_methods=rounding_methods,
+        ui_visibility_flags=ui_visibility_flags,
     )
 
 

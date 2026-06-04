@@ -90,7 +90,24 @@ class TimesheetSignoffRequest(db.Model):
     esignature_request = db.relationship("ESignatureRequest", foreign_keys=[esignature_request_id])
     creator = db.relationship("User", foreign_keys=[created_by])
 
-    __table_args__ = (db.Index("ix_signoff_requests_period", "period_start", "period_end"),)
+    __table_args__ = (
+        db.Index("ix_signoff_requests_period", "period_start", "period_end"),
+        # Partial unique index: at most one ACTIVE (cancelled_at IS NULL) signoff
+        # per (engineer, client, period). Cancelled rows stay for audit history.
+        # Mirrors the raw-SQL index from migration 158 so create_all() (used by
+        # the test DB) enforces it on SQLite too — both engines support partial
+        # indexes via their respective *_where clause.
+        db.Index(
+            "uq_signoff_active",
+            "engineer_user_id",
+            "client_id",
+            "period_start",
+            "period_end",
+            unique=True,
+            sqlite_where=db.text("cancelled_at IS NULL"),
+            postgresql_where=db.text("cancelled_at IS NULL"),
+        ),
+    )
 
     @property
     def is_active(self) -> bool:

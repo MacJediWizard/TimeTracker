@@ -171,6 +171,13 @@ def app(app_config):
     """
     config = dict(app_config)
     config["SQLALCHEMY_DATABASE_URI"] = "sqlite://"
+    # Route branding-asset uploads to a throwaway temp dir so tests never touch
+    # the production "/data/uploads" path (UPLOAD_FOLDER default), which is absent
+    # or read-only in CI and would 500 the upload routes. Note: logos use the
+    # separate LOGO_UPLOAD_FOLDER (default app/static/uploads/logos); leave that
+    # untouched so per-test logo path-resolution tests keep their expected path.
+    _upload_dir = tempfile.mkdtemp(prefix="timetracker_uploads_")
+    config["UPLOAD_FOLDER"] = _upload_dir
     app = create_app(config)
 
     with app.app_context():
@@ -281,6 +288,13 @@ def app(app_config):
         try:
             if os.path.exists(unique_db_path):
                 os.remove(unique_db_path)
+        except Exception:
+            pass
+        # Remove the throwaway uploads dir
+        try:
+            import shutil
+
+            shutil.rmtree(_upload_dir, ignore_errors=True)
         except Exception:
             pass
 

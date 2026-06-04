@@ -5,7 +5,7 @@ import pytz
 from flask_login import login_user
 
 from app import create_app, db
-from app.models import Project, Settings, TimeEntry, User
+from app.models import Project, Settings, User
 from app.routes.user import update_preferences
 from app.utils.timezone import (
     convert_app_datetime_to_user,
@@ -250,12 +250,22 @@ def test_timezone_settings_update(app):
         assert "America/Los_Angeles" in str(la_time.tzinfo)
 
 
-def test_get_available_timezones_matches_pytz_common():
-    """Ensure available timezone helper mirrors pytz common timezones."""
+def test_get_available_timezones_includes_pytz_common():
+    """The timezone helper returns a sorted tuple of valid IANA zones.
+
+    The app uses the stdlib ``zoneinfo`` database (pytz was removed as a
+    dependency), so the list is the full IANA set rather than pytz's curated
+    ``common_timezones`` subset. Verify the real contract: a sorted tuple that
+    still contains every pytz common zone (nothing important dropped) plus the
+    usual anchors.
+    """
     timezones = get_available_timezones()
     assert isinstance(timezones, tuple)
-    expected = tuple(sorted(pytz.common_timezones))
-    assert timezones == expected
+    assert timezones == tuple(sorted(timezones))
+    assert len(timezones) > 0
+    assert set(pytz.common_timezones).issubset(set(timezones))
+    assert "UTC" in timezones
+    assert "America/New_York" in timezones
 
 
 def test_convert_app_datetime_to_user_respects_user_timezone(app, user):

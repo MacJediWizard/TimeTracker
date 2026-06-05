@@ -383,12 +383,20 @@ jobs:
   # Full Test Suite (runs on all PRs to main/master/rc)
   # ============================================================================
   full-test-suite:
-    name: Full Test Suite with PostgreSQL
+    name: Full Test Suite with PostgreSQL (shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
     needs: [smoke-tests, unit-tests, integration-tests]
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'master' || startsWith(github.base_ref, 'rc')))
     timeout-minutes: 240
-    
+    # Shard the suite across parallel jobs (pytest-split). The per-test
+    # create_app() fixture accumulates memory across a long run, so running the
+    # whole suite in one process OOMs the 7GB hosted runner partway through;
+    # a third of the tests per fresh process keeps each shard within memory.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+
     services:
       postgres:
         image: postgres:16-alpine
@@ -480,7 +488,8 @@ jobs:
           INSTALLATION_CONFIG_DIR: ${{ github.workspace }}/.test_installation_config
         run: |
           pytest -v -n 2 --timeout=120 \
-                 --junitxml=junit.xml --maxfail=10
+                 --splits 4 --group ${{ matrix.shard }} \
+                 --junitxml=junit-${{ matrix.shard }}.xml --maxfail=10
       
       - name: Upload full coverage
         uses: codecov/codecov-action@v4
@@ -488,13 +497,13 @@ jobs:
         with:
           files: ./coverage.xml
           flags: full-suite
-          name: full-test-suite
+          name: full-test-suite-shard-${{ matrix.shard }}
       
       - name: Upload full test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: full-test-results
+          name: full-test-results-shard-${{ matrix.shard }}
           path: |
             htmlcov/
             coverage.xml

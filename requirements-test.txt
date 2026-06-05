@@ -6,6 +6,7 @@ pytest==9.0.3
 pytest-flask==1.3.0
 pytest-cov==4.1.0
 pytest-xdist==3.5.0  # Parallel test execution
+pytest-split==0.11.0  # balanced sharding of the full suite across CI matrix jobs
 pytest-timeout==2.2.0  # Timeout for long-running tests
 pytest-mock==3.12.0  # Mocking support
 pytest-env==1.1.3  # Environment variable management for tests

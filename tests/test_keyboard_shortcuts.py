@@ -6,7 +6,6 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.routes]
 
-from flask import url_for
 
 from app import create_app, db
 from app.models import User
@@ -304,6 +303,12 @@ class TestKeyboardShortcutsPerformance:
     def test_settings_page_loads_quickly(self):
         """Test keyboard shortcuts settings page loads within acceptable time"""
         import time
+
+        # Warm up first: the initial request to a route pays one-time costs
+        # (lazy imports, Jinja template compilation) that don't reflect
+        # steady-state load time and make a hard wall-clock threshold flaky on
+        # shared CI runners. Measure a subsequent request instead.
+        self.client.get("/settings/keyboard-shortcuts")
 
         start = time.time()
         response = self.client.get("/settings/keyboard-shortcuts")

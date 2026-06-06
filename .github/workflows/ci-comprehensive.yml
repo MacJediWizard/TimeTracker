@@ -507,14 +507,14 @@ jobs:
           path: |
             htmlcov/
             coverage.xml
-            junit.xml
+            junit-${{ matrix.shard }}.xml
       
       - name: Publish full test results
         uses: EnricoMi/publish-unit-test-result-action@v2
         if: always()
         with:
-          files: junit.xml
-          check_name: Full Test Suite Results
+          files: junit-${{ matrix.shard }}.xml
+          check_name: Full Test Suite Results (shard ${{ matrix.shard }})
 
   # ============================================================================
   # Test Summary and PR Comment

@@ -279,11 +279,11 @@ def create_app(config=None):
 
     # These listeners attach to GLOBAL session classes, so they persist for the
     # lifetime of the process — NOT per app. create_app() can be called many times
-    # in one process (every test builds a fresh app), so registering unconditionally
-    # would stack a duplicate listener pair on each call. After a few hundred apps
-    # every flush would fire hundreds of identical audit callbacks, turning routine
-    # queries into 100%-CPU hangs. Guard every registration with event.contains so
-    # each (target, identifier, fn) is attached exactly once per process.
+    # in one process (e.g. every test builds a fresh app), so registering
+    # unconditionally stacks a duplicate listener pair on each call. After a few
+    # hundred apps every flush fires hundreds of identical audit callbacks,
+    # turning routine queries into 100%-CPU hangs. Guard every registration with
+    # event.contains so each (target, identifier, fn) is attached exactly once.
     def _listen_once(target, identifier, fn):
         if not event.contains(target, identifier, fn):
             event.listen(target, identifier, fn)

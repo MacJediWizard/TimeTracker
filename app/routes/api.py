@@ -8,30 +8,20 @@ from flask import Blueprint, current_app, jsonify, make_response, request, send_
 from flask_babel import gettext as _
 from flask_login import current_user, login_required
 from sqlalchemy import func, or_
-from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.utils import secure_filename
 
 from app import db, socketio
-from app.models import (
-    Client,
-    FocusSession,
-    Project,
-    RateOverride,
-    RecurringBlock,
-    SavedFilter,
-    Settings,
-    Task,
-    TimeEntry,
-    User,
-)
+from app.models import FocusSession, Project, RecurringBlock, SavedFilter, Task, TimeEntry, User
 from app.models.time_entry import local_now
 from app.services.ai_suggestion_service import AISuggestionService
+from app.services.claude_service import ClaudeService
 from app.services.global_search_service import run_global_search
 from app.services.llm_service import AIServiceError, LLMService
+from app.services.sow_service import SowProvisioningService
 from app.services.time_tracking_service import TimeTrackingService
 from app.utils.api_deprecation import deprecated_session_api
 from app.utils.db import safe_commit
-from app.utils.scope_filter import apply_client_scope, apply_project_scope, user_can_access_project
+from app.utils.scope_filter import user_can_access_project
 from app.utils.timezone import convert_app_datetime_to_user, parse_local_datetime, utc_to_local
 
 api_bp = Blueprint("api", __name__)
@@ -55,9 +45,22 @@ def ai_context_preview():
     try:
         service = LLMService()
         if not service.is_enabled():
-            return jsonify({"ok": False, "error": "AI helper is disabled", "error_code": "ai_disabled"}), 503
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "error": "AI helper is disabled",
+                        "error_code": "ai_disabled",
+                    }
+                ),
+                503,
+            )
         return jsonify(
-            {"ok": True, "context": service.context_preview(current_user), "provider": service.config.public_dict()}
+            {
+                "ok": True,
+                "context": service.context_preview(current_user),
+                "provider": service.config.public_dict(),
+            }
         )
     except AIServiceError as exc:
         return _ai_error_response(exc)
@@ -68,7 +71,16 @@ def ai_context_preview():
 def ai_test_connection():
     """Test the configured AI provider. Admins/settings managers can use this from settings."""
     if not (current_user.is_admin or current_user.has_permission("manage_settings")):
-        return jsonify({"ok": False, "error": "Admin permission required", "error_code": "forbidden"}), 403
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": "Admin permission required",
+                    "error_code": "forbidden",
+                }
+            ),
+            403,
+        )
     try:
         return jsonify(LLMService().test_connection())
     except AIServiceError as exc:
@@ -95,8 +107,122 @@ def ai_confirm_action():
     try:
         service = LLMService()
         if not service.is_enabled():
-            return jsonify({"ok": False, "error": "AI helper is disabled", "error_code": "ai_disabled"}), 503
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "error": "AI helper is disabled",
+                        "error_code": "ai_disabled",
+                    }
+                ),
+                503,
+            )
         result = service.confirm_action(current_user, data.get("action") or {})
+        return jsonify(result)
+    except AIServiceError as exc:
+        return _ai_error_response(exc)
+
+
+def _can_provision_sow(user) -> bool:
+    """SOW provisioning creates clients/projects/tasks — gate to admins or project managers."""
+    return bool(user.is_admin or user.has_permission("create_projects") or user.has_permission("manage_settings"))
+
+
+def _extract_sow_input(req):
+    """Pull SOW input from a request: multipart file (PDF/DOCX/TXT) or JSON sow_text.
+
+    Returns (sow_text, pdf_bytes). PDFs are sent to Claude natively; DOCX/TXT are
+    extracted to text server-side.
+    """
+    upload = req.files.get("file") if req.files else None
+    if upload and upload.filename:
+        filename = (upload.filename or "").lower()
+        data = upload.read()
+        content_type = (upload.mimetype or "").lower()
+        if filename.endswith(".pdf") or content_type == "application/pdf":
+            return None, data
+        if filename.endswith(".docx") or "officedocument.wordprocessingml" in content_type:
+            return _extract_docx_text(data), None
+        # Plain text / markdown / unknown — best-effort decode.
+        try:
+            return data.decode("utf-8", errors="replace"), None
+        except Exception as exc:  # pragma: no cover - decode guard
+            raise AIServiceError("Could not read the uploaded file.", "validation_error", 400) from exc
+
+    payload = req.get_json(silent=True) or {}
+    return (payload.get("sow_text") or payload.get("text") or ""), None
+
+
+def _extract_docx_text(data: bytes) -> str:
+    import io
+
+    try:
+        import docx  # python-docx
+    except ImportError as exc:
+        raise AIServiceError("DOCX support is unavailable on the server.", "docx_unavailable", 500) from exc
+    try:
+        document = docx.Document(io.BytesIO(data))
+    except Exception as exc:
+        raise AIServiceError("Could not read the DOCX file.", "validation_error", 400) from exc
+    return "\n".join(p.text for p in document.paragraphs if p.text)
+
+
+@api_bp.route("/api/ai/sow/test", methods=["POST"])
+@login_required
+def sow_test_connection():
+    """Test the configured Claude provider from the settings UI."""
+    if not (current_user.is_admin or current_user.has_permission("manage_settings")):
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": "Admin permission required",
+                    "error_code": "forbidden",
+                }
+            ),
+            403,
+        )
+    try:
+        return jsonify(ClaudeService().test_connection())
+    except AIServiceError as exc:
+        return _ai_error_response(exc)
+
+
+@api_bp.route("/api/ai/sow/parse", methods=["POST"])
+@login_required
+def sow_parse():
+    """Parse an SOW (pasted text or uploaded PDF/DOCX) into a structured plan. No DB writes."""
+    if not _can_provision_sow(current_user):
+        return jsonify({"ok": False, "error": "Permission required", "error_code": "forbidden"}), 403
+    try:
+        sow_text, pdf_bytes = _extract_sow_input(request)
+        result = ClaudeService().parse_sow(sow_text=sow_text, pdf_bytes=pdf_bytes)
+        return jsonify({"ok": True, **result})
+    except AIServiceError as exc:
+        return _ai_error_response(exc)
+
+
+@api_bp.route("/api/ai/sow/provision", methods=["POST"])
+@login_required
+def sow_provision():
+    """Provision a project + kanban + tasks from a confirmed (and editable) SOW plan."""
+    if not _can_provision_sow(current_user):
+        return jsonify({"ok": False, "error": "Permission required", "error_code": "forbidden"}), 403
+    data = request.get_json(silent=True) or {}
+    plan = data.get("plan")
+    if not isinstance(plan, dict):
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": "A SOW plan is required",
+                    "error_code": "validation_error",
+                }
+            ),
+            400,
+        )
+    try:
+        result = SowProvisioningService().provision(plan, created_by=current_user.id)
         return jsonify(result)
     except AIServiceError as exc:
         return _ai_error_response(exc)
@@ -148,7 +274,12 @@ def _ai_parse_suggestion_array(content):
 def ai_suggest():
     """Return AI-powered time entry suggestions (deterministic, optionally LLM-enhanced)."""
     q = (request.args.get("q") or "").strip()
-    rich = (request.args.get("rich") or "").strip().lower() in {"1", "true", "yes", "on"}
+    rich = (request.args.get("rich") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
     suggestions = []
 
@@ -550,7 +681,11 @@ def api_stop_timer():
 
     socketio.emit(
         "timer_stopped",
-        {"user_id": current_user.id, "timer_id": entry.id, "duration": entry.duration_formatted},
+        {
+            "user_id": current_user.id,
+            "timer_id": entry.id,
+            "duration": entry.duration_formatted,
+        },
     )
 
     try:
@@ -560,7 +695,13 @@ def api_stop_timer():
     except Exception as e:
         current_app.logger.debug("Slack notify failed: %s", e)
 
-    return jsonify({"success": True, "duration": entry.duration_formatted, "duration_hours": entry.duration_hours})
+    return jsonify(
+        {
+            "success": True,
+            "duration": entry.duration_formatted,
+            "duration_hours": entry.duration_hours,
+        }
+    )
 
 
 # --- Idle control: stop at specific time ---
@@ -609,7 +750,11 @@ def api_stop_timer_at():
 
     socketio.emit(
         "timer_stopped",
-        {"user_id": current_user.id, "timer_id": active_timer.id, "duration": active_timer.duration_formatted},
+        {
+            "user_id": current_user.id,
+            "timer_id": active_timer.id,
+            "duration": active_timer.duration_formatted,
+        },
     )
 
     return jsonify({"success": True, "duration": active_timer.duration_formatted})
@@ -829,7 +974,11 @@ def _forecast_cache_get(project_id: int, kind: str):
 
 def _forecast_cache_set(project_id: int, kind: str, payload: dict) -> None:
     try:
-        _FORECAST_CACHE[int(project_id)] = (datetime.utcnow().timestamp(), payload, kind)
+        _FORECAST_CACHE[int(project_id)] = (
+            datetime.utcnow().timestamp(),
+            payload,
+            kind,
+        )
     except (TypeError, ValueError):
         return
 
@@ -980,7 +1129,13 @@ def focus_sessions_summary():
     total = len(sessions)
     cycles = sum(s.cycles_completed or 0 for s in sessions)
     interrupts = sum(s.interruptions or 0 for s in sessions)
-    return jsonify({"total_sessions": total, "cycles_completed": cycles, "interruptions": interrupts})
+    return jsonify(
+        {
+            "total_sessions": total,
+            "cycles_completed": cycles,
+            "interruptions": interrupts,
+        }
+    )
 
 
 @api_bp.route("/api/recurring-blocks", methods=["GET", "POST"])
@@ -1054,7 +1209,15 @@ def recurring_block_update_delete(block_id):
         return jsonify({"success": True})
 
     data = request.get_json() or {}
-    for field in ["name", "recurrence", "weekdays", "start_time_local", "end_time_local", "notes", "tags"]:
+    for field in [
+        "name",
+        "recurrence",
+        "weekdays",
+        "start_time_local",
+        "end_time_local",
+        "notes",
+        "tags",
+    ]:
         if field in data:
             setattr(block, field, (data.get(field) or "").strip())
     for field in ["project_id", "task_id"]:
@@ -1092,7 +1255,13 @@ def saved_filters_list_create():
     is_shared = bool(data.get("is_shared", False))
     if not name:
         return jsonify({"error": "name is required"}), 400
-    filt = SavedFilter(user_id=current_user.id, name=name, scope=scope, payload=payload, is_shared=is_shared)
+    filt = SavedFilter(
+        user_id=current_user.id,
+        name=name,
+        scope=scope,
+        payload=payload,
+        is_shared=is_shared,
+    )
     db.session.add(filt)
     if not safe_commit("create_saved_filter", {"name": name, "scope": scope}):
         return jsonify({"error": "Database error while creating saved filter"}), 500
@@ -1116,7 +1285,6 @@ def delete_saved_filter(filter_id):
 @deprecated_session_api("/api/v1/time-entries")
 def create_entry():
     """Create a finished time entry (used by calendar drag-create)."""
-    from app.models import Client
 
     data = request.get_json() or {}
     project_id = data.get("project_id")
@@ -1203,7 +1371,10 @@ def create_entry():
         from app.utils.cache import invalidate_dashboard_for_user
 
         invalidate_dashboard_for_user(entry.user_id)
-        current_app.logger.debug("Invalidated dashboard cache for user %s after entry creation", entry.user_id)
+        current_app.logger.debug(
+            "Invalidated dashboard cache for user %s after entry creation",
+            entry.user_id,
+        )
     except Exception as e:
         current_app.logger.warning("Failed to invalidate dashboard cache: %s", e)
 
@@ -1396,7 +1567,11 @@ def calendar_events():
     return jsonify(
         {
             "events": all_items,
-            "summary": {"calendar_events": len(events), "tasks": len(tasks), "time_entries": len(time_entries)},
+            "summary": {
+                "calendar_events": len(events),
+                "tasks": len(tasks),
+                "time_entries": len(time_entries),
+            },
         }
     )
 
@@ -1432,7 +1607,10 @@ def calendar_export():
 
     # Build query
     q = TimeEntry.query.filter(TimeEntry.user_id == current_user.id)
-    q = q.filter(TimeEntry.start_time < end_dt, (TimeEntry.end_time.is_(None)) | (TimeEntry.end_time > start_dt))
+    q = q.filter(
+        TimeEntry.start_time < end_dt,
+        (TimeEntry.end_time.is_(None)) | (TimeEntry.end_time > start_dt),
+    )
     if project_id:
         q = q.filter(TimeEntry.project_id == project_id)
 
@@ -1445,7 +1623,17 @@ def calendar_export():
         output = StringIO()
         writer = csv.writer(output)
         writer.writerow(
-            ["Date", "Start Time", "End Time", "Project", "Task", "Duration (hours)", "Notes", "Tags", "Billable"]
+            [
+                "Date",
+                "Start Time",
+                "End Time",
+                "Project",
+                "Task",
+                "Duration (hours)",
+                "Notes",
+                "Tags",
+                "Billable",
+            ]
         )
 
         for entry in items:
@@ -1468,7 +1656,7 @@ def calendar_export():
         response = make_response(output.getvalue())
         response.headers["Content-Type"] = "text/csv"
         response.headers["Content-Disposition"] = (
-            f'attachment; filename=calendar_export_{start_dt.strftime("%Y%m%d")}_to_{end_dt.strftime("%Y%m%d")}.csv'
+            f"attachment; filename=calendar_export_{start_dt.strftime('%Y%m%d')}_to_{end_dt.strftime('%Y%m%d')}.csv"
         )
         return response
 
@@ -1498,17 +1686,17 @@ def calendar_export():
                 description.append(f"Notes: {entry.notes}")
             if entry.tags:
                 description.append(f"Tags: {entry.tags}")
-            description.append(f'Billable: {"Yes" if entry.billable else "No"}')
+            description.append(f"Billable: {'Yes' if entry.billable else 'No'}")
 
             ical_lines.extend(
                 [
                     "BEGIN:VEVENT",
                     f"UID:{entry.id}@timetracker",
-                    f'DTSTAMP:{datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")}',
-                    f'DTSTART:{start_local.strftime("%Y%m%dT%H%M%S") if start_local else entry.start_time.strftime("%Y%m%dT%H%M%S")}',
-                    f'DTEND:{end_local.strftime("%Y%m%dT%H%M%S") if end_local else entry.end_time.strftime("%Y%m%dT%H%M%S")}',
+                    f"DTSTAMP:{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}",
+                    f"DTSTART:{start_local.strftime('%Y%m%dT%H%M%S') if start_local else entry.start_time.strftime('%Y%m%dT%H%M%S')}",
+                    f"DTEND:{end_local.strftime('%Y%m%dT%H%M%S') if end_local else entry.end_time.strftime('%Y%m%dT%H%M%S')}",
                     f"SUMMARY:{title}",
-                    f'DESCRIPTION:{" | ".join(description)}',
+                    f"DESCRIPTION:{' | '.join(description)}",
                     "END:VEVENT",
                 ]
             )
@@ -1518,7 +1706,7 @@ def calendar_export():
         response = make_response("\r\n".join(ical_lines))
         response.headers["Content-Type"] = "text/calendar"
         response.headers["Content-Disposition"] = (
-            f'attachment; filename=calendar_export_{start_dt.strftime("%Y%m%d")}_to_{end_dt.strftime("%Y%m%d")}.ics'
+            f"attachment; filename=calendar_export_{start_dt.strftime('%Y%m%d')}_to_{end_dt.strftime('%Y%m%d')}.ics"
         )
         return response
 
@@ -1572,7 +1760,10 @@ def create_task_inline():
     """Create a new task via AJAX with default values"""
     # Detect AJAX/JSON request
     try:
-        is_classic_form = request.mimetype in ("application/x-www-form-urlencoded", "multipart/form-data")
+        is_classic_form = request.mimetype in (
+            "application/x-www-form-urlencoded",
+            "multipart/form-data",
+        )
     except Exception:
         is_classic_form = False
 
@@ -1656,7 +1847,9 @@ def create_task_inline():
             priority="medium",
         )
         track_event(
-            current_user.id, "task.created", {"task_id": task.id, "project_id": project_id, "priority": "medium"}
+            current_user.id,
+            "task.created",
+            {"task_id": task.id, "project_id": project_id, "priority": "medium"},
         )
 
         Activity.log(
@@ -1672,7 +1865,17 @@ def create_task_inline():
         )
 
         if wants_json:
-            return jsonify({"success": True, "id": task.id, "name": task.name, "task": task.to_dict()}), 201
+            return (
+                jsonify(
+                    {
+                        "success": True,
+                        "id": task.id,
+                        "name": task.name,
+                        "task": task.to_dict(),
+                    }
+                ),
+                201,
+            )
         from flask import flash, redirect, url_for
 
         flash(_('Task "%(name)s" created successfully', name=name), "success")
@@ -1972,7 +2175,10 @@ def delete_entry(entry_id):
         from app.utils.cache import invalidate_dashboard_for_user
 
         invalidate_dashboard_for_user(current_user.id)
-        current_app.logger.debug("Invalidated dashboard cache for user %s after entry deletion", current_user.id)
+        current_app.logger.debug(
+            "Invalidated dashboard cache for user %s after entry deletion",
+            current_user.id,
+        )
     except Exception as e:
         current_app.logger.warning("Failed to invalidate dashboard cache: %s", e)
 
@@ -2081,7 +2287,6 @@ def serve_editor_image(filename):
 @deprecated_session_api("/api/v1/activities")
 def get_activities():
     """Get recent activities with filtering"""
-    from sqlalchemy import and_
 
     from app.models import Activity
 
@@ -2148,7 +2353,7 @@ def get_activities():
 @login_required
 def dashboard_stats():
     """Get dashboard statistics for real-time updates"""
-    from datetime import datetime, timedelta
+    from datetime import datetime
 
     from app.models import TimeEntry
     from app.utils.overtime import calculate_period_overtime, get_overtime_ytd, get_week_start_for_date
@@ -2201,10 +2406,13 @@ def dashboard_sparklines():
     # Get daily totals for last 7 days
     daily_totals = (
         db.session.query(
-            func.date(TimeEntry.start_time).label("date"), func.sum(TimeEntry.duration_seconds).label("total_seconds")
+            func.date(TimeEntry.start_time).label("date"),
+            func.sum(TimeEntry.duration_seconds).label("total_seconds"),
         )
         .filter(
-            TimeEntry.user_id == current_user.id, TimeEntry.end_time.isnot(None), TimeEntry.start_time >= seven_days_ago
+            TimeEntry.user_id == current_user.id,
+            TimeEntry.end_time.isnot(None),
+            TimeEntry.start_time >= seven_days_ago,
         )
         .group_by(func.date(TimeEntry.start_time))
         .order_by(func.date(TimeEntry.start_time))

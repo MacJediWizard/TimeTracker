@@ -90,6 +90,10 @@ TimeTracker has been continuously enhanced with powerful new features! Here's wh
 
 **Current version** is defined in `setup.py` (single source of truth). See [CHANGELOG.md](CHANGELOG.md) for versioned release history.
 
+### ✨ Fork additions
+
+- 🪄 **SOW auto-provisioning (Claude API)** — Paste or upload a Statement of Work (text/PDF/DOCX); Claude parses it into a structured plan that you review and edit, then provisions a **Client, Project, Kanban board, and Tasks** in one step. Includes a dedicated Claude provider in **Settings → Claude / SOW** with selectable model and effort. ([docs](docs/features/SOW_AUTO_PROVISIONING.md))
+
 ### ✨ Highlights of v5.8.2
 
 **Patch (5.8.2):** **Invoice expenses** — billable expenses from the Expenses module link to the invoice Expenses section (not invoice items), stay separate with their descriptions, and are no longer wiped when adding expenses to an existing invoice. See [CHANGELOG.md](CHANGELOG.md#582---2026-06-15).

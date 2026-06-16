@@ -1393,6 +1393,7 @@ def settings():
     timezones = get_available_timezones()
     peppol_env_enabled = (os.getenv("PEPPOL_ENABLED", "false") or "").strip().lower() in {"1", "true", "yes", "y", "on"}
     ai_config = settings_obj.get_ai_config()
+    claude_config = settings_obj.get_claude_config()
 
     # Sync analytics preference from installation config to database on load
     # (installation config is the source of truth for telemetry)
@@ -1426,6 +1427,7 @@ def settings():
                 kiosk_settings=kiosk_settings,
                 peppol_env_enabled=peppol_env_enabled,
                 ai_config=ai_config,
+                claude_config=claude_config,
                 system_instance_id=system_instance_id,
             )
 
@@ -1476,6 +1478,7 @@ def settings():
                 kiosk_settings=kiosk_settings,
                 peppol_env_enabled=peppol_env_enabled,
                 ai_config=ai_config,
+                claude_config=claude_config,
                 system_instance_id=system_instance_id,
             )
         # #region agent log
@@ -1514,7 +1517,13 @@ def settings():
         quote_start_number_form = request.form.get("quote_start_number", 1)
         is_valid_quote_pattern, quote_pattern_error = validate_invoice_pattern(quote_number_pattern_form)
         if not is_valid_quote_pattern:
-            flash(_("Invalid quote number pattern: %(reason)s", reason=quote_pattern_error), "error")
+            flash(
+                _(
+                    "Invalid quote number pattern: %(reason)s",
+                    reason=quote_pattern_error,
+                ),
+                "error",
+            )
             system_instance_id = Settings.get_system_instance_id()
             return render_template(
                 "admin/settings.html",
@@ -1523,6 +1532,7 @@ def settings():
                 kiosk_settings=kiosk_settings,
                 peppol_env_enabled=peppol_env_enabled,
                 ai_config=ai_config,
+                claude_config=claude_config,
                 system_instance_id=system_instance_id,
             )
         settings_obj.quote_prefix = quote_prefix_form
@@ -1651,6 +1661,36 @@ def settings():
         except AttributeError:
             pass
 
+        # Update Claude API provider settings (SOW auto-provisioning; key stays server-side)
+        try:
+            from app.services.claude_service import normalize_effort, normalize_model
+
+            claude_enabled_mode = (request.form.get("claude_enabled_mode") or "env").strip().lower()
+            if claude_enabled_mode == "true":
+                settings_obj.claude_enabled = True
+            elif claude_enabled_mode == "false":
+                settings_obj.claude_enabled = False
+            else:
+                settings_obj.claude_enabled = None
+
+            claude_model = normalize_model(request.form.get("claude_model"))
+            settings_obj.claude_model = claude_model
+            settings_obj.claude_effort = normalize_effort(request.form.get("claude_effort"), model=claude_model)
+            if request.form.get("claude_clear_api_key") == "on":
+                settings_obj.set_secret("claude_api_key", "")
+            else:
+                claude_api_key = (request.form.get("claude_api_key") or "").strip()
+                if claude_api_key:
+                    settings_obj.set_secret("claude_api_key", claude_api_key)
+            try:
+                settings_obj.claude_timeout_seconds = max(
+                    5, min(600, int(request.form.get("claude_timeout_seconds") or 120))
+                )
+            except (TypeError, ValueError):
+                settings_obj.claude_timeout_seconds = None
+        except AttributeError:
+            pass
+
         # Update privacy and analytics settings
         allow_analytics = request.form.get("allow_analytics") == "on"
         old_analytics_state = settings_obj.allow_analytics
@@ -1686,6 +1726,7 @@ def settings():
                 kiosk_settings=kiosk_settings,
                 peppol_env_enabled=peppol_env_enabled,
                 ai_config=ai_config,
+                claude_config=claude_config,
                 system_instance_id=system_instance_id,
             )
         # #region agent log
@@ -1726,6 +1767,7 @@ def settings():
 
     system_instance_id = Settings.get_system_instance_id()
     ai_config = settings_obj.get_ai_config()
+    claude_config = settings_obj.get_claude_config()
     return render_template(
         "admin/settings.html",
         settings=settings_obj,
@@ -1733,6 +1775,7 @@ def settings():
         kiosk_settings=kiosk_settings,
         peppol_env_enabled=peppol_env_enabled,
         ai_config=ai_config,
+        claude_config=claude_config,
         system_instance_id=system_instance_id,
     )
 

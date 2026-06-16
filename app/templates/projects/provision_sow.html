@@ -1,0 +1,274 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _('Provision from SOW') }} - {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
+    <div>
+        <h1 class="text-2xl font-bold">{{ _('Provision from SOW') }}</h1>
+        <p class="text-text-muted-light dark:text-text-muted-dark">{{ _('Paste or upload a Statement of Work. Claude drafts a project, tasks, and a Kanban board for you to review before anything is created.') }}</p>
+    </div>
+    <a href="{{ url_for('projects.list_projects') }}" class="bg-gray-200 dark:bg-gray-700 px-4 py-2 rounded-lg mt-4 md:mt-0">{{ _('Back to Projects') }}</a>
+</div>
+
+<div class="space-y-6">
+    <!-- Step 1: input -->
+    <div class="bg-card-light dark:bg-card-dark p-6 rounded-xl border border-border-light dark:border-border-dark shadow-sm">
+        <h2 class="text-lg font-semibold mb-4">{{ _('1. Statement of Work') }}</h2>
+        <div class="space-y-4">
+            <div>
+                <label for="sow_text" class="form-label">{{ _('Paste SOW text') }}</label>
+                <textarea id="sow_text" rows="10" class="form-input font-mono text-sm" placeholder="{{ _('Paste the full Statement of Work here...') }}"></textarea>
+            </div>
+            <div>
+                <label for="sow_file" class="form-label">{{ _('...or upload a file (PDF / DOCX / TXT)') }}</label>
+                <input type="file" id="sow_file" accept=".pdf,.docx,.txt,.md,application/pdf" class="form-input">
+            </div>
+            <div class="flex flex-wrap items-center gap-3">
+                <button type="button" id="parseSowBtn" class="bg-primary text-white px-4 py-2 rounded-lg text-sm font-medium">{{ _('Parse with Claude') }}</button>
+                <span id="parseStatus" class="text-sm text-text-muted-light dark:text-text-muted-dark"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 2: editable preview -->
+    <div id="previewSection" class="bg-card-light dark:bg-card-dark p-6 rounded-xl border border-border-light dark:border-border-dark shadow-sm hidden">
+        <h2 class="text-lg font-semibold mb-4">{{ _('2. Review &amp; edit the plan') }}</h2>
+
+        <h3 class="font-semibold mb-2">{{ _('Client') }}</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div><label class="form-label">{{ _('Name') }}</label><input type="text" data-client="name" class="form-input"></div>
+            <div><label class="form-label">{{ _('Contact') }}</label><input type="text" data-client="contact_person" class="form-input"></div>
+            <div><label class="form-label">{{ _('Email') }}</label><input type="text" data-client="email" class="form-input"></div>
+            <div><label class="form-label">{{ _('Default hourly rate') }}</label><input type="number" step="0.01" data-client="default_hourly_rate" class="form-input"></div>
+        </div>
+
+        <h3 class="font-semibold mb-2">{{ _('Project') }}</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div><label class="form-label">{{ _('Name') }}</label><input type="text" data-project="name" class="form-input"></div>
+            <div><label class="form-label">{{ _('Code') }}</label><input type="text" data-project="code" class="form-input"></div>
+            <div class="md:col-span-2"><label class="form-label">{{ _('Description') }}</label><textarea rows="2" data-project="description" class="form-input"></textarea></div>
+            <div><label class="form-label">{{ _('Hourly rate') }}</label><input type="number" step="0.01" data-project="hourly_rate" class="form-input"></div>
+            <div><label class="form-label">{{ _('Budget') }}</label><input type="number" step="0.01" data-project="budget_amount" class="form-input"></div>
+            <div><label class="form-label">{{ _('Start date') }}</label><input type="date" data-project="start_date" class="form-input"></div>
+            <div><label class="form-label">{{ _('End date') }}</label><input type="date" data-project="end_date" class="form-input"></div>
+            <div class="flex items-center gap-2 mt-2">
+                <input type="checkbox" data-project="billable" id="proj_billable" class="h-4 w-4 rounded border-gray-300 text-indigo-600">
+                <label for="proj_billable" class="text-sm">{{ _('Billable') }}</label>
+            </div>
+        </div>
+
+        <div class="flex items-center justify-between mb-2">
+            <h3 class="font-semibold">{{ _('Tasks') }}</h3>
+            <button type="button" id="addTaskBtn" class="text-sm text-primary">+ {{ _('Add task') }}</button>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+                <thead>
+                    <tr class="text-left text-text-muted-light dark:text-text-muted-dark">
+                        <th class="py-2 pr-2">{{ _('Name') }}</th>
+                        <th class="py-2 pr-2">{{ _('Status') }}</th>
+                        <th class="py-2 pr-2">{{ _('Priority') }}</th>
+                        <th class="py-2 pr-2">{{ _('Est. hours') }}</th>
+                        <th class="py-2 pr-2">{{ _('Due date') }}</th>
+                        <th class="py-2 pr-2"></th>
+                    </tr>
+                </thead>
+                <tbody id="taskRows"></tbody>
+            </table>
+        </div>
+
+        <div class="mt-6 flex flex-wrap items-center gap-3">
+            <button type="button" id="provisionBtn" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium">{{ _('Create project, tasks &amp; board') }}</button>
+            <span id="provisionStatus" class="text-sm text-text-muted-light dark:text-text-muted-dark"></span>
+        </div>
+    </div>
+</div>
+
+<template id="taskRowTemplate">
+    <tr class="border-t border-border-light dark:border-border-dark">
+        <td class="py-1 pr-2"><input type="text" data-task="name" class="form-input"></td>
+        <td class="py-1 pr-2">
+            <select data-task="status" class="form-input">
+                <option value="todo">todo</option>
+                <option value="in_progress">in_progress</option>
+                <option value="review">review</option>
+                <option value="done">done</option>
+            </select>
+        </td>
+        <td class="py-1 pr-2">
+            <select data-task="priority" class="form-input">
+                <option value="low">low</option>
+                <option value="medium">medium</option>
+                <option value="high">high</option>
+                <option value="urgent">urgent</option>
+            </select>
+        </td>
+        <td class="py-1 pr-2"><input type="number" step="0.25" data-task="estimated_hours" class="form-input w-24"></td>
+        <td class="py-1 pr-2"><input type="date" data-task="due_date" class="form-input"></td>
+        <td class="py-1 pr-2"><button type="button" class="removeTaskBtn text-red-600 text-sm">&times;</button></td>
+    </tr>
+</template>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const csrf = () => document.querySelector('meta[name="csrf-token"]')?.content || '';
+    const $ = (sel, root) => (root || document).querySelector(sel);
+    const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+
+    const previewSection = $('#previewSection');
+    const taskRows = $('#taskRows');
+    const rowTemplate = $('#taskRowTemplate');
+
+    function setVal(scope, key, value) {
+        const el = $('[data-' + scope + '="' + key + '"]');
+        if (!el) return;
+        if (el.type === 'checkbox') el.checked = !!value;
+        else el.value = (value === null || value === undefined) ? '' : value;
+    }
+    function getVal(el) {
+        if (el.type === 'checkbox') return el.checked;
+        const v = el.value.trim();
+        if (v === '') return null;
+        if (el.type === 'number') { const n = parseFloat(v); return isNaN(n) ? null : n; }
+        return v;
+    }
+
+    function addTaskRow(task) {
+        const frag = rowTemplate.content.cloneNode(true);
+        const row = frag.querySelector('tr');
+        task = task || {};
+        $('[data-task="name"]', row).value = task.name || '';
+        $('[data-task="status"]', row).value = task.status || 'todo';
+        $('[data-task="priority"]', row).value = task.priority || 'medium';
+        $('[data-task="estimated_hours"]', row).value = (task.estimated_hours ?? '');
+        $('[data-task="due_date"]', row).value = task.due_date || '';
+        $('.removeTaskBtn', row).addEventListener('click', () => row.remove());
+        taskRows.appendChild(row);
+    }
+
+    function renderPlan(plan) {
+        const c = plan.client || {}, p = plan.project || {};
+        ['name', 'contact_person', 'email', 'default_hourly_rate'].forEach(k => setVal('client', k, c[k]));
+        ['name', 'code', 'description', 'hourly_rate', 'budget_amount', 'start_date', 'end_date'].forEach(k => setVal('project', k, p[k]));
+        setVal('project', 'billable', p.billable !== false);
+        taskRows.innerHTML = '';
+        (plan.tasks || []).forEach(addTaskRow);
+        previewSection.classList.remove('hidden');
+        previewSection.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function collectPlan() {
+        const plan = { client: {}, project: {}, tasks: [] };
+        $$('[data-client]').forEach(el => { plan.client[el.getAttribute('data-client')] = getVal(el); });
+        $$('[data-project]').forEach(el => { plan.project[el.getAttribute('data-project')] = getVal(el); });
+        plan.project.billable = $('[data-project="billable"]').checked;
+        $$('#taskRows tr').forEach(row => {
+            const t = {};
+            $$('[data-task]', row).forEach(el => { t[el.getAttribute('data-task')] = getVal(el); });
+            if (t.name) plan.tasks.push(t);
+        });
+        return plan;
+    }
+
+    // Build the success message with safe DOM nodes (no innerHTML with server data).
+    function renderProvisionSuccess(status, data) {
+        const projectId = parseInt(data.project && data.project.id, 10);
+        const projectName = (data.project && data.project.name) || '{{ _("project") }}';
+        status.textContent = '';
+        status.appendChild(document.createTextNode('{{ _("Created") }} — '));
+        if (Number.isFinite(projectId)) {
+            const projLink = document.createElement('a');
+            projLink.className = 'text-primary underline';
+            projLink.href = '/projects/' + projectId;
+            projLink.textContent = projectName;
+            status.appendChild(projLink);
+            status.appendChild(document.createTextNode(' (' + (data.task_count || 0) + ' {{ _("tasks") }}). '));
+            const boardLink = document.createElement('a');
+            boardLink.className = 'text-primary underline';
+            boardLink.href = '/kanban?project_ids=' + projectId;
+            boardLink.textContent = '{{ _("Open board") }}';
+            status.appendChild(boardLink);
+        } else {
+            status.appendChild(document.createTextNode(projectName));
+        }
+        status.className = 'text-sm text-green-600 dark:text-green-400';
+    }
+
+    $('#addTaskBtn').addEventListener('click', () => addTaskRow());
+
+    $('#parseSowBtn').addEventListener('click', async function () {
+        const status = $('#parseStatus');
+        const fileInput = $('#sow_file');
+        const text = $('#sow_text').value.trim();
+        if (!text && !(fileInput.files && fileInput.files.length)) {
+            status.textContent = '{{ _("Paste SOW text or choose a file first.") }}';
+            status.className = 'text-sm text-red-600 dark:text-red-400';
+            return;
+        }
+        this.disabled = true;
+        status.textContent = '{{ _("Parsing with Claude...") }}';
+        status.className = 'text-sm text-text-muted-light dark:text-text-muted-dark';
+        try {
+            let opts = { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRFToken': csrf() } };
+            if (fileInput.files && fileInput.files.length) {
+                const fd = new FormData();
+                fd.append('file', fileInput.files[0]);
+                if (text) fd.append('sow_text', text);
+                opts.body = fd;
+            } else {
+                opts.headers['Content-Type'] = 'application/json';
+                opts.body = JSON.stringify({ sow_text: text });
+            }
+            const resp = await fetch('/api/ai/sow/parse', opts);
+            const data = await resp.json().catch(() => ({}));
+            if (resp.ok && data.ok) {
+                renderPlan(data.plan || {});
+                status.textContent = '{{ _("Draft ready — review below.") }}';
+                status.className = 'text-sm text-green-600 dark:text-green-400';
+            } else {
+                status.textContent = data.error || '{{ _("Could not parse the SOW.") }}';
+                status.className = 'text-sm text-red-600 dark:text-red-400';
+            }
+        } catch (e) {
+            status.textContent = '{{ _("Could not parse the SOW.") }}';
+            status.className = 'text-sm text-red-600 dark:text-red-400';
+        } finally {
+            this.disabled = false;
+        }
+    });
+
+    $('#provisionBtn').addEventListener('click', async function () {
+        const status = $('#provisionStatus');
+        const plan = collectPlan();
+        if (!plan.client.name || !plan.project.name) {
+            status.textContent = '{{ _("Client name and project name are required.") }}';
+            status.className = 'text-sm text-red-600 dark:text-red-400';
+            return;
+        }
+        this.disabled = true;
+        status.textContent = '{{ _("Creating...") }}';
+        status.className = 'text-sm text-text-muted-light dark:text-text-muted-dark';
+        try {
+            const resp = await fetch('/api/ai/sow/provision', {
+                method: 'POST', credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+                body: JSON.stringify({ plan: plan })
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (resp.ok && data.ok) {
+                renderProvisionSuccess(status, data);
+            } else {
+                status.textContent = data.error || '{{ _("Provisioning failed.") }}';
+                status.className = 'text-sm text-red-600 dark:text-red-400';
+                this.disabled = false;
+            }
+        } catch (e) {
+            status.textContent = '{{ _("Provisioning failed.") }}';
+            status.className = 'text-sm text-red-600 dark:text-red-400';
+            this.disabled = false;
+        }
+    });
+});
+</script>
+{% endblock %}

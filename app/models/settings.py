@@ -165,6 +165,15 @@ class Settings(db.Model):
     ai_context_limit = db.Column(db.Integer, default=None, nullable=True)
     ai_system_prompt = db.Column(db.Text, default="", nullable=True)
 
+    # Claude API provider configuration (SOW auto-provisioning). Separate from the
+    # AI helper above so Claude can run Opus for SOW work without changing the chat helper.
+    # API key stays server-side and is never serialized.
+    claude_enabled = db.Column(db.Boolean, default=None, nullable=True)
+    claude_api_key = db.Column(db.String(500), default="", nullable=True)
+    claude_model = db.Column(db.String(120), default="", nullable=True)
+    claude_effort = db.Column(db.String(20), default="", nullable=True)
+    claude_timeout_seconds = db.Column(db.Integer, default=None, nullable=True)
+
     # Overtime / time tracking: default daily working hours for new users (e.g. 8.0)
     default_daily_working_hours = db.Column(db.Float, default=8.0, nullable=False)
 
@@ -450,6 +459,56 @@ class Settings(db.Model):
             "timeout_seconds": timeout,
             "context_limit": context_limit,
             "system_prompt": system_prompt,
+        }
+
+    def get_claude_config(self, *, include_secrets: bool = False) -> dict:
+        """Get Claude API provider configuration (SOW auto-provisioning).
+
+        Prefers database settings over environment/app config. Secrets are not
+        returned unless include_secrets=True (server runtime only). The model and
+        effort are normalized against the supported sets in claude_service.
+        """
+        from flask import current_app
+
+        from app.services.claude_service import (
+            DEFAULT_CLAUDE_EFFORT,
+            DEFAULT_CLAUDE_MODEL,
+            normalize_effort,
+            normalize_model,
+        )
+
+        def cfg(name, default=None):
+            try:
+                return current_app.config.get(name, default)
+            except RuntimeError:
+                return getattr(Config, name, default)
+
+        model = normalize_model(
+            (getattr(self, "claude_model", "") or cfg("CLAUDE_MODEL", "") or "").strip() or DEFAULT_CLAUDE_MODEL
+        )
+        effort = normalize_effort(
+            (getattr(self, "claude_effort", "") or cfg("CLAUDE_EFFORT", "") or "").strip() or DEFAULT_CLAUDE_EFFORT,
+            model=model,
+        )
+        timeout = getattr(self, "claude_timeout_seconds", None) or cfg("CLAUDE_TIMEOUT_SECONDS", 120)
+        api_key_raw = (getattr(self, "claude_api_key", "") or cfg("CLAUDE_API_KEY", "") or "").strip()
+        api_key = decrypt_if_needed(api_key_raw) if api_key_raw else ""
+        enabled = getattr(self, "claude_enabled", None)
+        if enabled is None:
+            enabled = bool(cfg("CLAUDE_ENABLED", False))
+
+        try:
+            timeout = max(5, int(timeout))
+        except (TypeError, ValueError):
+            timeout = 120
+
+        return {
+            "enabled": bool(enabled),
+            "model": model,
+            "effort": effort,
+            "api_key": api_key if include_secrets else "",
+            "api_key_set": bool(api_key_raw),
+            "timeout_seconds": timeout,
         }
 
     def get_integration_credentials(self, provider: str, *, include_secrets: bool = True) -> dict:

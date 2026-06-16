@@ -24,7 +24,6 @@ from app.models import (
     Activity,
     Client,
     ExtraGood,
-    KanbanColumn,
     Project,
     ProjectAttachment,
     ProjectCost,
@@ -35,7 +34,7 @@ from app.models import (
 from app.services import ProjectService
 from app.utils.db import safe_commit
 from app.utils.error_handling import safe_log
-from app.utils.permissions import admin_or_permission_required, permission_required
+from app.utils.permissions import admin_or_permission_required
 from app.utils.posthog_funnels import (
     track_onboarding_first_project,
     track_project_setup_basic_info,
@@ -175,6 +174,14 @@ def list_projects():
     )
 
 
+@projects_bp.route("/projects/provision-sow")
+@login_required
+@admin_or_permission_required("create_projects")
+def provision_sow():
+    """Paste/upload a Statement of Work, let Claude parse it, then provision the project."""
+    return render_template("projects/provision_sow.html")
+
+
 @projects_bp.route("/projects/export")
 @login_required
 def export_projects():
@@ -200,7 +207,10 @@ def export_projects():
     if favorites_only:
         query = query.join(
             UserFavoriteProject,
-            db.and_(UserFavoriteProject.project_id == Project.id, UserFavoriteProject.user_id == current_user.id),
+            db.and_(
+                UserFavoriteProject.project_id == Project.id,
+                UserFavoriteProject.user_id == current_user.id,
+            ),
         )
 
     # Filter by status (skip if "all" is selected)
@@ -287,7 +297,7 @@ def export_projects():
         output.getvalue(),
         mimetype="text/csv",
         headers={
-            "Content-Disposition": f'attachment; filename=projects_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+            "Content-Disposition": f"attachment; filename=projects_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         },
     )
 
@@ -337,9 +347,16 @@ def create_project():
         # Validate required fields
         if not name or not client_id:
             flash(_("Project name and client are required"), "error")
-            safe_log(current_app.logger, "warning", "Validation failed: missing required fields for project creation")
+            safe_log(
+                current_app.logger,
+                "warning",
+                "Validation failed: missing required fields for project creation",
+            )
             return render_template(
-                "projects/create.html", clients=clients, only_one_client=only_one_client, single_client=single_client
+                "projects/create.html",
+                clients=clients,
+                only_one_client=only_one_client,
+                single_client=single_client,
             )
 
         # Validate hourly rate
@@ -348,7 +365,10 @@ def create_project():
         except ValueError:
             flash(_("Invalid hourly rate format"), "error")
             return render_template(
-                "projects/create.html", clients=clients, only_one_client=only_one_client, single_client=single_client
+                "projects/create.html",
+                clients=clients,
+                only_one_client=only_one_client,
+                single_client=single_client,
             )
 
         # Validate budgets
@@ -405,7 +425,10 @@ def create_project():
         if not result.get("success"):
             flash(_(result.get("message", "Could not create project")), "error")
             return render_template(
-                "projects/create.html", clients=clients, only_one_client=only_one_client, single_client=single_client
+                "projects/create.html",
+                clients=clients,
+                only_one_client=only_one_client,
+                single_client=single_client,
             )
 
         project = result["project"]
@@ -430,7 +453,10 @@ def create_project():
                 custom_fields[definition.field_key] = field_value
             elif definition.is_mandatory:
                 # Validate mandatory fields
-                flash(_("Custom field '%(field)s' is required", field=definition.label), "error")
+                flash(
+                    _("Custom field '%(field)s' is required", field=definition.label),
+                    "error",
+                )
                 custom_field_definitions = CustomFieldDefinition.get_active_definitions()
                 return render_template(
                     "projects/create.html",
@@ -467,12 +493,22 @@ def create_project():
         track_event(
             current_user.id,
             "project.created",
-            {"project_id": project.id, "project_name": name, "has_client": bool(client_id), "billable": billable},
+            {
+                "project_id": project.id,
+                "project_name": name,
+                "has_client": bool(client_id),
+                "billable": billable,
+            },
         )
 
         # Track project setup funnel steps
         track_project_setup_basic_info(
-            current_user.id, {"has_description": bool(description), "has_code": bool(code), "billable": billable}
+            current_user.id,
+            {
+                "has_description": bool(description),
+                "has_code": bool(code),
+                "billable": billable,
+            },
         )
 
         if hourly_rate or billing_ref or budget_amount:
@@ -486,7 +522,12 @@ def create_project():
             )
 
         track_project_setup_completed(
-            current_user.id, {"project_id": project.id, "billable": billable, "has_budget": bool(budget_amount)}
+            current_user.id,
+            {
+                "project_id": project.id,
+                "billable": billable,
+                "has_budget": bool(budget_amount),
+            },
         )
 
         # Check if this is user's first project (onboarding milestone)
@@ -686,7 +727,10 @@ def project_dashboard(project_id):
         "consumed_amount": project.budget_consumed_amount,
         "remaining_amount": float(project.budget_amount or 0) - project.budget_consumed_amount,
         "percentage": (
-            round((project.budget_consumed_amount / float(project.budget_amount or 1)) * 100, 1)
+            round(
+                (project.budget_consumed_amount / float(project.budget_amount or 1)) * 100,
+                1,
+            )
             if project.budget_amount
             else 0
         ),
@@ -771,7 +815,10 @@ def project_dashboard(project_id):
             Activity.entity_type.in_(["project", "task", "time_entry"]),
             db.or_(
                 Activity.entity_id == project_id,
-                db.and_(Activity.entity_type == "task", Activity.entity_id.in_([t.id for t in all_tasks])),
+                db.and_(
+                    Activity.entity_type == "task",
+                    Activity.entity_id.in_([t.id for t in all_tasks]),
+                ),
             ),
         )
         .order_by(Activity.created_at.desc())
@@ -818,7 +865,11 @@ def project_dashboard(project_id):
         ]
 
     # === Cost Breakdown ===
-    cost_data = {"total_costs": project.total_costs, "billable_costs": project.total_billable_costs, "by_category": {}}
+    cost_data = {
+        "total_costs": project.total_costs,
+        "billable_costs": project.total_billable_costs,
+        "by_category": {},
+    }
 
     if hasattr(ProjectCost, "get_costs_by_category"):
         cost_breakdown = ProjectCost.get_costs_by_category(project_id, start_date, end_date)
@@ -1048,7 +1099,10 @@ def edit_project(project_id):
                 custom_fields[definition.field_key] = field_value
             elif definition.is_mandatory:
                 # Validate mandatory fields
-                flash(_("Custom field '%(field)s' is required", field=definition.label), "error")
+                flash(
+                    _("Custom field '%(field)s' is required", field=definition.label),
+                    "error",
+                )
                 custom_field_definitions = CustomFieldDefinition.get_active_definitions()
                 return render_template(
                     "projects/edit.html",
@@ -1127,8 +1181,17 @@ def archive_project(project_id):
         project.archive(user_id=current_user.id, reason=reason if reason else None)
 
         # Log the archiving
-        log_event("project.archived", user_id=current_user.id, project_id=project.id, reason=reason if reason else None)
-        track_event(current_user.id, "project.archived", {"project_id": project.id, "has_reason": bool(reason)})
+        log_event(
+            "project.archived",
+            user_id=current_user.id,
+            project_id=project.id,
+            reason=reason if reason else None,
+        )
+        track_event(
+            current_user.id,
+            "project.archived",
+            {"project_id": project.id, "has_reason": bool(reason)},
+        )
 
         # Log activity
         Activity.log(
@@ -1282,7 +1345,10 @@ def delete_project(project_id):
 
     db.session.delete(project)
     if not safe_commit("delete_project", {"project_id": project_id_copy}):
-        flash(_("Could not delete project due to a database error. Please check server logs."), "error")
+        flash(
+            _("Could not delete project due to a database error. Please check server logs."),
+            "error",
+        )
         return redirect(url_for("projects.view_project", project_id=project_id_copy))
 
     flash(f'Project "{project_name}" deleted successfully', "success")
@@ -1337,7 +1403,11 @@ def bulk_delete_projects():
             deleted_count += 1
 
             # Log the deletion
-            log_event("project.deleted", user_id=current_user.id, project_id=project_id_for_log)
+            log_event(
+                "project.deleted",
+                user_id=current_user.id,
+                project_id=project_id_for_log,
+            )
             track_event(current_user.id, "project.deleted", {"project_id": project_id_for_log})
 
         except Exception as e:
@@ -1347,16 +1417,22 @@ def bulk_delete_projects():
     # Commit all deletions
     if deleted_count > 0:
         if not safe_commit("bulk_delete_projects", {"count": deleted_count}):
-            flash(_("Could not delete projects due to a database error. Please check server logs."), "error")
+            flash(
+                _("Could not delete projects due to a database error. Please check server logs."),
+                "error",
+            )
             return redirect(url_for("projects.list_projects"))
 
     # Show appropriate messages
     if deleted_count > 0:
-        flash(f'Successfully deleted {deleted_count} project{"s" if deleted_count != 1 else ""}', "success")
+        flash(
+            f"Successfully deleted {deleted_count} project{'s' if deleted_count != 1 else ''}",
+            "success",
+        )
 
     if skipped_count > 0:
         flash(
-            f'Skipped {skipped_count} project{"s" if skipped_count != 1 else ""}: {", ".join(errors[:3])}{"..." if len(errors) > 3 else ""}',
+            f"Skipped {skipped_count} project{'s' if skipped_count != 1 else ''}: {', '.join(errors[:3])}{'...' if len(errors) > 3 else ''}",
             "warning",
         )
 
@@ -1427,8 +1503,16 @@ def bulk_status_change():
             updated_count += 1
 
             # Log the status change
-            log_event(f"project.status_changed_{new_status}", user_id=current_user.id, project_id=project.id)
-            track_event(current_user.id, "project.status_changed", {"project_id": project.id, "new_status": new_status})
+            log_event(
+                f"project.status_changed_{new_status}",
+                user_id=current_user.id,
+                project_id=project.id,
+            )
+            track_event(
+                current_user.id,
+                "project.status_changed",
+                {"project_id": project.id, "new_status": new_status},
+            )
 
             # Log activity
             Activity.log(
@@ -1448,21 +1532,28 @@ def bulk_status_change():
 
     # Commit all changes
     if updated_count > 0:
-        if not safe_commit("bulk_status_change_projects", {"count": updated_count, "status": new_status}):
-            flash(_("Could not update project status due to a database error. Please check server logs."), "error")
+        if not safe_commit(
+            "bulk_status_change_projects",
+            {"count": updated_count, "status": new_status},
+        ):
+            flash(
+                _("Could not update project status due to a database error. Please check server logs."),
+                "error",
+            )
             return redirect(url_for("projects.list_projects"))
 
     # Show appropriate messages
     status_labels = {"active": "active", "inactive": "inactive", "archived": "archived"}
     if updated_count > 0:
         flash(
-            f'Successfully marked {updated_count} project{"s" if updated_count != 1 else ""} as {status_labels.get(new_status, new_status)}',
+            f"Successfully marked {updated_count} project{'s' if updated_count != 1 else ''} as {status_labels.get(new_status, new_status)}",
             "success",
         )
 
     if errors:
         flash(
-            f'Some projects could not be updated: {", ".join(errors[:3])}{"..." if len(errors) > 3 else ""}', "warning"
+            f"Some projects could not be updated: {', '.join(errors[:3])}{'...' if len(errors) > 3 else ''}",
+            "warning",
         )
 
     if updated_count == 0:
@@ -1557,7 +1648,15 @@ def unfavorite_project(project_id):
     except Exception as e:
         current_app.logger.error(f"Error unfavoriting project: {e}")
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-            return jsonify({"success": False, "message": _("Failed to remove project from favorites")}), 500
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "message": _("Failed to remove project from favorites"),
+                    }
+                ),
+                500,
+            )
         flash(_("Failed to remove project from favorites"), "error")
 
     # Redirect back to referrer or project list
@@ -1672,7 +1771,10 @@ def add_cost(project_id):
 
         db.session.add(cost)
         if not safe_commit("add_project_cost", {"project_id": project_id}):
-            flash(_("Could not add cost due to a database error. Please check server logs."), "error")
+            flash(
+                _("Could not add cost due to a database error. Please check server logs."),
+                "error",
+            )
             return render_template("projects/add_cost.html", project=project)
 
         flash(_("Cost added successfully"), "success")
@@ -1739,7 +1841,10 @@ def edit_cost(project_id, cost_id):
         cost.updated_at = datetime.utcnow()
 
         if not safe_commit("edit_project_cost", {"cost_id": cost_id}):
-            flash(_("Could not update cost due to a database error. Please check server logs."), "error")
+            flash(
+                _("Could not update cost due to a database error. Please check server logs."),
+                "error",
+            )
             return render_template("projects/edit_cost.html", project=project, cost=cost)
 
         flash(_("Cost updated successfully"), "success")
@@ -1773,7 +1878,10 @@ def delete_cost(project_id, cost_id):
     cost_description = cost.description
     db.session.delete(cost)
     if not safe_commit("delete_project_cost", {"cost_id": cost_id}):
-        flash(_("Could not delete cost due to a database error. Please check server logs."), "error")
+        flash(
+            _("Could not delete cost due to a database error. Please check server logs."),
+            "error",
+        )
         return redirect(url_for("projects.view_project", project_id=project_id))
 
     flash(_(f'Cost "{cost_description}" deleted successfully'), "success")
@@ -1903,7 +2011,10 @@ def add_good(project_id):
 
         db.session.add(good)
         if not safe_commit("add_project_good", {"project_id": project_id}):
-            flash(_("Could not add extra good due to a database error. Please check server logs."), "error")
+            flash(
+                _("Could not add extra good due to a database error. Please check server logs."),
+                "error",
+            )
             return render_template("projects/add_good.html", project=project)
 
         flash(_("Extra good added successfully"), "success")
@@ -1974,7 +2085,10 @@ def edit_good(project_id, good_id):
         good.update_total()
 
         if not safe_commit("edit_project_good", {"good_id": good_id}):
-            flash(_("Could not update extra good due to a database error. Please check server logs."), "error")
+            flash(
+                _("Could not update extra good due to a database error. Please check server logs."),
+                "error",
+            )
             return render_template("projects/edit_good.html", project=project, good=good)
 
         flash(_("Extra good updated successfully"), "success")
@@ -2008,7 +2122,10 @@ def delete_good(project_id, good_id):
     good_name = good.name
     db.session.delete(good)
     if not safe_commit("delete_project_good", {"good_id": good_id}):
-        flash(_("Could not delete extra good due to a database error. Please check server logs."), "error")
+        flash(
+            _("Could not delete extra good due to a database error. Please check server logs."),
+            "error",
+        )
         return redirect(url_for("projects.view_project", project_id=project_id))
 
     flash(_(f'Extra good "{good_name}" deleted successfully'), "success")
@@ -2045,13 +2162,26 @@ def upload_project_attachment(project_id):
     import os
     from datetime import datetime
 
-    from flask import current_app, send_file
+    from flask import current_app
     from werkzeug.utils import secure_filename
 
     project = Project.query.get_or_404(project_id)
 
     # File upload configuration
-    ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "pdf", "doc", "docx", "txt", "xls", "xlsx", "zip", "rar"}
+    ALLOWED_EXTENSIONS = {
+        "png",
+        "jpg",
+        "jpeg",
+        "gif",
+        "pdf",
+        "doc",
+        "docx",
+        "txt",
+        "xls",
+        "xlsx",
+        "zip",
+        "rar",
+    }
     UPLOAD_FOLDER = "app/static/uploads/project_attachments"
     MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
@@ -2113,8 +2243,14 @@ def upload_project_attachment(project_id):
     db.session.add(attachment)
 
     try:
-        if not safe_commit("upload_project_attachment", {"project_id": project_id, "attachment_id": attachment.id}):
-            flash(_("Could not upload attachment due to a database error. Please check server logs."), "error")
+        if not safe_commit(
+            "upload_project_attachment",
+            {"project_id": project_id, "attachment_id": attachment.id},
+        ):
+            flash(
+                _("Could not upload attachment due to a database error. Please check server logs."),
+                "error",
+            )
             # Clean up uploaded file
             try:
                 os.remove(file_path)
@@ -2127,10 +2263,16 @@ def upload_project_attachment(project_id):
 
         error_str = str(e)
         if "does not exist" in error_str or "relation" in error_str.lower() or isinstance(e, ProgrammingError):
-            flash(_("The attachments feature requires a database migration. Please run: flask db upgrade"), "error")
+            flash(
+                _("The attachments feature requires a database migration. Please run: flask db upgrade"),
+                "error",
+            )
             current_app.logger.error(f"project_attachments table does not exist. Migration required: {e}")
         else:
-            flash(_("Could not upload attachment due to a database error. Please check server logs."), "error")
+            flash(
+                _("Could not upload attachment due to a database error. Please check server logs."),
+                "error",
+            )
             current_app.logger.error(f"Error uploading project attachment: {e}")
         # Clean up uploaded file
         try:
@@ -2149,7 +2291,11 @@ def upload_project_attachment(project_id):
     track_event(
         current_user.id,
         "project.attachment.uploaded",
-        {"project_id": project_id, "attachment_id": attachment.id, "filename": original_filename},
+        {
+            "project_id": project_id,
+            "attachment_id": attachment.id,
+            "filename": original_filename,
+        },
     )
 
     flash(_("Attachment uploaded successfully"), "success")
@@ -2175,7 +2321,10 @@ def download_project_attachment(attachment_id):
         return redirect(url_for("projects.view_project", project_id=project.id))
 
     return send_file(
-        file_path, as_attachment=True, download_name=attachment.original_filename, mimetype=attachment.mime_type
+        file_path,
+        as_attachment=True,
+        download_name=attachment.original_filename,
+        mimetype=attachment.mime_type,
     )
 
 
@@ -2205,7 +2354,10 @@ def delete_project_attachment(attachment_id):
     db.session.delete(attachment)
 
     if not safe_commit("delete_project_attachment", {"attachment_id": attachment_id_for_log}):
-        flash(_("Could not delete attachment due to a database error. Please check server logs."), "error")
+        flash(
+            _("Could not delete attachment due to a database error. Please check server logs."),
+            "error",
+        )
         return redirect(url_for("projects.view_project", project_id=project_id))
 
     log_event(

@@ -2,15 +2,42 @@
 
 from flask import Blueprint, g, jsonify, request
 
+from app.services.claude_service import ClaudeService
 from app.services.llm_service import AIServiceError, LLMService
+from app.services.sow_service import SowProvisioningService
 from app.utils.api_auth import require_api_token
 
 api_v1_ai_bp = Blueprint("api_v1_ai", __name__, url_prefix="/api/v1")
 
 
+def _can_provision_sow(user) -> bool:
+    return bool(user.is_admin or user.has_permission("create_projects") or user.has_permission("manage_settings"))
+
+
+def _forbidden_response():
+    return (
+        jsonify(
+            {
+                "success": False,
+                "error": "Permission required",
+                "message": "Permission required",
+                "error_code": "forbidden",
+            }
+        ),
+        403,
+    )
+
+
 def _ai_error_response(exc: AIServiceError):
     return (
-        jsonify({"success": False, "error": exc.message, "message": exc.message, "error_code": exc.code}),
+        jsonify(
+            {
+                "success": False,
+                "error": exc.message,
+                "message": exc.message,
+                "error_code": exc.code,
+            }
+        ),
         exc.status_code,
     )
 
@@ -18,7 +45,14 @@ def _ai_error_response(exc: AIServiceError):
 def _ai_disabled_response():
     msg = "AI helper is disabled"
     return (
-        jsonify({"success": False, "error": msg, "message": msg, "error_code": "ai_disabled"}),
+        jsonify(
+            {
+                "success": False,
+                "error": msg,
+                "message": msg,
+                "error_code": "ai_disabled",
+            }
+        ),
         503,
     )
 
@@ -31,7 +65,11 @@ def ai_context_preview():
         if not service.is_enabled():
             return _ai_disabled_response()
         return jsonify(
-            {"success": True, "context": service.context_preview(g.api_user), "provider": service.config.public_dict()}
+            {
+                "success": True,
+                "context": service.context_preview(g.api_user),
+                "provider": service.config.public_dict(),
+            }
         )
     except AIServiceError as exc:
         return _ai_error_response(exc)
@@ -57,6 +95,47 @@ def ai_confirm_action():
         if not service.is_enabled():
             return _ai_disabled_response()
         result = service.confirm_action(g.api_user, data.get("action") or {})
+        return jsonify({"success": True, **result})
+    except AIServiceError as exc:
+        return _ai_error_response(exc)
+
+
+@api_v1_ai_bp.route("/ai/sow/parse", methods=["POST"])
+@require_api_token("write:ai")
+def sow_parse():
+    """Parse an SOW (text body) into a structured plan. No DB writes."""
+    if not _can_provision_sow(g.api_user):
+        return _forbidden_response()
+    data = request.get_json(silent=True) or {}
+    try:
+        result = ClaudeService().parse_sow(sow_text=data.get("sow_text") or data.get("text") or "")
+        return jsonify({"success": True, **result})
+    except AIServiceError as exc:
+        return _ai_error_response(exc)
+
+
+@api_v1_ai_bp.route("/ai/sow/provision", methods=["POST"])
+@require_api_token("write:ai")
+def sow_provision():
+    """Provision a project + kanban + tasks from a confirmed SOW plan."""
+    if not _can_provision_sow(g.api_user):
+        return _forbidden_response()
+    data = request.get_json(silent=True) or {}
+    plan = data.get("plan")
+    if not isinstance(plan, dict):
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "A SOW plan is required",
+                    "message": "A SOW plan is required",
+                    "error_code": "validation_error",
+                }
+            ),
+            400,
+        )
+    try:
+        result = SowProvisioningService().provision(plan, created_by=g.api_user.id)
         return jsonify({"success": True, **result})
     except AIServiceError as exc:
         return _ai_error_response(exc)

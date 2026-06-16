@@ -40,6 +40,7 @@
         <a href="#section-ldap" class="px-3 py-1.5 text-xs font-medium rounded-full bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark whitespace-nowrap">LDAP</a>
         <a href="#section-kiosk" class="px-3 py-1.5 text-xs font-medium rounded-full bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark whitespace-nowrap">Kiosk</a>
         <a href="#section-ai" class="px-3 py-1.5 text-xs font-medium rounded-full bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark whitespace-nowrap">AI Helper</a>
+        <a href="#section-claude" class="px-3 py-1.5 text-xs font-medium rounded-full bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark whitespace-nowrap">Claude / SOW</a>
         <a href="#section-analytics" class="px-3 py-1.5 text-xs font-medium rounded-full bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark whitespace-nowrap">Analytics</a>
     </nav>
 </div>
@@ -625,6 +626,61 @@
                 </div>
             </div>
 
+            <!-- Claude API (SOW auto-provisioning) -->
+            <div id="section-claude" class="border-b border-border-light dark:border-border-dark pb-6">
+                <h2 class="text-lg font-semibold mb-4">{{ _('Claude API (SOW auto-provisioning)') }}</h2>
+                <p class="text-sm text-text-muted-light dark:text-text-muted-dark mb-4">
+                    {{ _('Configure the Claude provider used to turn a Statement of Work into a project, tasks, and a Kanban board. The API key stays on the server. This is separate from the AI Helper above.') }}
+                </p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label for="claude_enabled_mode" class="form-label">{{ _('Availability') }}</label>
+                        <select name="claude_enabled_mode" id="claude_enabled_mode" class="form-input">
+                            <option value="env" {% if settings.claude_enabled is none %}selected{% endif %}>{{ _('Use environment default') }} ({{ _('currently') }} {{ 'on' if claude_config.enabled else 'off' }})</option>
+                            <option value="true" {% if settings.claude_enabled is sameas true %}selected{% endif %}>{{ _('Enabled') }}</option>
+                            <option value="false" {% if settings.claude_enabled is sameas false %}selected{% endif %}>{{ _('Disabled') }}</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="claude_model" class="form-label">{{ _('Model') }}</label>
+                        <select name="claude_model" id="claude_model" class="form-input">
+                            {% for m in claude_config.supported_models %}
+                            <option value="{{ m }}" {% if claude_config.model == m %}selected{% endif %}>{{ m }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label for="claude_effort" class="form-label">{{ _('Effort') }}</label>
+                        <select name="claude_effort" id="claude_effort" class="form-input">
+                            {% for e in ['low', 'medium', 'high', 'xhigh', 'max'] %}
+                            <option value="{{ e }}" data-opus-only="{{ 'true' if e in ['xhigh', 'max'] else 'false' }}" {% if claude_config.effort == e %}selected{% endif %}>{{ e }}</option>
+                            {% endfor %}
+                        </select>
+                        <p class="mt-1 text-xs text-text-muted-light dark:text-text-muted-dark">{{ _('xhigh / max are Opus-only. Haiku ignores effort.') }}</p>
+                    </div>
+                    <div>
+                        <label for="claude_api_key" class="form-label">{{ _('Anthropic API key') }}</label>
+                        <input type="password" name="claude_api_key" id="claude_api_key" value="" placeholder="{% if claude_config.api_key_set %}{{ _('Stored; leave blank to keep') }}{% else %}sk-ant-...{% endif %}" class="form-input" autocomplete="new-password">
+                        {% if claude_config.api_key_set %}
+                        <label class="mt-2 flex items-center gap-2 text-sm text-text-muted-light dark:text-text-muted-dark">
+                            <input type="checkbox" name="claude_clear_api_key" class="h-4 w-4 rounded border-gray-300 text-indigo-600">
+                            {{ _('Clear stored API key') }}
+                        </label>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <label for="claude_timeout_seconds" class="form-label">{{ _('Timeout seconds') }}</label>
+                        <input type="number" name="claude_timeout_seconds" id="claude_timeout_seconds" value="{{ settings.claude_timeout_seconds or claude_config.timeout_seconds }}" min="5" max="600" class="form-input">
+                    </div>
+                    <div class="md:col-span-2 flex flex-wrap items-center gap-3">
+                        <button type="button" id="claudeTestConnectionBtn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition">
+                            {{ _('Test Claude connection') }}
+                        </button>
+                        <span id="claudeTestConnectionResult" class="text-sm text-text-muted-light dark:text-text-muted-dark"></span>
+                    </div>
+                </div>
+            </div>
+
             <!-- Analytics Settings -->
             <div id="section-analytics">
                 <h2 class="text-lg font-semibold mb-4">{{ _('Privacy & Analytics') }}</h2>
@@ -917,6 +973,61 @@ document.addEventListener('DOMContentLoaded', function() {
                 aiTestResult.className = 'text-sm text-red-600 dark:text-red-400';
             } finally {
                 aiTestBtn.disabled = false;
+            }
+        });
+    }
+
+    // Claude / SOW: gate effort options by selected model (xhigh/max are Opus-only; Haiku has no effort).
+    const claudeModelSelect = document.getElementById('claude_model');
+    const claudeEffortSelect = document.getElementById('claude_effort');
+    function syncClaudeEffort() {
+        if (!claudeModelSelect || !claudeEffortSelect) return;
+        const model = claudeModelSelect.value || '';
+        const isOpus = model.startsWith('claude-opus');
+        const isHaiku = model.indexOf('haiku') !== -1;
+        claudeEffortSelect.disabled = isHaiku;
+        Array.from(claudeEffortSelect.options).forEach(function(opt) {
+            const opusOnly = opt.getAttribute('data-opus-only') === 'true';
+            opt.disabled = opusOnly && !isOpus;
+        });
+        const current = claudeEffortSelect.options[claudeEffortSelect.selectedIndex];
+        if (current && current.disabled) {
+            const high = Array.from(claudeEffortSelect.options).find(function(o) { return o.value === 'high'; });
+            if (high) claudeEffortSelect.value = 'high';
+        }
+    }
+    if (claudeModelSelect) {
+        claudeModelSelect.addEventListener('change', syncClaudeEffort);
+        syncClaudeEffort();
+    }
+
+    const claudeTestBtn = document.getElementById('claudeTestConnectionBtn');
+    const claudeTestResult = document.getElementById('claudeTestConnectionResult');
+    if (claudeTestBtn && claudeTestResult) {
+        claudeTestBtn.addEventListener('click', async function() {
+            claudeTestBtn.disabled = true;
+            claudeTestResult.textContent = '{{ _("Testing connection...") }}';
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+            try {
+                const response = await fetch('/api/ai/sow/test', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                    body: JSON.stringify({})
+                });
+                const data = await response.json().catch(function() { return {}; });
+                if (response.ok && data.ok) {
+                    claudeTestResult.textContent = data.reply || '{{ _("Claude connection succeeded.") }}';
+                    claudeTestResult.className = 'text-sm text-green-600 dark:text-green-400';
+                } else {
+                    claudeTestResult.textContent = data.error || '{{ _("Claude connection failed.") }}';
+                    claudeTestResult.className = 'text-sm text-red-600 dark:text-red-400';
+                }
+            } catch (err) {
+                claudeTestResult.textContent = '{{ _("Claude connection failed.") }}';
+                claudeTestResult.className = 'text-sm text-red-600 dark:text-red-400';
+            } finally {
+                claudeTestBtn.disabled = false;
             }
         });
     }

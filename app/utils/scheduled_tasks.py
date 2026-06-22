@@ -194,6 +194,12 @@ def check_project_budget_alerts():
                         )
                         total_alerts_created += 1
                         logger.info(f"Created {alert_data['type']} alert for project {project.name}")
+                        try:
+                            from app.utils.workflow_bridge import fire_budget_threshold_workflow
+
+                            fire_budget_threshold_workflow(project, alert_data)
+                        except Exception as wf_err:
+                            logger.debug(f"Workflow budget_threshold trigger skipped: {wf_err}")
 
                 except Exception as e:
                     logger.error(f"Error checking budget alerts for project {project.id}: {e}")
@@ -203,6 +209,30 @@ def check_project_budget_alerts():
 
         except Exception as e:
             logger.error(f"Error checking project budget alerts: {e}")
+            return 0
+
+
+def check_task_deadline_approaching():
+    """Notify workflow rules for tasks due tomorrow."""
+    from datetime import date, timedelta
+
+    from app.models import Task
+    from app.utils.workflow_bridge import fire_deadline_approaching_workflow
+
+    with current_app.app_context():
+        try:
+            target_date = date.today() + timedelta(days=1)
+            tasks = Task.query.filter(
+                Task.due_date == target_date,
+                Task.status.notin_(["done", "cancelled"]),
+            ).all()
+            for task in tasks:
+                user_id = task.assigned_to or task.created_by
+                if user_id:
+                    fire_deadline_approaching_workflow(task, user_id)
+            return len(tasks)
+        except Exception as e:
+            logger.error(f"Error checking task deadlines: {e}")
             return 0
 
 
@@ -443,6 +473,17 @@ def register_scheduled_tasks(scheduler, app=None):
             replace_existing=True,
         )
         logger.info("Registered e-signature reconciliation task")
+
+        scheduler.add_job(
+            func=check_task_deadline_approaching,
+            trigger="cron",
+            hour=8,
+            minute=30,
+            id="check_task_deadlines",
+            name="Check approaching task deadlines",
+            replace_existing=True,
+        )
+        logger.info("Registered task deadline workflow check")
 
         # Generate recurring invoices daily at 8 AM
         # Create a closure that captures the app instance
@@ -832,7 +873,11 @@ def send_smart_reminder_push_notifications():
                         sent += _delivered
                 logger.debug("Smart reminder push processed for %s", user.username)
             except Exception as e:
-                logger.warning("Smart reminder push failed for user %s: %s", getattr(user, "username", user.id), e)
+                logger.warning(
+                    "Smart reminder push failed for user %s: %s",
+                    getattr(user, "username", user.id),
+                    e,
+                )
         return sent
 
 
@@ -853,7 +898,10 @@ def _deliver_push_to_subscriptions(user, subscriptions, note) -> int:
     vapid_public = (cfg.get("VAPID_PUBLIC_KEY") or "").strip()
     vapid_claims_email = (cfg.get("VAPID_CONTACT_EMAIL") or cfg.get("MAIL_DEFAULT_SENDER") or "").strip()
     if not vapid_private or not vapid_public:
-        logger.debug("VAPID keys not configured; smart reminder push skipped for %s", user.username)
+        logger.debug(
+            "VAPID keys not configured; smart reminder push skipped for %s",
+            user.username,
+        )
         return 0
 
     import json as _json
@@ -890,9 +938,19 @@ def _deliver_push_to_subscriptions(user, subscriptions, note) -> int:
                 except Exception:
                     db.session.rollback()
             else:
-                logger.warning("Web push failed for %s (endpoint=%s): %s", user.username, sub.endpoint[:60], e)
+                logger.warning(
+                    "Web push failed for %s (endpoint=%s): %s",
+                    user.username,
+                    sub.endpoint[:60],
+                    e,
+                )
         except Exception as e:
-            logger.warning("Web push failed for %s (endpoint=%s): %s", user.username, sub.endpoint[:60], e)
+            logger.warning(
+                "Web push failed for %s (endpoint=%s): %s",
+                user.username,
+                sub.endpoint[:60],
+                e,
+            )
     return delivered
 
 
@@ -1169,10 +1227,33 @@ def sync_integrations():
             try:
                 # Check if auto_sync is enabled (default to True if not set)
                 config = integration.config or {}
-                auto_sync = config.get("auto_sync", True)
+                auto_sync = config.get("auto_sync", False)
 
                 if not auto_sync:
                     logger.debug(f"Skipping integration {integration.id} ({integration.provider}): auto_sync disabled")
+                    continue
+
+                sync_interval = config.get("sync_interval", 60)
+                if sync_interval == "manual":
+                    logger.debug(f"Skipping integration {integration.id}: manual sync_interval")
+                    continue
+                if isinstance(sync_interval, str) and sync_interval.isdigit():
+                    sync_interval = int(sync_interval)
+                if isinstance(sync_interval, (int, float)):
+                    last_run = config.get("last_scheduled_sync_at")
+                    interval_minutes = int(sync_interval)
+                    if last_run:
+                        try:
+                            last_dt = datetime.fromisoformat(last_run.replace("Z", "+00:00"))
+                            if (
+                                datetime.utcnow() - last_dt.replace(tzinfo=None)
+                            ).total_seconds() < interval_minutes * 60:
+                                logger.debug(f"Skipping integration {integration.id}: sync interval not elapsed")
+                                continue
+                        except (ValueError, TypeError):
+                            pass
+                elif sync_interval == "daily" and datetime.utcnow().hour != 2:
+                    logger.debug(f"Skipping integration {integration.id}: daily sync not due")
                     continue
 
                 # Get connector
@@ -1191,6 +1272,9 @@ def sync_integrations():
                     integration.last_sync_at = datetime.utcnow()
                     integration.last_sync_status = "success"
                     integration.last_error = None
+                    cfg = dict(integration.config or {})
+                    cfg["last_scheduled_sync_at"] = datetime.utcnow().isoformat()
+                    integration.config = cfg
                     logger.info(
                         f"Successfully synced integration {integration.id} ({integration.provider}): {result.get('synced_items', 0)} items"
                     )
@@ -1273,10 +1357,18 @@ def sync_google_calendar_for_all_users():
             else:
                 err = result.get("error") or "; ".join(result.get("errors", []) or [])
                 errors.append(f"integration {integration.id}: {err}")
-                logger.warning("Google Calendar sync skipped for integration %s: %s", integration.id, err)
+                logger.warning(
+                    "Google Calendar sync skipped for integration %s: %s",
+                    integration.id,
+                    err,
+                )
         except Exception as exc:
             errors.append(f"integration {integration.id}: {exc}")
-            logger.warning("Google Calendar sync failed for integration %s: %s", integration.id, exc)
+            logger.warning(
+                "Google Calendar sync failed for integration %s: %s",
+                integration.id,
+                exc,
+            )
     logger.info("Google Calendar connector sync: %d ok, %d errors", synced, len(errors))
     return {"ok": True, "synced": synced, "errors": errors}
 

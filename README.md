@@ -94,6 +94,14 @@ TimeTracker has been continuously enhanced with powerful new features! Here's wh
 
 - 🪄 **SOW auto-provisioning (Claude API)** — Paste or upload a Statement of Work (text/PDF/DOCX); Claude parses it into a structured plan that you review and edit, then provisions a **Client, Project, Kanban board, and Tasks** in one step. Includes a dedicated Claude provider in **Settings → Claude / SOW** with selectable model and effort. ([docs](docs/features/SOW_AUTO_PROVISIONING.md))
 
+### ✨ Highlights of v5.8.4
+
+**Patch (5.8.4):** **Workflow template migration** — migration 161 no longer fails on PostgreSQL when seeding starter workflow templates. See [CHANGELOG.md](CHANGELOG.md#584---2026-06-19).
+
+### ✨ Highlights of v5.8.3
+
+**Patch (5.8.3):** **Peppol bridge** — self-hosted adapter with setup wizard. **Payments** — provider registry and unified checkout. **Workflows** — template library and event bridge. **Analytics** — profitability dashboard and utilization forecast. **Desktop/mobile** — tray minimize, shortcuts, invoice detail screen, and expanded finance APIs. See [CHANGELOG.md](CHANGELOG.md#583---2026-06-19).
+
 ### ✨ Highlights of v5.8.2
 
 **Patch (5.8.2):** **Invoice expenses** — billable expenses from the Expenses module link to the invoice Expenses section (not invoice items), stay separate with their descriptions, and are no longer wiped when adding expenses to an existing invoice. See [CHANGELOG.md](CHANGELOG.md#582---2026-06-15).
@@ -139,7 +147,7 @@ See [CHANGELOG.md](CHANGELOG.md) for all release notes and version history.
 - **Invoice Status Tracking** — Monitor draft, sent, paid, and overdue invoices
 - **Recurring Invoices** — Automate regular billing cycles
 - **Email Integration** — Send invoices directly to clients from the platform
-- **Peppol & ZugFerd e-Invoicing (EN 16931)** — Send invoices via Peppol (generic HTTP AP or native SML/SMP + AS4); embed EN 16931 XML in invoice PDFs (ZugFerd/Factur-X); optional PDF/A-3 normalization and veraPDF validation ([setup guide](docs/admin/configuration/PEPPOL_EINVOICING.md))
+- **Peppol & ZugFerd e-Invoicing (EN 16931)** — Send invoices via Peppol (recommended self-hosted flow uses the included **Peppol Bridge** + setup wizard); embed EN 16931 XML in invoice PDFs (ZugFerd/Factur-X); optional PDF/A-3 normalization and veraPDF validation ([setup guide](docs/admin/configuration/PEPPOL_EINVOICING.md) · [bridge](docs/admin/configuration/PEPPOL_BRIDGE.md))
 
 #### 📋 **Advanced Task Management**
 - **Full Task System** — Create, assign, and track tasks with priorities and due dates

@@ -20,7 +20,11 @@ from app.models import (
 from app.services.integration_service import IntegrationService
 from app.services.scheduled_report_service import ScheduledReportService
 from app.utils.budget_forecasting import check_budget_alerts
-from app.utils.email import send_overdue_invoice_notification, send_remind_to_log_email, send_weekly_summary
+from app.utils.email import (
+    send_overdue_invoice_notification,
+    send_remind_to_log_email,
+    send_weekly_summary,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +67,11 @@ def check_overdue_invoices():
 
                 # Send notifications
                 for user in users_to_notify:
-                    if user.email and user.email_notifications and user.notification_overdue_invoices:
+                    if (
+                        user.email
+                        and user.email_notifications
+                        and user.notification_overdue_invoices
+                    ):
                         try:
                             send_overdue_invoice_notification(invoice, user)
                             notifications_sent += 1
@@ -71,7 +79,9 @@ def check_overdue_invoices():
                                 f"Sent overdue notification for invoice {invoice.invoice_number} to {user.username}"
                             )
                         except Exception as e:
-                            logger.error(f"Failed to send notification to {user.username}: {e}")
+                            logger.error(
+                                f"Failed to send notification to {user.username}: {e}"
+                            )
 
             logger.info(f"Sent {notifications_sent} overdue invoice notifications")
             return notifications_sent
@@ -113,8 +123,12 @@ def send_weekly_summaries():
                     # Get time entries for this user in the past week
                     entries = TimeEntry.query.filter(
                         TimeEntry.user_id == user.id,
-                        TimeEntry.start_time >= datetime.combine(start_date, datetime.min.time()),
-                        TimeEntry.start_time < datetime.combine(end_date + timedelta(days=1), datetime.min.time()),
+                        TimeEntry.start_time
+                        >= datetime.combine(start_date, datetime.min.time()),
+                        TimeEntry.start_time
+                        < datetime.combine(
+                            end_date + timedelta(days=1), datetime.min.time()
+                        ),
                         TimeEntry.end_time.isnot(None),
                     ).all()
 
@@ -137,7 +151,9 @@ def send_weekly_summaries():
                                 }
                             projects_map[project_name]["hours"] += entry.duration_hours
 
-                    projects_data = sorted(projects_map.values(), key=lambda x: x["hours"], reverse=True)
+                    projects_data = sorted(
+                        projects_map.values(), key=lambda x: x["hours"], reverse=True
+                    )
 
                     # Send email
                     send_weekly_summary(
@@ -152,7 +168,9 @@ def send_weekly_summaries():
                     logger.info(f"Sent weekly summary to {user.username}")
 
                 except Exception as e:
-                    logger.error(f"Failed to send weekly summary to {user.username}: {e}")
+                    logger.error(
+                        f"Failed to send weekly summary to {user.username}: {e}"
+                    )
 
             logger.info(f"Sent {summaries_sent} weekly summaries")
             return summaries_sent
@@ -173,7 +191,9 @@ def check_project_budget_alerts():
             logger.info("Checking project budget alerts...")
 
             # Get all active projects with budgets
-            projects = Project.query.filter(Project.budget_amount.isnot(None), Project.status == "active").all()
+            projects = Project.query.filter(
+                Project.budget_amount.isnot(None), Project.status == "active"
+            ).all()
 
             logger.info(f"Found {len(projects)} active projects with budgets")
 
@@ -188,21 +208,61 @@ def check_project_budget_alerts():
                         alert = BudgetAlert.create_alert(
                             project_id=alert_data["project_id"],
                             alert_type=alert_data["type"],
-                            budget_consumed_percent=alert_data["budget_consumed_percent"],
+                            budget_consumed_percent=alert_data[
+                                "budget_consumed_percent"
+                            ],
                             budget_amount=alert_data["budget_amount"],
                             consumed_amount=alert_data["consumed_amount"],
                         )
                         total_alerts_created += 1
-                        logger.info(f"Created {alert_data['type']} alert for project {project.name}")
+                        logger.info(
+                            f"Created {alert_data['type']} alert for project {project.name}"
+                        )
+                        try:
+                            from app.utils.workflow_bridge import (
+                                fire_budget_threshold_workflow,
+                            )
+
+                            fire_budget_threshold_workflow(project, alert_data)
+                        except Exception as wf_err:
+                            logger.debug(
+                                f"Workflow budget_threshold trigger skipped: {wf_err}"
+                            )
 
                 except Exception as e:
-                    logger.error(f"Error checking budget alerts for project {project.id}: {e}")
+                    logger.error(
+                        f"Error checking budget alerts for project {project.id}: {e}"
+                    )
 
             logger.info(f"Created {total_alerts_created} budget alerts")
             return total_alerts_created
 
         except Exception as e:
             logger.error(f"Error checking project budget alerts: {e}")
+            return 0
+
+
+def check_task_deadline_approaching():
+    """Notify workflow rules for tasks due tomorrow."""
+    from datetime import date, timedelta
+
+    from app.models import Task
+    from app.utils.workflow_bridge import fire_deadline_approaching_workflow
+
+    with current_app.app_context():
+        try:
+            target_date = date.today() + timedelta(days=1)
+            tasks = Task.query.filter(
+                Task.due_date == target_date,
+                Task.status.notin_(["done", "cancelled"]),
+            ).all()
+            for task in tasks:
+                user_id = task.assigned_to or task.created_by
+                if user_id:
+                    fire_deadline_approaching_workflow(task, user_id)
+            return len(tasks)
+        except Exception as e:
+            logger.error(f"Error checking task deadlines: {e}")
             return 0
 
 
@@ -232,7 +292,9 @@ def generate_recurring_invoices():
             try:
                 # Check if we've reached the end date
                 if recurring.end_date and today > recurring.end_date:
-                    logger.info(f"Recurring invoice {recurring.id} has reached end date, deactivating")
+                    logger.info(
+                        f"Recurring invoice {recurring.id} has reached end date, deactivating"
+                    )
                     recurring.is_active = False
                     db.session.commit()
                     continue
@@ -242,7 +304,9 @@ def generate_recurring_invoices():
                 if invoice:
                     db.session.commit()
                     invoices_generated += 1
-                    logger.info(f"Generated invoice {invoice.invoice_number} from recurring template {recurring.name}")
+                    logger.info(
+                        f"Generated invoice {invoice.invoice_number} from recurring template {recurring.name}"
+                    )
 
                     # Auto-send if enabled
                     if recurring.auto_send and invoice.client_email:
@@ -255,17 +319,25 @@ def generate_recurring_invoices():
                                 sender_user=recurring.creator,
                             )
                             emails_sent += 1
-                            logger.info(f"Auto-sent invoice {invoice.invoice_number} to {invoice.client_email}")
+                            logger.info(
+                                f"Auto-sent invoice {invoice.invoice_number} to {invoice.client_email}"
+                            )
                         except Exception as e:
-                            logger.error(f"Failed to auto-send invoice {invoice.invoice_number}: {e}")
+                            logger.error(
+                                f"Failed to auto-send invoice {invoice.invoice_number}: {e}"
+                            )
                 else:
-                    logger.warning(f"Failed to generate invoice from recurring template {recurring.id}")
+                    logger.warning(
+                        f"Failed to generate invoice from recurring template {recurring.id}"
+                    )
 
             except Exception as e:
                 logger.error(f"Error processing recurring invoice {recurring.id}: {e}")
                 db.session.rollback()
 
-        logger.info(f"Generated {invoices_generated} invoices, sent {emails_sent} emails")
+        logger.info(
+            f"Generated {invoices_generated} invoices, sent {emails_sent} emails"
+        )
         return invoices_generated
 
     except Exception as e:
@@ -314,7 +386,9 @@ def send_monthly_unpaid_hours_reports():
                 # Get email for this salesman
                 email = SalesmanEmailMapping.get_email_for_initial(salesman_initial)
                 if not email:
-                    logger.warning(f"No email mapping for salesman {salesman_initial}, skipping")
+                    logger.warning(
+                        f"No email mapping for salesman {salesman_initial}, skipping"
+                    )
                     continue
 
                 # Format report data
@@ -327,13 +401,18 @@ def send_monthly_unpaid_hours_reports():
                     "entries": [
                         {
                             "id": e.id,
-                            "date": e.start_time.strftime("%Y-%m-%d") if e.start_time else "",
+                            "date": e.start_time.strftime("%Y-%m-%d")
+                            if e.start_time
+                            else "",
                             "project": e.project.name if e.project else "",
                             # Project.client is a string property; relationship is Project.client_obj
                             "client": (
                                 (
                                     e.project.client_obj.name
-                                    if (e.project and getattr(e.project, "client_obj", None))
+                                    if (
+                                        e.project
+                                        and getattr(e.project, "client_obj", None)
+                                    )
                                     else (e.project.client if e.project else "")
                                 )
                                 or (e.client.name if e.client else "Unknown")
@@ -357,9 +436,13 @@ def send_monthly_unpaid_hours_reports():
                         end_date=last_month_end.strftime("%Y-%m-%d"),
                     )
                     sent_count += 1
-                    logger.info(f"Sent monthly unpaid hours report to {email} for {salesman_initial}")
+                    logger.info(
+                        f"Sent monthly unpaid hours report to {email} for {salesman_initial}"
+                    )
                 except Exception as e:
-                    logger.error(f"Error sending report to {email} ({salesman_initial}): {e}")
+                    logger.error(
+                        f"Error sending report to {email} ({salesman_initial}): {e}"
+                    )
 
             logger.info(f"Sent {sent_count} monthly unpaid hours reports")
             return sent_count
@@ -422,10 +505,14 @@ def register_scheduled_tasks(scheduler, app=None):
                 try:
                     app_instance = current_app._get_current_object()
                 except RuntimeError:
-                    logger.error("No app instance available for e-signature reconciliation")
+                    logger.error(
+                        "No app instance available for e-signature reconciliation"
+                    )
                     return
             with app_instance.app_context():
-                from app.services.timesheet_signoff_service import TimesheetSignoffService
+                from app.services.timesheet_signoff_service import (
+                    TimesheetSignoffService,
+                )
 
                 touched = TimesheetSignoffService.reconcile_stuck_requests()
                 if touched:
@@ -444,6 +531,17 @@ def register_scheduled_tasks(scheduler, app=None):
         )
         logger.info("Registered e-signature reconciliation task")
 
+        scheduler.add_job(
+            func=check_task_deadline_approaching,
+            trigger="cron",
+            hour=8,
+            minute=30,
+            id="check_task_deadlines",
+            name="Check approaching task deadlines",
+            replace_existing=True,
+        )
+        logger.info("Registered task deadline workflow check")
+
         # Generate recurring invoices daily at 8 AM
         # Create a closure that captures the app instance
         def generate_recurring_invoices_with_app():
@@ -453,7 +551,9 @@ def register_scheduled_tasks(scheduler, app=None):
                 try:
                     app_instance = current_app._get_current_object()
                 except RuntimeError:
-                    logger.error("No app instance available for recurring invoices generation")
+                    logger.error(
+                        "No app instance available for recurring invoices generation"
+                    )
                     return
 
             with app_instance.app_context():
@@ -479,7 +579,9 @@ def register_scheduled_tasks(scheduler, app=None):
                 try:
                     app_instance = current_app._get_current_object()
                 except RuntimeError:
-                    logger.error("No app instance available for monthly unpaid hours reports")
+                    logger.error(
+                        "No app instance available for monthly unpaid hours reports"
+                    )
                     return
             with app_instance.app_context():
                 send_monthly_unpaid_hours_reports()
@@ -587,7 +689,9 @@ def register_scheduled_tasks(scheduler, app=None):
                 try:
                     app_instance = current_app._get_current_object()
                 except RuntimeError:
-                    logger.error("No app instance available for scheduled reports processing")
+                    logger.error(
+                        "No app instance available for scheduled reports processing"
+                    )
                     return
 
             with app_instance.app_context():
@@ -610,7 +714,9 @@ def register_scheduled_tasks(scheduler, app=None):
                 try:
                     app_instance = current_app._get_current_object()
                 except RuntimeError:
-                    logger.error("No app instance available for remind-to-log processing")
+                    logger.error(
+                        "No app instance available for remind-to-log processing"
+                    )
                     return
             with app_instance.app_context():
                 process_remind_to_log()
@@ -656,7 +762,9 @@ def register_scheduled_tasks(scheduler, app=None):
                 try:
                     app_instance = current_app._get_current_object()
                 except RuntimeError:
-                    logger.error("No app instance available for working time limits check")
+                    logger.error(
+                        "No app instance available for working time limits check"
+                    )
                     return
             with app_instance.app_context():
                 check_working_time_limits()
@@ -706,7 +814,9 @@ def register_scheduled_tasks(scheduler, app=None):
                 try:
                     app_instance = current_app._get_current_object()
                 except RuntimeError:
-                    logger.error("No app instance available for Google Calendar connector sync")
+                    logger.error(
+                        "No app instance available for Google Calendar connector sync"
+                    )
                     return
             with app_instance.app_context():
                 sync_google_calendar_for_all_users()
@@ -758,10 +868,14 @@ def register_scheduled_tasks(scheduler, app=None):
                 except Exception:
                     pass
 
-            scheduler.add_listener(_otel_apscheduler_listener, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR)
+            scheduler.add_listener(
+                _otel_apscheduler_listener, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR
+            )
             logger.info("Registered OpenTelemetry APScheduler listener")
         except Exception as listener_err:
-            logger.debug("OpenTelemetry APScheduler listener not registered: %s", listener_err)
+            logger.debug(
+                "OpenTelemetry APScheduler listener not registered: %s", listener_err
+            )
 
     except Exception as e:
         logger.error(f"Error registering scheduled tasks: {e}")
@@ -780,19 +894,25 @@ def send_smart_reminder_push_notifications():
         try:
             from app.routes import push_notifications as _push_bp_mod  # noqa: F401
         except Exception:
-            logger.debug("push_notifications blueprint not available; skipping smart reminder push job")
+            logger.debug(
+                "push_notifications blueprint not available; skipping smart reminder push job"
+            )
             return 0
 
         try:
             from app.models import PushSubscription
         except Exception:
-            logger.debug("PushSubscription model not available; skipping smart reminder push job")
+            logger.debug(
+                "PushSubscription model not available; skipping smart reminder push job"
+            )
             return 0
 
         try:
             from app.services.notification_service import NotificationService
         except Exception:
-            logger.debug("NotificationService not available; skipping smart reminder push job")
+            logger.debug(
+                "NotificationService not available; skipping smart reminder push job"
+            )
             return 0
 
         try:
@@ -821,18 +941,26 @@ def send_smart_reminder_push_notifications():
                     continue
                 subscriptions = PushSubscription.get_user_subscriptions(user.id)
                 if not subscriptions:
-                    logger.debug("User %s has no push subscriptions; skipping", user.username)
+                    logger.debug(
+                        "User %s has no push subscriptions; skipping", user.username
+                    )
                     continue
                 for note in notifications:
                     ntype = (note.get("type") or "").lower()
                     if ntype not in ("warning", "info"):
                         continue
-                    _delivered = _deliver_push_to_subscriptions(user, subscriptions, note)
+                    _delivered = _deliver_push_to_subscriptions(
+                        user, subscriptions, note
+                    )
                     if _delivered:
                         sent += _delivered
                 logger.debug("Smart reminder push processed for %s", user.username)
             except Exception as e:
-                logger.warning("Smart reminder push failed for user %s: %s", getattr(user, "username", user.id), e)
+                logger.warning(
+                    "Smart reminder push failed for user %s: %s",
+                    getattr(user, "username", user.id),
+                    e,
+                )
         return sent
 
 
@@ -845,15 +973,22 @@ def _deliver_push_to_subscriptions(user, subscriptions, note) -> int:
     try:
         from pywebpush import WebPushException, webpush  # type: ignore
     except Exception:
-        logger.debug("pywebpush not installed; smart reminder push skipped for %s", user.username)
+        logger.debug(
+            "pywebpush not installed; smart reminder push skipped for %s", user.username
+        )
         return 0
 
     cfg = current_app.config
     vapid_private = (cfg.get("VAPID_PRIVATE_KEY") or "").strip()
     vapid_public = (cfg.get("VAPID_PUBLIC_KEY") or "").strip()
-    vapid_claims_email = (cfg.get("VAPID_CONTACT_EMAIL") or cfg.get("MAIL_DEFAULT_SENDER") or "").strip()
+    vapid_claims_email = (
+        cfg.get("VAPID_CONTACT_EMAIL") or cfg.get("MAIL_DEFAULT_SENDER") or ""
+    ).strip()
     if not vapid_private or not vapid_public:
-        logger.debug("VAPID keys not configured; smart reminder push skipped for %s", user.username)
+        logger.debug(
+            "VAPID keys not configured; smart reminder push skipped for %s",
+            user.username,
+        )
         return 0
 
     import json as _json
@@ -873,7 +1008,9 @@ def _deliver_push_to_subscriptions(user, subscriptions, note) -> int:
                 data=_json.dumps(body),
                 vapid_private_key=vapid_private,
                 vapid_claims={
-                    "sub": f"mailto:{vapid_claims_email}" if vapid_claims_email else "mailto:noreply@example.invalid"
+                    "sub": f"mailto:{vapid_claims_email}"
+                    if vapid_claims_email
+                    else "mailto:noreply@example.invalid"
                 },
             )
             try:
@@ -890,9 +1027,19 @@ def _deliver_push_to_subscriptions(user, subscriptions, note) -> int:
                 except Exception:
                     db.session.rollback()
             else:
-                logger.warning("Web push failed for %s (endpoint=%s): %s", user.username, sub.endpoint[:60], e)
+                logger.warning(
+                    "Web push failed for %s (endpoint=%s): %s",
+                    user.username,
+                    sub.endpoint[:60],
+                    e,
+                )
         except Exception as e:
-            logger.warning("Web push failed for %s (endpoint=%s): %s", user.username, sub.endpoint[:60], e)
+            logger.warning(
+                "Web push failed for %s (endpoint=%s): %s",
+                user.username,
+                sub.endpoint[:60],
+                e,
+            )
     return delivered
 
 
@@ -936,14 +1083,18 @@ def process_remind_to_log():
                     continue
                 user_tz = get_timezone_for_user(user)
                 user_today = user_now.date()
-                start_local = datetime.combine(user_today, dt_time.min).replace(tzinfo=user_tz)
+                start_local = datetime.combine(user_today, dt_time.min).replace(
+                    tzinfo=user_tz
+                )
                 end_local = start_local + timedelta(days=1)
                 start_utc = start_local.astimezone(tz_utc)
                 end_utc = end_local.astimezone(tz_utc)
                 from sqlalchemy import func
 
                 total_seconds = (
-                    db.session.query(func.coalesce(func.sum(TimeEntry.duration_seconds), 0))
+                    db.session.query(
+                        func.coalesce(func.sum(TimeEntry.duration_seconds), 0)
+                    )
                     .filter(
                         TimeEntry.user_id == user.id,
                         TimeEntry.start_time >= start_utc,
@@ -1004,7 +1155,9 @@ def check_working_time_limits():
                     db.session.commit()
                     emails_sent += 1
                 except Exception as e:
-                    logger.error("Failed to send limit email to %s: %s", user.username, e)
+                    logger.error(
+                        "Failed to send limit email to %s: %s", user.username, e
+                    )
                     db.session.rollback()
 
         if emails_sent:
@@ -1042,9 +1195,13 @@ def process_scheduled_reports():
                 result = service.generate_and_send_report(schedule.id)
                 if result["success"]:
                     processed += 1
-                    logger.info(f"Sent scheduled report {schedule.id} to {result['sent_count']} recipients")
+                    logger.info(
+                        f"Sent scheduled report {schedule.id} to {result['sent_count']} recipients"
+                    )
                 else:
-                    logger.error(f"Error sending scheduled report {schedule.id}: {result['message']}")
+                    logger.error(
+                        f"Error sending scheduled report {schedule.id}: {result['message']}"
+                    )
             except Exception as e:
                 logger.error(f"Error processing scheduled report {schedule.id}: {e}")
 
@@ -1169,20 +1326,57 @@ def sync_integrations():
             try:
                 # Check if auto_sync is enabled (default to True if not set)
                 config = integration.config or {}
-                auto_sync = config.get("auto_sync", True)
+                auto_sync = config.get("auto_sync", False)
 
                 if not auto_sync:
-                    logger.debug(f"Skipping integration {integration.id} ({integration.provider}): auto_sync disabled")
+                    logger.debug(
+                        f"Skipping integration {integration.id} ({integration.provider}): auto_sync disabled"
+                    )
+                    continue
+
+                sync_interval = config.get("sync_interval", 60)
+                if sync_interval == "manual":
+                    logger.debug(
+                        f"Skipping integration {integration.id}: manual sync_interval"
+                    )
+                    continue
+                if isinstance(sync_interval, str) and sync_interval.isdigit():
+                    sync_interval = int(sync_interval)
+                if isinstance(sync_interval, (int, float)):
+                    last_run = config.get("last_scheduled_sync_at")
+                    interval_minutes = int(sync_interval)
+                    if last_run:
+                        try:
+                            last_dt = datetime.fromisoformat(
+                                last_run.replace("Z", "+00:00")
+                            )
+                            if (
+                                datetime.utcnow() - last_dt.replace(tzinfo=None)
+                            ).total_seconds() < interval_minutes * 60:
+                                logger.debug(
+                                    f"Skipping integration {integration.id}: sync interval not elapsed"
+                                )
+                                continue
+                        except (ValueError, TypeError):
+                            pass
+                elif sync_interval == "daily" and datetime.utcnow().hour != 2:
+                    logger.debug(
+                        f"Skipping integration {integration.id}: daily sync not due"
+                    )
                     continue
 
                 # Get connector
                 connector = service.get_connector(integration)
                 if not connector:
-                    logger.warning(f"Could not get connector for integration {integration.id} ({integration.provider})")
+                    logger.warning(
+                        f"Could not get connector for integration {integration.id} ({integration.provider})"
+                    )
                     continue
 
                 # Perform sync
-                logger.info(f"Syncing integration {integration.id} ({integration.provider})...")
+                logger.info(
+                    f"Syncing integration {integration.id} ({integration.provider})..."
+                )
                 result = connector.sync_data(sync_type="incremental")
 
                 if result.get("success"):
@@ -1191,11 +1385,16 @@ def sync_integrations():
                     integration.last_sync_at = datetime.utcnow()
                     integration.last_sync_status = "success"
                     integration.last_error = None
+                    cfg = dict(integration.config or {})
+                    cfg["last_scheduled_sync_at"] = datetime.utcnow().isoformat()
+                    integration.config = cfg
                     logger.info(
                         f"Successfully synced integration {integration.id} ({integration.provider}): {result.get('synced_items', 0)} items"
                     )
                 else:
-                    errors.append(f"{integration.provider}: {result.get('message', 'Unknown error')}")
+                    errors.append(
+                        f"{integration.provider}: {result.get('message', 'Unknown error')}"
+                    )
                     integration.last_sync_status = "error"
                     integration.last_error = result.get("message", "Unknown error")
                     logger.error(
@@ -1224,12 +1423,18 @@ def sync_integrations():
                 integration.last_sync_status = "error"
                 integration.last_error = str(e)
                 try:
-                    service._log_event(integration.id, "sync", False, str(e), {"trigger": "scheduler"})
+                    service._log_event(
+                        integration.id, "sync", False, str(e), {"trigger": "scheduler"}
+                    )
                 except Exception as log_err:
-                    logger.warning("Could not log integration sync failure: %s", log_err)
+                    logger.warning(
+                        "Could not log integration sync failure: %s", log_err
+                    )
                     db.session.commit()
 
-        logger.info(f"Integration sync completed. Synced {synced_count}/{len(active_integrations)} integrations")
+        logger.info(
+            f"Integration sync completed. Synced {synced_count}/{len(active_integrations)} integrations"
+        )
         if errors:
             logger.warning(f"Integration sync errors: {', '.join(errors)}")
 
@@ -1273,10 +1478,18 @@ def sync_google_calendar_for_all_users():
             else:
                 err = result.get("error") or "; ".join(result.get("errors", []) or [])
                 errors.append(f"integration {integration.id}: {err}")
-                logger.warning("Google Calendar sync skipped for integration %s: %s", integration.id, err)
+                logger.warning(
+                    "Google Calendar sync skipped for integration %s: %s",
+                    integration.id,
+                    err,
+                )
         except Exception as exc:
             errors.append(f"integration {integration.id}: {exc}")
-            logger.warning("Google Calendar sync failed for integration %s: %s", integration.id, exc)
+            logger.warning(
+                "Google Calendar sync failed for integration %s: %s",
+                integration.id,
+                exc,
+            )
     logger.info("Google Calendar connector sync: %d ok, %d errors", synced, len(errors))
     return {"ok": True, "synced": synced, "errors": errors}
 
@@ -1317,7 +1530,11 @@ def post_slack_daily_summaries():
         # User-local time would be ideal but we don't always have a TZ. Use
         # the user's preferred timezone if available, else the app timezone.
         try:
-            user = User.query.get(connector.integration.user_id) if connector.integration.user_id else None
+            user = (
+                User.query.get(connector.integration.user_id)
+                if connector.integration.user_id
+                else None
+            )
             if user is not None:
                 from app.utils.timezone import now_in_user_timezone
 

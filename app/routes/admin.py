@@ -4,6 +4,7 @@ import threading
 import uuid
 from datetime import datetime
 
+import requests
 from flask import (
     Blueprint,
     current_app,
@@ -21,8 +22,6 @@ from flask_login import current_user, login_required
 from sqlalchemy import text
 from sqlalchemy.exc import ProgrammingError
 from werkzeug.utils import secure_filename
-
-import requests
 
 import app as app_module
 from app import db, limiter
@@ -1802,9 +1801,7 @@ def admin_peppol_setup_wizard():
 
     # Show a short list of recent invoices for test send (admin-only view).
     invoices = (
-        Invoice.query.order_by(Invoice.id.desc()).limit(20).all()
-        if getattr(current_user, "is_admin", False)
-        else []
+        Invoice.query.order_by(Invoice.id.desc()).limit(20).all() if getattr(current_user, "is_admin", False) else []
     )
 
     peppol_env_enabled = (os.getenv("PEPPOL_ENABLED", "false") or "").strip().lower() in {"1", "true", "yes", "y", "on"}
@@ -1836,7 +1833,10 @@ def admin_peppol_setup_wizard_check_bridge():
     try:
         health = requests.get(f"{bridge_base_url}/health", headers=headers, timeout=timeout_s)
         if health.status_code >= 400:
-            return jsonify({"ok": False, "error": f"Bridge /health returned HTTP {health.status_code}: {health.text}"}), 400
+            return (
+                jsonify({"ok": False, "error": f"Bridge /health returned HTTP {health.status_code}: {health.text}"}),
+                400,
+            )
         health_json = health.json()
     except Exception as e:
         return jsonify({"ok": False, "error": f"Failed to reach bridge /health: {e}"}), 400
@@ -1844,7 +1844,16 @@ def admin_peppol_setup_wizard_check_bridge():
     try:
         test = requests.post(f"{bridge_base_url}/test", headers=headers, timeout=timeout_s)
         if test.status_code >= 400:
-            return jsonify({"ok": False, "error": f"Bridge /test returned HTTP {test.status_code}: {test.text}", "health": health_json}), 400
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "error": f"Bridge /test returned HTTP {test.status_code}: {test.text}",
+                        "health": health_json,
+                    }
+                ),
+                400,
+            )
         test_json = test.json()
     except Exception as e:
         return jsonify({"ok": False, "error": f"Failed to call bridge /test: {e}", "health": health_json}), 400
@@ -1887,7 +1896,13 @@ def admin_peppol_setup_wizard_apply():
     if not safe_commit("admin_peppol_setup_wizard_apply"):
         return jsonify({"ok": False, "error": "Database error while saving settings"}), 500
 
-    return jsonify({"ok": True, "message": "Peppol settings saved", "peppol_access_point_url": settings_obj.peppol_access_point_url})
+    return jsonify(
+        {
+            "ok": True,
+            "message": "Peppol settings saved",
+            "peppol_access_point_url": settings_obj.peppol_access_point_url,
+        }
+    )
 
 
 @admin_bp.route("/admin/peppol/setup-wizard/send-test", methods=["POST"])

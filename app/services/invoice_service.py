@@ -933,8 +933,7 @@ class InvoiceService:
         detail = invoice.to_dict()
         detail["items"] = [item.to_dict() for item in invoice.items.all()]
         detail["payments"] = [
-            p.to_dict()
-            for p in invoice.payments.order_by(Payment.payment_date.desc(), Payment.created_at.desc()).all()
+            p.to_dict() for p in invoice.payments.order_by(Payment.payment_date.desc(), Payment.created_at.desc()).all()
         ]
         if invoice.project:
             detail["project_name"] = invoice.project.name

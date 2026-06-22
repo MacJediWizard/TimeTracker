@@ -49,7 +49,7 @@ def create_workflow():
     """Create a new workflow rule"""
     if request.method == "POST":
         data = request.get_json() if request.is_json else request.form
-        fields, _, _ = parse_workflow_form_data(data)
+        fields, _conditions, _actions = parse_workflow_form_data(data)
 
         rule = WorkflowRule(user_id=current_user.id, created_by=current_user.id)
         _apply_workflow_fields(rule, fields)
@@ -62,7 +62,11 @@ def create_workflow():
         flash(_("Workflow created successfully"), "success")
         return redirect(url_for("workflows.list_workflows"))
 
-    return render_template("workflows/create.html", trigger_types=get_trigger_types(), action_types=get_action_types())
+    return render_template(
+        "workflows/create.html",
+        trigger_types=get_trigger_types(),
+        action_types=get_action_types(),
+    )
 
 
 @workflows_bp.route("/workflows/<int:workflow_id>")
@@ -99,7 +103,7 @@ def edit_workflow(workflow_id):
 
     if request.method == "POST":
         data = request.get_json() if request.is_json else request.form
-        fields, _, _ = parse_workflow_form_data(data)
+        fields, _conditions, _actions = parse_workflow_form_data(data)
         _apply_workflow_fields(workflow, fields)
         db.session.commit()
 
@@ -181,7 +185,7 @@ def use_workflow_template(template_id):
 def create_workflow_template():
     if request.method == "POST":
         data = request.form
-        fields, _, _ = parse_workflow_form_data(data)
+        fields, _conditions, _actions = parse_workflow_form_data(data)
         _template_service.create_template(
             {
                 **fields,
@@ -212,7 +216,7 @@ def edit_workflow_template(template_id):
     template = WorkflowTemplate.query.get_or_404(template_id)
     if request.method == "POST":
         data = request.form
-        fields, _, _ = parse_workflow_form_data(data)
+        fields, _conditions, _actions = parse_workflow_form_data(data)
         _template_service.update_template(
             template,
             {

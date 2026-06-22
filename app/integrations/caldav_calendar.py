@@ -24,13 +24,13 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 
 import requests
 from icalendar import Calendar
 
 from app.integrations.base import BaseConnector
-from app.utils.timezone import get_timezone_obj, local_to_utc, now_in_app_timezone, utc_to_local
+from app.utils.timezone import get_timezone_obj, local_to_utc
 
 DAV_NS = "DAV:"
 CALDAV_NS = "urn:ietf:params:xml:ns:caldav"
@@ -95,7 +95,14 @@ class CalDAVClient:
         self.verify_ssl = verify_ssl
         self.timeout = timeout  # Increased default timeout to 60 seconds for slow servers
 
-    def _request(self, method: str, url: str, *, headers: Optional[Dict[str, str]] = None, data: Optional[str] = None):
+    def _request(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: Optional[Dict[str, str]] = None,
+        data: Optional[str] = None,
+    ):
         h = {
             "User-Agent": "TimeTracker-CalDAV/1.0",
         }
@@ -306,7 +313,7 @@ class CalDAVClient:
             if not href:
                 skipped_count += 1
                 skipped_reasons["no_href"] += 1
-                logger.debug(f"Skipping response with no href")
+                logger.debug("Skipping response with no href")
                 continue
 
             caldata_el = resp.find(f".//{_ns('calendar-data', CALDAV_NS)}")
@@ -351,8 +358,8 @@ class CalDAVClient:
                 is_all_day = type(start).__name__ == "date" and not isinstance(start, datetime)
 
                 if is_all_day:
-                    from datetime import date as date_cls
-
+                    dtend = comp.get("DTEND")
+                    duration = comp.get("DURATION")
                     start_date = start
                     if dtend:
                         end_date = dtend.dt
@@ -444,7 +451,11 @@ class CalDAVClient:
         return events
 
     def create_or_update_event(
-        self, calendar_url: str, event_uid: str, ical_content: str, event_href: Optional[str] = None
+        self,
+        calendar_url: str,
+        event_uid: str,
+        ical_content: str,
+        event_href: Optional[str] = None,
     ) -> bool:
         """
         Create or update a calendar event using PUT request.
@@ -516,7 +527,7 @@ class CalDAVClient:
                     logger.info(f"Following redirect from {event_url} to {redirect_url}")
                     # Make redirect URL absolute if it's relative
                     if not redirect_url.startswith("http"):
-                        from urllib.parse import urljoin, urlparse
+                        from urllib.parse import urlparse
 
                         parsed = urlparse(event_url)
                         redirect_url = f"{parsed.scheme}://{parsed.netloc}{redirect_url}"
@@ -573,7 +584,10 @@ class CalDAVClient:
                 logger.warning(f"  Response: {e.response.text[:200]}")
             return False
         except Exception as e:
-            logger.warning(f"Exception creating/updating CalDAV event {event_uid} at {event_url}: {e}", exc_info=True)
+            logger.warning(
+                f"Exception creating/updating CalDAV event {event_uid} at {event_url}: {e}",
+                exc_info=True,
+            )
             return False
 
     def _find_href(self, root: ET.Element, prop_paths: List[Tuple[str, ...]]) -> Optional[str]:
@@ -643,7 +657,10 @@ class CalDAVCalendarConnector(BaseConnector):
         try:
             # Check if credentials exist
             if not self.credentials:
-                return {"success": False, "message": "No credentials configured. Please set up username and password."}
+                return {
+                    "success": False,
+                    "message": "No credentials configured. Please set up username and password.",
+                }
 
             # Check if we have username and password
             try:
@@ -660,7 +677,10 @@ class CalDAVCalendarConnector(BaseConnector):
 
             # Need at least one URL
             if not server_url and not calendar_url:
-                return {"success": False, "message": "Either server URL or calendar URL must be configured."}
+                return {
+                    "success": False,
+                    "message": "Either server URL or calendar URL must be configured.",
+                }
 
             client = self._client()
 
@@ -671,15 +691,25 @@ class CalDAVCalendarConnector(BaseConnector):
                 except Exception as e:
                     # If discovery fails but we have calendar_url, continue with calendar_url test
                     if not calendar_url:
-                        return {"success": False, "message": f"Failed to discover calendars from server: {str(e)}"}
+                        return {
+                            "success": False,
+                            "message": f"Failed to discover calendars from server: {str(e)}",
+                        }
 
             # If a calendar URL is provided, validate we can run a REPORT against it (lightweight window)
             if calendar_url:
                 try:
                     now_utc = datetime.now(timezone.utc)
-                    _ = client.fetch_events(calendar_url, now_utc - timedelta(days=1), now_utc + timedelta(days=1))
+                    _ = client.fetch_events(
+                        calendar_url,
+                        now_utc - timedelta(days=1),
+                        now_utc + timedelta(days=1),
+                    )
                 except Exception as e:
-                    return {"success": False, "message": f"Failed to access calendar at {calendar_url}: {str(e)}"}
+                    return {
+                        "success": False,
+                        "message": f"Failed to access calendar at {calendar_url}: {str(e)}",
+                    }
 
             return {
                 "success": True,
@@ -701,17 +731,22 @@ class CalDAVCalendarConnector(BaseConnector):
         import logging
 
         from app import db
-        from app.models import IntegrationExternalEventLink, Project, TimeEntry
 
         logger = logging.getLogger(__name__)
 
         try:
             if not self.integration or not self.integration.user_id:
-                return {"success": False, "message": "CalDAV integration must be a per-user integration."}
+                return {
+                    "success": False,
+                    "message": "CalDAV integration must be a per-user integration.",
+                }
 
             # Check credentials
             if not self.credentials:
-                return {"success": False, "message": "No credentials configured. Please set up username and password."}
+                return {
+                    "success": False,
+                    "message": "No credentials configured. Please set up username and password.",
+                }
 
             try:
                 username, password = self._get_basic_creds()
@@ -775,7 +810,7 @@ class CalDAVCalendarConnector(BaseConnector):
                 )
                 # If bidirectional, also do TimeTracker to Calendar sync
                 if sync_direction == "bidirectional":
-                    logger.info(f"Executing TimeTracker→Calendar sync (bidirectional mode)")
+                    logger.info("Executing TimeTracker→Calendar sync (bidirectional mode)")
                     tracker_result = self._sync_time_tracker_to_calendar(cfg, calendar_url, sync_type)
                     # Merge results
                     if calendar_result.get("success") and tracker_result.get("success"):
@@ -797,7 +832,7 @@ class CalDAVCalendarConnector(BaseConnector):
                             "success": False,
                             "message": f"Both sync directions failed. Calendar→TimeTracker: {calendar_result.get('message')}, TimeTracker→Calendar: {tracker_result.get('message')}",
                         }
-                logger.info(f"Calendar→TimeTracker sync completed, returning result")
+                logger.info("Calendar→TimeTracker sync completed, returning result")
                 return calendar_result
 
             # Handle TimeTracker to Calendar sync
@@ -806,7 +841,10 @@ class CalDAVCalendarConnector(BaseConnector):
                 return self._sync_time_tracker_to_calendar(cfg, calendar_url, sync_type)
 
             logger.warning(f"Unknown sync direction: {sync_direction}")
-            return {"success": False, "message": f"Unknown sync direction: {sync_direction}"}
+            return {
+                "success": False,
+                "message": f"Unknown sync direction: {sync_direction}",
+            }
         except Exception as e:
             try:
                 from app import db
@@ -854,7 +892,7 @@ class CalDAVCalendarConnector(BaseConnector):
             logger.info(f"Full sync: using lookback_days={lookback_days}, calculated time_min_utc={time_min_utc}")
         time_max_utc = now_utc + timedelta(days=7)
 
-        logger.info(f"Time range calculation:")
+        logger.info("Time range calculation:")
         logger.info(f"  now_utc: {now_utc}")
         logger.info(f"  time_min_utc: {time_min_utc} (lookback: {lookback_days} days)")
         logger.info(f"  time_max_utc: {time_max_utc} (lookahead: 7 days)")
@@ -869,7 +907,7 @@ class CalDAVCalendarConnector(BaseConnector):
             # If no events found, try with an expanded time range (some servers are strict about time-range)
             if len(events) == 0:
                 logger.debug(
-                    f"No events found with initial time range, trying expanded range (extending by 1 day on each side)"
+                    "No events found with initial time range, trying expanded range (extending by 1 day on each side)"
                 )
                 expanded_min = time_min_utc - timedelta(days=1)
                 expanded_max = time_max_utc + timedelta(days=1)
@@ -896,7 +934,10 @@ class CalDAVCalendarConnector(BaseConnector):
                 )
         except Exception as e:
             logger.error(f"Failed to fetch events from calendar: {e}", exc_info=True)
-            return {"success": False, "message": f"Failed to fetch events from calendar: {str(e)}"}
+            return {
+                "success": False,
+                "message": f"Failed to fetch events from calendar: {str(e)}",
+            }
 
         # Preload projects for title matching
         projects = Project.query.filter_by(status="active").order_by(Project.name).all()
@@ -1109,7 +1150,7 @@ class CalDAVCalendarConnector(BaseConnector):
             logger.info(f"Full sync: using lookback_days={lookback_days}, calculated time_min={time_min}")
         time_max = now_utc + timedelta(days=lookahead_days)
 
-        logger.info(f"Time range calculation for TimeTracker→Calendar sync:")
+        logger.info("Time range calculation for TimeTracker→Calendar sync:")
         logger.info(f"  now_utc: {now_utc}")
         logger.info(f"  time_min (UTC): {time_min} (lookback: {lookback_days} days)")
         logger.info(f"  time_max (UTC): {time_max} (lookahead: {lookahead_days} days)")
@@ -1222,7 +1263,7 @@ class CalDAVCalendarConnector(BaseConnector):
                         f"  Link external_uid starts with 'timetracker-': {existing_link.external_uid.startswith('timetracker-') if existing_link.external_uid else False}"
                     )
                 else:
-                    logger.info(f"  No existing link found - will create new event")
+                    logger.info("  No existing link found - will create new event")
 
                 # Skip entries that were imported FROM CalDAV (to avoid circular sync)
                 # If there's a link but the external_uid doesn't start with "timetracker-",
@@ -1385,7 +1426,7 @@ class CalDAVCalendarConnector(BaseConnector):
                     )
                     # If link exists but has a time_entry_id, it might be for a different entry - we'll update it
                 else:
-                    logger.info(f"  No existing link found - will create new event")
+                    logger.info("  No existing link found - will create new event")
 
                 # Skip CalDAV-imported events to avoid sync loops (detected by marker in description)
                 if calendar_event.description and "[CalDAV:" in calendar_event.description:
@@ -1484,9 +1525,7 @@ class CalDAVCalendarConnector(BaseConnector):
                             # Can't create IntegrationExternalEventLink without time_entry_id
                             # So we'll just track by UID in future queries
                             # This means we'll try to sync every time, but the UID check prevents duplicates
-                            logger.info(
-                                f"  Event created but no link record (calendar events don't have time_entry_id)"
-                            )
+                            logger.info("  Event created but no link record (calendar events don't have time_entry_id)")
                         synced += 1
                         logger.info(f"Successfully created event for calendar event {calendar_event.id}")
                     else:
@@ -1595,9 +1634,18 @@ class CalDAVCalendarConnector(BaseConnector):
                     "type": "select",
                     "label": "Sync Direction",
                     "options": [
-                        {"value": "calendar_to_time_tracker", "label": "Calendar → TimeTracker (Import only)"},
-                        {"value": "time_tracker_to_calendar", "label": "TimeTracker → Calendar (Export only)"},
-                        {"value": "bidirectional", "label": "Bidirectional (Two-way sync)"},
+                        {
+                            "value": "calendar_to_time_tracker",
+                            "label": "Calendar → TimeTracker (Import only)",
+                        },
+                        {
+                            "value": "time_tracker_to_calendar",
+                            "label": "TimeTracker → Calendar (Export only)",
+                        },
+                        {
+                            "value": "bidirectional",
+                            "label": "Bidirectional (Two-way sync)",
+                        },
                     ],
                     "default": "calendar_to_time_tracker",
                     "description": "Choose how data flows between CalDAV calendar and TimeTracker",
@@ -1672,7 +1720,12 @@ class CalDAVCalendarConnector(BaseConnector):
                 {
                     "title": "Connection Settings",
                     "description": "Configure your CalDAV server connection",
-                    "fields": ["server_url", "calendar_url", "calendar_name", "verify_ssl"],
+                    "fields": [
+                        "server_url",
+                        "calendar_url",
+                        "calendar_name",
+                        "verify_ssl",
+                    ],
                 },
                 {
                     "title": "Sync Settings",

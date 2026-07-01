@@ -23,6 +23,7 @@ from .custom_field_definition import CustomFieldDefinition
 from .custom_report import CustomReportConfig
 from .deal import Deal
 from .deal_activity import DealActivity
+from .deleted_username import DeletedUsername
 from .donation_interaction import DonationInteraction
 from .esignature_request import ESignatureRequest, ESignatureStatus
 from .expense import Expense
@@ -180,6 +181,7 @@ __all__ = [
     "ContactCommunication",
     "Deal",
     "DealActivity",
+    "DeletedUsername",
     "Lead",
     "LeadActivity",
     "ProjectTemplate",

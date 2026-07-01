@@ -28,6 +28,7 @@ from app.utils.auth_method import (
 from app.utils.cache import get_cache
 from app.utils.config_manager import ConfigManager
 from app.utils.db import safe_commit
+from app.utils.deleted_usernames import is_username_reserved
 from app.utils.posthog_funnels import track_onboarding_started
 
 auth_bp = Blueprint("auth", __name__)
@@ -105,6 +106,17 @@ def _verify_password_reset_token(token: str, *, max_age_seconds: int) -> User | 
     return user
 
 
+def _resolve_post_login_url(user: User, next_page: str | None) -> str:
+    """Resolve redirect target after successful login."""
+    if getattr(user, "portal_only", False) and user.is_client_portal_user:
+        if next_page and next_page.startswith("/client-portal"):
+            return next_page
+        return url_for("client_portal.dashboard")
+    if not next_page or not next_page.startswith("/"):
+        return url_for("main.dashboard")
+    return next_page
+
+
 def _finalize_login_after_verification(user: User, *, log_auth_method: str):
     """After successful local or LDAP verification: 2FA gate or establish session and redirect."""
     if getattr(user, "two_factor_enabled", False):
@@ -161,8 +173,7 @@ def _finalize_login_after_verification(user: User, *, log_auth_method: str):
         return redirect(url_for("auth.two_factor_setup"))
 
     next_page = request.args.get("next")
-    if not next_page or not next_page.startswith("/"):
-        next_page = url_for("main.dashboard")
+    next_page = _resolve_post_login_url(user, next_page)
     current_app.logger.info("Redirecting '%s' to %s", user.username, next_page)
     flash(_("Welcome back, %(username)s!", username=user.username), "success")
     return redirect(next_page)
@@ -305,6 +316,8 @@ def login():
             pass
 
     if current_user.is_authenticated:
+        if getattr(current_user, "portal_only", False) and current_user.is_client_portal_user:
+            return redirect(url_for("client_portal.dashboard"))
         return redirect(url_for("main.dashboard"))
 
     # Get authentication method from Flask app config (reads from environment)
@@ -418,6 +431,15 @@ def login():
                 # Check if self-registration is allowed (use ConfigManager to respect database settings)
                 allow_self_register = ConfigManager.get_setting("allow_self_register", Config.ALLOW_SELF_REGISTER)
                 if allow_self_register and (include_local or auth_method == "none"):
+                    if is_username_reserved(username):
+                        log_event(
+                            "auth.login_failed",
+                            username=username,
+                            reason="deleted_username_reserved",
+                            auth_method=auth_method,
+                        )
+                        flash(_("User not found. Please contact an administrator."), "error")
+                        return render_template("auth/login.html", **_login_template_vars())
                     # If password auth is required, validate password during self-registration
                     if requires_password:
                         if not password:
@@ -635,6 +657,8 @@ def login():
 @limiter.limit("10 per minute", methods=["POST"])
 def two_factor():
     if current_user.is_authenticated:
+        if getattr(current_user, "portal_only", False) and current_user.is_client_portal_user:
+            return redirect(url_for("client_portal.dashboard"))
         return redirect(url_for("main.dashboard"))
 
     user_id = session.get("pre_2fa_user_id")
@@ -669,9 +693,7 @@ def two_factor():
         login_user(user, remember=True)
         log_event("auth.login_2fa", user_id=user.id)
 
-        if next_page and next_page.startswith("/"):
-            return redirect(next_page)
-        return redirect(url_for("main.dashboard"))
+        return redirect(_resolve_post_login_url(user, next_page))
 
     return render_template("auth/two_factor.html")
 
@@ -1496,6 +1518,10 @@ def oidc_callback():
                     "error",
                 )
                 return redirect(url_for("auth.login"))
+            if is_username_reserved(username):
+                current_app.logger.info("OIDC callback redirect to login: reason=deleted_username_reserved")
+                flash(_("User account does not exist and self-registration is disabled."), "error")
+                return redirect(url_for("auth.login"))
             role_name = "user"
             try:
                 user = User(username=username, role=role_name, email=email, full_name=full_name)
@@ -1716,8 +1742,7 @@ def oidc_callback():
 
         # Redirect to intended page or dashboard
         next_page = session.pop("oidc_next", None) or request.args.get("next")
-        if not next_page or not next_page.startswith("/"):
-            next_page = url_for("main.dashboard")
+        next_page = _resolve_post_login_url(user, next_page)
         flash(_("Welcome back, %(username)s!", username=user.username), "success")
         return redirect(next_page)
 

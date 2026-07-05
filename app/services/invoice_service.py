@@ -571,9 +571,7 @@ class InvoiceService:
         other_project_unbilled_hours = 0.0
         other_project_names: List[str] = []
         if client_id and project_id:
-            other_projects = Project.query.filter(
-                Project.client_id == client_id, Project.id != project_id
-            ).all()
+            other_projects = Project.query.filter(Project.client_id == client_id, Project.id != project_id).all()
             for other_project in other_projects:
                 other_entries = TimeEntry.query.filter(
                     TimeEntry.project_id == other_project.id,

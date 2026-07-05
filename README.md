@@ -94,6 +94,14 @@ TimeTracker has been continuously enhanced with powerful new features! Here's wh
 
 - 🪄 **SOW auto-provisioning (Claude API)** — Paste or upload a Statement of Work (text/PDF/DOCX); Claude parses it into a structured plan that you review and edit, then provisions a **Client, Project, Kanban board, and Tasks** in one step. Includes a dedicated Claude provider in **Settings → Claude / SOW** with selectable model and effort. ([docs](docs/features/SOW_AUTO_PROVISIONING.md))
 
+### ✨ Highlights of v5.8.6
+
+**Patch (5.8.6):** **Client portal** — internal user accounts can be restricted to portal-only access (no main app), with hardened access checks for inactive users/clients, gateway-aware payment confirmation, safer document downloads, and currency-aware summaries. **Security** — deleted usernames are reserved to block recreation via self-registration, OIDC, or LDAP. **Peppol** — Peppyrus now authenticates with the `X-Api-Key` header. See [CHANGELOG.md](CHANGELOG.md#586---2026-06-28).
+
+### ✨ Highlights of v5.8.5
+
+**Patch (5.8.5):** **Invoice time entries and expenses (#662)** — clearer separation of logged hours vs expense-module records, diagnostic hints on generate-from-time, and optional one line per time entry. **Manual time entry** — task dropdown loads correctly when a project is selected ([#675](https://github.com/DRYTRIX/TimeTracker/issues/675)). See [CHANGELOG.md](CHANGELOG.md#585---2026-06-25).
+
 ### ✨ Highlights of v5.8.4
 
 **Patch (5.8.4):** **Workflow template migration** — migration 161 no longer fails on PostgreSQL when seeding starter workflow templates. See [CHANGELOG.md](CHANGELOG.md#584---2026-06-19).

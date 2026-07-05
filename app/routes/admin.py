@@ -946,6 +946,7 @@ def edit_user(user_id):
         role_name = request.form.get("role", "user")  # This will be a role name from the Role system
         is_active = request.form.get("is_active") == "on"
         client_portal_enabled = request.form.get("client_portal_enabled") == "on"
+        portal_only = request.form.get("portal_only") == "on"
         client_id = request.form.get("client_id", "").strip()
 
         if not username:
@@ -1043,26 +1044,17 @@ def edit_user(user_id):
         # Update legacy role field for backward compatibility
         user.role = role_name
 
-        # Update roles in the new system
-        # If user doesn't have the selected role, assign it as the primary role
-        # Keep other roles if they exist (multi-role support)
-        if role_obj not in user.roles:
-            # If user has no roles, assign the selected one
-            if not user.roles:
-                user.roles.append(role_obj)
-            else:
-                # If user has roles, replace the first one (primary role) with the selected one
-                # This maintains backward compatibility while supporting multi-role
-                user.roles[0] = role_obj
-        else:
-            # If the selected role is already assigned but not first, move it to first position
-            if user.roles[0] != role_obj:
-                user.roles.remove(role_obj)
-                user.roles.insert(0, role_obj)
+        # Update roles: replace entire role set with the selected role from the form
+        from app.models.permission import user_roles
+
+        db.session.execute(user_roles.delete().where(user_roles.c.user_id == user.id))
+        db.session.expire(user, ["roles"])
+        user.roles.append(role_obj)
 
         user.is_active = is_active
         user.client_portal_enabled = client_portal_enabled
         user.client_id = int(client_id) if client_id else None
+        user.portal_only = portal_only if client_portal_enabled else False
 
         # Subcontractor: sync assigned clients (only when role is subcontractor)
         assigned_client_ids = [int(x) for x in request.form.getlist("assigned_client_ids") if x and x.isdigit()]
@@ -1143,6 +1135,9 @@ def delete_user(user_id):
             raise
 
     username = user.username
+    from app.utils.deleted_usernames import reserve_deleted_username
+
+    reserve_deleted_username(username, deleted_by_user_id=current_user.id)
     db.session.delete(user)
     if not safe_commit("admin_delete_user", {"user_id": user.id}):
         flash(
@@ -1511,6 +1506,7 @@ def settings():
         settings_obj.invoice_start_number = int(invoice_start_number_form)
         settings_obj.invoice_terms = request.form.get("invoice_terms", "Payment is due within 30 days of invoice date.")
         settings_obj.invoice_notes = request.form.get("invoice_notes", "Thank you for your business!")
+        settings_obj.invoice_group_time_entries = request.form.get("invoice_group_time_entries") == "on"
 
         # Update quote defaults
         quote_prefix_form = sanitize_invoice_prefix(request.form.get("quote_prefix", ""))

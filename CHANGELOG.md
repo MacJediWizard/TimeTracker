@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.9.2] - 2026-07-13
+
+### Added
+
+- **Distribution hub** — [DISTRIBUTION.md](docs/admin/deployment/DISTRIBUTION.md) consolidates install paths for Docker, NAS, PaaS (Render, Railway, Fly.io, Coolify), Unraid, and Portainer.
+- **Portainer app templates** — One-click stack in Portainer via `templates/portainer/templates.json`.
+- **Unraid Community Applications** — App templates for the TimeTracker app and PostgreSQL database.
+- **PaaS deploy configs** — `fly.toml` and `railway.toml` for Fly.io and Railway one-click deploys.
+- **Docker Hub README** — `docker/hub-README.md` for the Docker Hub repository page.
+
+### Changed
+
+- **Docker Hub namespace** — Images now publish to `drytrix/timetracker` (replacing `driesp/timetracker`). CI release workflow, deploy scripts, and docs updated accordingly.
+
+### Documentation
+
+- **Version** — Documented release **5.9.2** to match `setup.py` (single source of truth for the application version).
+
+## [5.9.1] - 2026-07-13
+
+### Fixed
+
+- **Calendar holiday and time-off overlays** — Restored holiday overlays on `/calendar` via a dedicated `/api/calendar/data` feed (avoids route collision with `/api/calendar/events`). Fixed local date keying, merged overlay handling, and FullCalendar overlay end dates.
+- **Dashboard working-time limit banner** — Banner now appears only when justifications are pending.
+- **Attendance compliance** — Stopped eager loading of dynamic attendance relationships that caused regressions in `list_days`.
+- **Template globals** — Fixed `Settings` shadowing in Jinja template globals.
+
+### Documentation
+
+- **NAS deployment** — Added `docker-compose.nas.yml` and [NAS_DEPLOYMENT.md](docs/admin/deployment/NAS_DEPLOYMENT.md) for QNAP, Synology, and Portainer installs without cloning the repo.
+- **Calendar API** — Documented `/api/calendar/data` endpoint in calendar feature docs.
+- **Version** — Documented release **5.9.1** to match `setup.py` (single source of truth for the application version).
+
+## [5.9.0] - 2026-07-06
+
+### Added
+
+- **Belgium 2027 attendance compliance** — Optional attendance compliance module with Belgium preset (daily/weekly hours, break and rest rules, 10-year retention). Employees clock in/out and track breaks via workday flows; corrections require admin approval; workforce CSV export and mobile API support inspector-ready records. See [BELGIUM_2027.md](docs/compliance/BELGIUM_2027.md).
+- **Missed workday reminders** — Smart notification and optional email when an employee has not pressed **Start Workday** on an expected work day (Mon–Fri, excluding holidays and approved time off). User settings under **Settings → Notifications**; migration `165_add_missed_clock_in_notifications`. See [SMART_NOTIFICATIONS.md](docs/features/SMART_NOTIFICATIONS.md) and [WORKDAY_SESSIONS.md](docs/features/WORKDAY_SESSIONS.md).
+- **Attendance correction for missing workdays** — Employees can request admin-approved retroactive work periods from `/workday/history` when they forgot to clock in on a past day.
+- **Time-off request PDF** — Printable leave/vacation form with employee details, approval metadata, and signature lines. Download from the Workforce dashboard (`/workforce/time-off/<id>/pdf`) or `GET /api/v1/time-off/requests/<id>/pdf`.
+- **Calendar holidays and time-off overlay** — Company holidays and the user's time-off (approved and pending) appear on the main calendar and timer calendar views with filter toggles.
+- **Mobile workday controls** — Shared **Workday** card on Home and Timer screens with error feedback via SnackBar.
+- **Slack attendance commands** — Workspace-level `/in`, `/brb`, `/back`, `/out` slash commands for clock-in/out and breaks in a dedicated Slack channel, with in-channel confirmations and email/Slack-ID user linking. Admin setup under **Integrations → Workspace integrations**; migration `166_add_slack_user_id`. See [SLACK_ATTENDANCE.md](docs/integrations/SLACK_ATTENDANCE.md).
+
+### Fixed
+
+- **Client portal login and logout (#677)** — External clients with portal credentials can sign in at `/login` as well as `/client-portal/login`; wrong passwords no longer fall through to self-registration. Portal logout (native and user-based sessions) redirects to `/client-portal/login`. Portal usernames are matched case-insensitively. See [CLIENT_PORTAL.md](docs/CLIENT_PORTAL.md).
+
+### Documentation
+
+- **Version** — Documented release **5.9.0** to match `setup.py` (single source of truth for the application version).
+
 ## [5.8.6] - 2026-06-28
 
 ### Added

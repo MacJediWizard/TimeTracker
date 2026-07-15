@@ -1,3 +1,12 @@
+from .attendance_compliance import (
+    AttendanceBreak,
+    AttendanceBreakType,
+    AttendanceCorrection,
+    AttendanceCorrectionStatus,
+    AttendanceDayStatus,
+    AttendanceWorkPeriod,
+    DailyAttendanceRecord,
+)
 from .activity import Activity
 from .api_idempotency_key import ApiIdempotencyKey
 from .api_token import ApiToken
@@ -43,6 +52,7 @@ from .invoice_pdf_template import InvoicePDFTemplate
 from .invoice_peppol import InvoicePeppolTransmission
 from .invoice_template import InvoiceTemplate
 from .issue import Issue
+from .kanban_board_template import KanbanBoardTemplate
 from .kanban_column import KanbanColumn
 from .lead import Lead
 from .lead_activity import LeadActivity
@@ -80,6 +90,7 @@ from .supplier import Supplier
 from .supplier_stock_item import SupplierStockItem
 from .task import Task
 from .task_activity import TaskActivity
+from .task_checklist_item import TaskChecklistItem
 from .tax_rule import TaxRule
 from .team_chat import ChatChannel, ChatChannelMember, ChatMessage, ChatReadReceipt
 from .time_entry import TimeEntry
@@ -113,6 +124,7 @@ __all__ = [
     "InvoiceItem",
     "Client",
     "TaskActivity",
+    "TaskChecklistItem",
     "Comment",
     "FocusSession",
     "RecurringBlock",
@@ -129,6 +141,7 @@ __all__ = [
     "SavedReportView",
     "ReportEmailSchedule",
     "KanbanColumn",
+    "KanbanBoardTemplate",
     "TimeEntryTemplate",
     "Activity",
     "UserFavoriteProject",
@@ -137,6 +150,13 @@ __all__ = [
     "WeeklyTimeGoal",
     "WorkdaySession",
     "WorkingTimeViolation",
+    "DailyAttendanceRecord",
+    "AttendanceWorkPeriod",
+    "AttendanceBreak",
+    "AttendanceCorrection",
+    "AttendanceDayStatus",
+    "AttendanceBreakType",
+    "AttendanceCorrectionStatus",
     "Expense",
     "Permission",
     "Role",

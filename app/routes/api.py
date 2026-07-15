@@ -1421,6 +1421,8 @@ def calendar_events():
     end = request.args.get("end")
     include_tasks = request.args.get("include_tasks", "true").lower() == "true"
     include_time_entries = request.args.get("include_time_entries", "true").lower() == "true"
+    include_holidays = request.args.get("include_holidays", "true").lower() == "true"
+    include_time_off = request.args.get("include_time_off", "true").lower() == "true"
     project_id = request.args.get("project_id", type=int)
     task_id = request.args.get("task_id", type=int)
     tags = request.args.get("tags", "").strip()
@@ -1563,6 +1565,48 @@ def calendar_events():
 
     # Combine all items
     all_items = events + tasks + time_entries
+
+    from app.utils.calendar_overlay import (
+        HOLIDAY_COLOR,
+        TIME_OFF_COLOR,
+        get_holidays_for_calendar,
+        get_time_off_for_calendar,
+    )
+
+    overlay_start = start_dt.date()
+    overlay_end = end_dt.date()
+    if include_holidays:
+        for item in get_holidays_for_calendar(overlay_start, overlay_end):
+            all_items.append(
+                {
+                    "id": item["id"],
+                    "title": item["title"],
+                    "start": item["start"][:10],
+                    "end": item["end"][:10],
+                    "allDay": True,
+                    "display": "background",
+                    "backgroundColor": HOLIDAY_COLOR + "33",
+                    "borderColor": HOLIDAY_COLOR,
+                    "editable": False,
+                    "extendedProps": {**item, "item_type": "holiday"},
+                }
+            )
+    if include_time_off:
+        for item in get_time_off_for_calendar(user_id, overlay_start, overlay_end):
+            all_items.append(
+                {
+                    "id": item["id"],
+                    "title": item["title"],
+                    "start": item["start"][:10],
+                    "end": item["end"][:10],
+                    "allDay": True,
+                    "display": "background",
+                    "backgroundColor": (item.get("color") or TIME_OFF_COLOR) + "33",
+                    "borderColor": item.get("color") or TIME_OFF_COLOR,
+                    "editable": False,
+                    "extendedProps": {**item, "item_type": "time_off"},
+                }
+            )
 
     return jsonify(
         {
@@ -1922,6 +1966,29 @@ def get_users():
     )
     total_hours_by_user = {uid: round((total_seconds or 0) / 3600, 2) for uid, total_seconds in rows}
     return jsonify({"users": [user.to_dict(total_hours_override=total_hours_by_user.get(user.id)) for user in users]})
+
+
+@api_bp.route("/api/users/search")
+@login_required
+def search_users_for_mentions():
+    """Lightweight active-user list for @mention autocomplete.
+
+    Available to any authenticated user (unlike /api/users, which is admin
+    only) and returns just the fields the mention UI needs. An optional ``q``
+    query narrows the list by username or display name.
+    """
+    q = (request.args.get("q") or "").strip().lower()
+    query = User.query.filter_by(is_active=True)
+    if q:
+        like = f"%{q}%"
+        query = query.filter(
+            db.or_(
+                db.func.lower(User.username).like(like),
+                db.func.lower(User.full_name).like(like),
+            )
+        )
+    users = query.order_by(User.username).limit(500).all()
+    return jsonify({"users": [{"id": u.id, "username": u.username, "display_name": u.display_name} for u in users]})
 
 
 @api_bp.route("/api/stats")

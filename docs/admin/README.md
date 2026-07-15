@@ -12,6 +12,9 @@ Complete guides for TimeTracker administrators.
 - **[OIDC Setup](configuration/OIDC_SETUP.md)** - OIDC/SSO authentication setup
 
 ### Deployment
+- **[Distribution & Download](deployment/DISTRIBUTION.md)** - All install paths and marketplaces
+- **[NAS Deployment](deployment/NAS_DEPLOYMENT.md)** - QNAP, Synology, Portainer (no git clone)
+- **[Portainer Deployment](deployment/PORTAINER_DEPLOYMENT.md)** - Portainer stack guide
 - **[Version Management](deployment/VERSION_MANAGEMENT.md)** - Managing versions
 - **[Release Process](deployment/RELEASE_PROCESS.md)** - Release workflow
 - **[Official Builds](deployment/OFFICIAL_BUILDS.md)** - Official build information

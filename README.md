@@ -6,7 +6,7 @@
 
 **Track time. Manage projects. Generate invoices. All in one place.**
 
-[🆕 What's New](#-whats-new) • [🚀 Quick Start](#-quick-start) • [✨ Features](#-features) • [📸 Screenshots](#-screenshots) • [📖 Getting Started](docs/GETTING_STARTED.md) • [📚 Documentation](docs/) • [🗑️ Uninstall](UNINSTALL.md) • [📋 Changelog](CHANGELOG.md) • [🐳 Deploy](#-deployment)
+[🆕 What's New](#-whats-new) • [📥 Download & Install](#-download--install) • [🚀 Quick Start](#-quick-start) • [✨ Features](#-features) • [📸 Screenshots](#-screenshots) • [📖 Getting Started](docs/GETTING_STARTED.md) • [📚 Documentation](docs/) • [🗑️ Uninstall](UNINSTALL.md) • [📋 Changelog](CHANGELOG.md) • [🐳 Deploy](#-deployment)
 
 ---
 
@@ -23,6 +23,21 @@ TimeTracker is a **self-hosted, web-based time tracking application** designed f
 - 🔒 **Privacy-focused organizations** wanting self-hosted solutions
 
 You can [support the project and purchase a key](https://timetracker.drytrix.com/support.html) to hide donate prompts in your instance.
+
+---
+
+## 📥 Download & Install
+
+| Method | Best for | Get started |
+|--------|----------|-------------|
+| **Docker image** | Servers, VPS, homelab | `docker pull ghcr.io/drytrix/timetracker:latest` or [Docker Hub](https://hub.docker.com/r/drytrix/timetracker) (`drytrix/timetracker`) |
+| **NAS compose** | QNAP, Synology, Portainer | Paste [`docker-compose.nas.yml`](docker-compose.nas.yml) — [NAS guide](docs/admin/deployment/NAS_DEPLOYMENT.md) |
+| **GitHub Release** | Compose files + desktop/mobile | [Releases](https://github.com/drytrix/TimeTracker/releases) |
+| **Cloud (Render)** | Managed hosting | [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/drytrix/TimeTracker) |
+
+**Full list of install paths:** [Distribution Guide](docs/admin/deployment/DISTRIBUTION.md) (Portainer templates, Unraid, Railway, Fly.io, Coolify, [Docker Hub](https://hub.docker.com/r/drytrix/timetracker))
+
+> **Docker Hub namespace:** images are published at [`drytrix/timetracker`](https://hub.docker.com/r/drytrix/timetracker) (formerly `driesp/timetracker`).
 
 ---
 
@@ -93,6 +108,17 @@ TimeTracker has been continuously enhanced with powerful new features! Here's wh
 ### ✨ Fork additions
 
 - 🪄 **SOW auto-provisioning (Claude API)** — Paste or upload a Statement of Work (text/PDF/DOCX); Claude parses it into a structured plan that you review and edit, then provisions a **Client, Project, Kanban board, and Tasks** in one step. Includes a dedicated Claude provider in **Settings → Claude / SOW** with selectable model and effort. ([docs](docs/features/SOW_AUTO_PROVISIONING.md))
+### ✨ Highlights of v5.9.2
+
+**Patch (5.9.2):** **Distribution** — new distribution hub, Portainer/Unraid templates, Fly.io and Railway configs, and refreshed deploy scripts for installs without cloning the repo. **Docker Hub** — images now publish to `drytrix/timetracker` (replacing `driesp/timetracker`). See [CHANGELOG.md](CHANGELOG.md#592---2026-07-13).
+
+### ✨ Highlights of v5.9.1
+
+**Patch (5.9.1):** **Calendar** — restored holiday and time-off overlays with correct date handling and a dedicated `/api/calendar/data` feed. **Dashboard** — working-time limit banner only for pending justifications. **Compliance** — fixed attendance relationship eager-loading regression. **Deployment** — NAS-friendly compose stack and guide for QNAP, Synology, and Portainer. See [CHANGELOG.md](CHANGELOG.md#591---2026-07-13).
+
+### ✨ Highlights of v5.9.0
+
+**Minor (5.9.0):** **Workforce & attendance** — Belgium 2027 compliance module, missed clock-in reminders, retroactive workday corrections, and time-off request PDFs. **Calendar** — company holidays and time-off overlays on main and timer views. **Mobile** — shared Workday card on Home and Timer screens. **Slack** — `/in`, `/brb`, `/back`, `/out` slash commands for clock-in/out and breaks. **Client portal** — unified login at `/login` and correct logout redirect ([#677](https://github.com/DRYTRIX/TimeTracker/issues/677)). See [CHANGELOG.md](CHANGELOG.md#590---2026-07-06).
 
 ### ✨ Highlights of v5.8.6
 
@@ -534,6 +560,18 @@ docker-compose -f docker/docker-compose.local-test.yml up --build
 - ⚠️ **Note:** SQLite is not recommended for production use
 
 **📖 Need help?** Check the [Getting Started Guide](docs/GETTING_STARTED.md) for detailed instructions.
+
+### Option 4: Install on a NAS (QNAP / Synology / Portainer)
+
+No git clone required — paste a single compose file into your NAS Docker UI:
+
+1. Copy [`docker-compose.nas.yml`](docker-compose.nas.yml) into Container Station, Synology Container Manager, or Portainer.
+2. Set **`SECRET_KEY`** — generate with: `openssl rand -hex 32`
+3. Deploy and open **`http://<your-nas-ip>:8080`**
+
+Works on **QNAP**, **Synology**, **Unraid/Portainer**, and other Docker-capable NAS devices (amd64 and arm64).
+
+**📖 Full step-by-step guide:** [NAS Deployment Guide](docs/admin/deployment/NAS_DEPLOYMENT.md)
 
 ---
 

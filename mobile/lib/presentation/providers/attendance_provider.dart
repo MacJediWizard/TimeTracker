@@ -45,7 +45,8 @@ class AttendanceNotifier extends StateNotifier<AttendanceState> {
   Future<void> refresh() async {
     state = state.copyWith(loading: true, error: null);
     try {
-      final client = ref.read(apiClientProvider);
+      final client = await ref.read(apiClientProvider.future);
+      if (client == null) throw StateError('Not authenticated');
       final data = await client.getAttendanceStatus();
       state = AttendanceState(
         workActive: data['work_active'] == true,
@@ -64,7 +65,9 @@ class AttendanceNotifier extends StateNotifier<AttendanceState> {
 
   Future<bool> startWorkday() async {
     try {
-      await ref.read(apiClientProvider).startWorkday();
+      final client = await ref.read(apiClientProvider.future);
+      if (client == null) throw StateError('Not authenticated');
+      await client.startWorkday();
       await refresh();
       return true;
     } catch (e) {
@@ -75,7 +78,9 @@ class AttendanceNotifier extends StateNotifier<AttendanceState> {
 
   Future<bool> endWorkday() async {
     try {
-      await ref.read(apiClientProvider).endWorkday();
+      final client = await ref.read(apiClientProvider.future);
+      if (client == null) throw StateError('Not authenticated');
+      await client.endWorkday();
       await refresh();
       return true;
     } catch (e) {
@@ -86,7 +91,9 @@ class AttendanceNotifier extends StateNotifier<AttendanceState> {
 
   Future<bool> startBreak() async {
     try {
-      await ref.read(apiClientProvider).startAttendanceBreak();
+      final client = await ref.read(apiClientProvider.future);
+      if (client == null) throw StateError('Not authenticated');
+      await client.startAttendanceBreak();
       await refresh();
       return true;
     } catch (e) {
@@ -97,7 +104,9 @@ class AttendanceNotifier extends StateNotifier<AttendanceState> {
 
   Future<bool> endBreak() async {
     try {
-      await ref.read(apiClientProvider).endAttendanceBreak();
+      final client = await ref.read(apiClientProvider.future);
+      if (client == null) throw StateError('Not authenticated');
+      await client.endAttendanceBreak();
       await refresh();
       return true;
     } catch (e) {

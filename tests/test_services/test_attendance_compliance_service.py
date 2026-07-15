@@ -8,7 +8,6 @@ from app.models import Settings, User
 from app.models.attendance_compliance import (
     AttendanceCorrectionStatus,
     AttendanceDayStatus,
-    AttendanceWorkPeriod,
     DailyAttendanceRecord,
 )
 from app.models.time_off import LeaveType, TimeOffRequest, TimeOffRequestStatus
@@ -25,10 +24,13 @@ def compliance_user(app):
         db.session.add(user)
         db.session.commit()
         yield user
-        AttendanceWorkPeriod.query.filter_by(user_id=user.id).delete()
-        DailyAttendanceRecord.query.filter_by(user_id=user.id).delete()
-        db.session.delete(user)
-        db.session.commit()
+        # No manual teardown: the function-scoped `app` fixture drops all tables
+        # after each test (FK-safe via conftest's DROP-TABLE listener). Bulk-deleting
+        # the user here instead fails under the fork's SQLite FK enforcement
+        # (conftest._enable_sqlite_foreign_keys): attendance breaks/records and
+        # time-off requests still reference the user, and `db.session.delete(user)`
+        # would either hit a FOREIGN KEY constraint or NULL a NOT NULL child FK
+        # (e.g. time_off_requests.user_id) — none of these FKs have ON DELETE CASCADE.
 
 
 class TestAttendanceComplianceService:
@@ -136,8 +138,12 @@ class TestAttendanceComplianceService:
 
             svc = AttendanceComplianceService()
             work_date = date.today() - timedelta(days=1)
-            start = datetime.combine(work_date, datetime.min.time()).replace(hour=9, minute=0)
-            end = datetime.combine(work_date, datetime.min.time()).replace(hour=17, minute=0)
+            start = datetime.combine(work_date, datetime.min.time()).replace(
+                hour=9, minute=0
+            )
+            end = datetime.combine(work_date, datetime.min.time()).replace(
+                hour=17, minute=0
+            )
 
             corr = svc.request_missing_work_period(
                 user_id=compliance_user.id,
@@ -148,7 +154,9 @@ class TestAttendanceComplianceService:
             )
             assert corr["success"] is True
 
-            review = svc.review_correction(corr["correction"].id, admin.id, approve=True)
+            review = svc.review_correction(
+                corr["correction"].id, admin.id, approve=True
+            )
             assert review["success"] is True
 
             day = DailyAttendanceRecord.query.filter_by(

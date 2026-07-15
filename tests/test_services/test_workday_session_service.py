@@ -19,10 +19,12 @@ def workday_user(app):
         db.session.add(user)
         db.session.commit()
         yield user
-        WorkdaySession.query.filter_by(user_id=user.id).delete()
-        WorkingTimeViolation.query.filter_by(user_id=user.id).delete()
-        db.session.delete(user)
-        db.session.commit()
+        # No manual teardown: the function-scoped `app` fixture drops all tables
+        # after each test (FK-safe via conftest's DROP-TABLE listener). Bulk-deleting
+        # the user + sessions here instead fails under the fork's SQLite FK
+        # enforcement (conftest._enable_sqlite_foreign_keys) because attendance
+        # work periods created by the service still reference the workday session
+        # (and the user), and those FKs have no ON DELETE CASCADE.
 
 
 class TestWorkdaySessionService:
@@ -44,7 +46,9 @@ class TestWorkdaySessionService:
     def test_auto_close_stale_sessions(self, app, workday_user):
         with app.app_context():
             old_start = local_now() - timedelta(hours=20)
-            session = WorkdaySession(user_id=workday_user.id, start_time=old_start, source="manual")
+            session = WorkdaySession(
+                user_id=workday_user.id, start_time=old_start, source="manual"
+            )
             db.session.add(session)
             db.session.commit()
 
@@ -81,7 +85,9 @@ class TestWorkingTimeLimitService:
 
             violations = svc.check_user_limits(workday_user)
             assert len(violations) >= 1
-            assert any(v.period_type == WorkingTimeViolation.PERIOD_DAILY for v in violations)
+            assert any(
+                v.period_type == WorkingTimeViolation.PERIOD_DAILY for v in violations
+            )
 
     def test_submit_justification(self, app, workday_user):
         with app.app_context():
@@ -103,7 +109,9 @@ class TestWorkingTimeLimitService:
             assert result["success"] is True
             assert result["violation"].status == WorkingTimeViolation.STATUS_SUBMITTED
 
-    def test_violations_needing_justification_excludes_submitted(self, app, workday_user):
+    def test_violations_needing_justification_excludes_submitted(
+        self, app, workday_user
+    ):
         with app.app_context():
             today = local_now().date()
             pending = WorkingTimeViolation(

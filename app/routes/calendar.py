@@ -70,7 +70,7 @@ def view_calendar():
     )
 
 
-@calendar_bp.route("/api/calendar/events")
+@calendar_bp.route("/api/calendar/data")
 @login_required
 @module_enabled("calendar")
 def get_events():
@@ -79,14 +79,8 @@ def get_events():
     end_str = request.args.get("end")
     include_tasks = request.args.get("include_tasks", "true").lower() == "true"
     include_time_entries = request.args.get("include_time_entries", "true").lower() == "true"
-
-    print(f"\n{'='*80}")
-    print(f"API ENDPOINT CALLED - /api/calendar/events")
-    print(f"  include_tasks query param: {request.args.get('include_tasks')}")
-    print(f"  include_time_entries query param: {request.args.get('include_time_entries')}")
-    print(f"  include_tasks parsed: {include_tasks}")
-    print(f"  include_time_entries parsed: {include_time_entries}")
-    print(f"{'='*80}\n")
+    include_holidays = request.args.get("include_holidays", "true").lower() == "true"
+    include_time_off = request.args.get("include_time_off", "true").lower() == "true"
 
     if not start_str or not end_str:
         return jsonify({"error": "Start and end dates are required"}), 400
@@ -96,15 +90,6 @@ def get_events():
         end_date = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
     except (ValueError, AttributeError):
         return jsonify({"error": "Invalid date format"}), 400
-
-    print(f"\n{'='*80}")
-    print(f"ROUTE HANDLER - get_events API:")
-    print(f"  user_id={current_user.id}")
-    print(f"  start_date={start_date}")
-    print(f"  end_date={end_date}")
-    print(f"  include_tasks={include_tasks} (type: {type(include_tasks)})")
-    print(f"  include_time_entries={include_time_entries} (type: {type(include_time_entries)})")
-    print(f"{'='*80}\n")
 
     # Get events using the model's static method
     result = CalendarEvent.get_events_in_range(
@@ -139,23 +124,28 @@ def get_events():
         else:
             e["color"] = get_type_color("time_entry")
 
+    from app.utils.calendar_overlay import (
+        HOLIDAY_COLOR,
+        TIME_OFF_COLOR,
+        get_holidays_for_calendar,
+        get_time_off_for_calendar,
+    )
+
+    overlay_start = start_date.date()
+    overlay_end = end_date.date()
+    holidays = get_holidays_for_calendar(overlay_start, overlay_end) if include_holidays else []
+    time_off = get_time_off_for_calendar(current_user.id, overlay_start, overlay_end) if include_time_off else []
+
+    result["holidays"] = holidays
+    result["time_off"] = time_off
     result["typeColors"] = {
         "event": get_type_color("event"),
         "task": get_type_color("task"),
         "time_entry": get_type_color("time_entry"),
         "time_entry_running": get_type_color("time_entry_running"),
+        "holiday": HOLIDAY_COLOR,
+        "time_off": TIME_OFF_COLOR,
     }
-
-    print(f"\n{'='*80}")
-    print(f"ROUTE HANDLER - Result from get_events_in_range:")
-    print(f"  events count: {len(result.get('events', []))}")
-    print(f"  tasks count: {len(result.get('tasks', []))}")
-    print(f"  time_entries count: {len(result.get('time_entries', []))}")
-    print(f"{'='*80}\n")
-
-    # Add debug marker to verify this code is running
-    result["_debug_timestamp"] = datetime.now().isoformat()
-    result["_debug_version"] = "v3_no_cache"
 
     response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"

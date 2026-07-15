@@ -89,6 +89,7 @@ from .supplier import Supplier
 from .supplier_stock_item import SupplierStockItem
 from .task import Task
 from .task_activity import TaskActivity
+from .task_checklist_item import TaskChecklistItem
 from .tax_rule import TaxRule
 from .team_chat import ChatChannel, ChatChannelMember, ChatMessage, ChatReadReceipt
 from .time_entry import TimeEntry
@@ -122,6 +123,7 @@ __all__ = [
     "InvoiceItem",
     "Client",
     "TaskActivity",
+    "TaskChecklistItem",
     "Comment",
     "FocusSession",
     "RecurringBlock",

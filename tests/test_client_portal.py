@@ -15,12 +15,14 @@ import pytest
 from sqlalchemy.exc import PendingRollbackError
 
 from app import db
-from app.models import Client, Invoice, InvoiceItem, Project, Quote, TimeEntry, User
+from app.models import Client, Invoice, Project, Quote, TimeEntry, User
 
 
 @pytest.fixture(autouse=True)
 def disable_audit_logging_for_client_portal_tests(monkeypatch):
-    monkeypatch.setattr("app.utils.audit.check_audit_table_exists", lambda force_check=False: False)
+    monkeypatch.setattr(
+        "app.utils.audit.check_audit_table_exists", lambda force_check=False: False
+    )
 
 
 def set_client_portal_access(user, client_id=None, enabled=True, portal_only=False):
@@ -54,7 +56,7 @@ def safe_commit_with_retry(max_retries=3):
         try:
             db.session.commit()
             return True
-        except Exception as e:
+        except Exception:
             # If commit fails, rollback and retry after a short delay
             try:
                 db.session.rollback()
@@ -150,9 +152,15 @@ class TestClientPortalUserModel:
             user.client_id = test_client.id
 
             # Create projects
-            project1 = Project(name="Project 1", client_id=test_client.id, status="active")
-            project2 = Project(name="Project 2", client_id=test_client.id, status="active")
-            project3 = Project(name="Project 3", client_id=test_client.id, status="inactive")
+            project1 = Project(
+                name="Project 1", client_id=test_client.id, status="active"
+            )
+            project2 = Project(
+                name="Project 2", client_id=test_client.id, status="active"
+            )
+            project3 = Project(
+                name="Project 3", client_id=test_client.id, status="inactive"
+            )
             db.session.add_all([project1, project2, project3])
             db.session.commit()
 
@@ -179,7 +187,11 @@ class TestClientPortalUserModel:
 
             # Verify user was actually updated (commit might have failed)
             user = safe_get_user(user_id)
-            if not commit_success or not user.client_portal_enabled or user.client_id != test_client.id:
+            if (
+                not commit_success
+                or not user.client_portal_enabled
+                or user.client_id != test_client.id
+            ):
                 # Re-apply changes if commit failed
                 user.client_portal_enabled = True
                 user.client_id = test_client.id
@@ -239,7 +251,11 @@ class TestClientPortalUserModel:
 
             # Verify user was actually updated (commit might have failed)
             user = safe_get_user(user_id)
-            if not commit_success or not user.client_portal_enabled or user.client_id != test_client.id:
+            if (
+                not commit_success
+                or not user.client_portal_enabled
+                or user.client_id != test_client.id
+            ):
                 # Re-apply changes if commit failed
                 user.client_portal_enabled = True
                 user.client_id = test_client.id
@@ -298,7 +314,9 @@ class TestClientPortalRoutes:
             response = client.get("/client-portal/dashboard")
             assert response.status_code == 302
             # Client portal 403 handler redirects authenticated non-portal users to client portal login
-            assert "client-portal" in (response.location or "") and "login" in (response.location or "")
+            assert "client-portal" in (response.location or "") and "login" in (
+                response.location or ""
+            )
 
     def test_client_portal_dashboard_with_access(self, app, client, user, test_client):
         """Test dashboard accessible with portal access"""
@@ -324,9 +342,16 @@ class TestClientPortalRoutes:
             response = client.get("/client-portal/dashboard")
             assert response.status_code == 200
             html = response.get_data(as_text=True)
-            assert "Client Portal" in html or "Dashboard" in html or "Welcome" in html or "Projects" in html
+            assert (
+                "Client Portal" in html
+                or "Dashboard" in html
+                or "Welcome" in html
+                or "Projects" in html
+            )
 
-    def test_client_portal_dashboard_customize_save_has_loading_state(self, app, client, user, test_client):
+    def test_client_portal_dashboard_customize_save_has_loading_state(
+        self, app, client, user, test_client
+    ):
         """Test dashboard customize modal Save button has loading state (aria-busy or Saving...)."""
         with app.app_context():
             with db.session.no_autoflush:
@@ -452,7 +477,9 @@ class TestClientPortalRoutes:
             response = client.get(f"/client-portal/invoices/{invoice.id}")
             assert response.status_code == 200
 
-    def test_view_invoice_other_clients_invoice_returns_404_with_flash(self, app, client, user, test_client):
+    def test_view_invoice_other_clients_invoice_returns_404_with_flash(
+        self, app, client, user, test_client
+    ):
         """Portal user cannot view invoice belonging to another client; returns 404 and flash."""
         with app.app_context():
             user = set_client_portal_access(user, test_client.id)
@@ -460,7 +487,9 @@ class TestClientPortalRoutes:
             other_client = Client(name="Other Client")
             db.session.add(other_client)
             db.session.flush()
-            other_project = Project(name="Other Project", client_id=other_client.id, status="active")
+            other_project = Project(
+                name="Other Project", client_id=other_client.id, status="active"
+            )
             db.session.add(other_project)
             safe_commit_with_retry()
 
@@ -484,7 +513,9 @@ class TestClientPortalRoutes:
             body = response.get_data(as_text=True)
             assert "not found" in body.lower() or "Invoice" in body
 
-    def test_view_quote_other_clients_quote_returns_404_with_flash(self, app, client, user, test_client):
+    def test_view_quote_other_clients_quote_returns_404_with_flash(
+        self, app, client, user, test_client
+    ):
         """Portal user cannot view quote belonging to another client; returns 404 and flash."""
         with app.app_context():
             user = set_client_portal_access(user, test_client.id)
@@ -522,11 +553,15 @@ class TestClientPortalRoutes:
 class TestAdminClientPortalManagement:
     """Test admin interface for managing client portal access"""
 
-    def test_admin_can_enable_client_portal(self, app, admin_authenticated_client, user, test_client):
+    def test_admin_can_enable_client_portal(
+        self, app, admin_authenticated_client, user, test_client
+    ):
         """Test admin can enable client portal for user"""
         with app.app_context():
             # Get the edit form page first to get CSRF token
-            get_response = admin_authenticated_client.get(f"/admin/users/{user.id}/edit", follow_redirects=True)
+            get_response = admin_authenticated_client.get(
+                f"/admin/users/{user.id}/edit", follow_redirects=True
+            )
             assert get_response.status_code == 200
 
             # Extract CSRF token from the form if available
@@ -566,26 +601,33 @@ class TestAdminClientPortalManagement:
                 # Expire any cached objects to force fresh query
                 db.session.expire_all()
                 updated_user = safe_get_user(user.id)
-                if updated_user.client_portal_enabled is True and updated_user.client_id == test_client.id:
+                if (
+                    updated_user.client_portal_enabled is True
+                    and updated_user.client_id == test_client.id
+                ):
                     break
                 if attempt < max_retries - 1:
                     time.sleep(0.1 * (2**attempt))
                 else:
                     # Final attempt - verify the assertion
-                    assert (
-                        updated_user.client_portal_enabled is True
-                    ), f"User client_portal_enabled is {updated_user.client_portal_enabled}, expected True"
-                    assert (
-                        updated_user.client_id == test_client.id
-                    ), f"User client_id is {updated_user.client_id}, expected {test_client.id}"
+                    assert updated_user.client_portal_enabled is True, (
+                        f"User client_portal_enabled is {updated_user.client_portal_enabled}, expected True"
+                    )
+                    assert updated_user.client_id == test_client.id, (
+                        f"User client_id is {updated_user.client_id}, expected {test_client.id}"
+                    )
 
-    def test_admin_can_disable_client_portal(self, app, admin_authenticated_client, user, test_client):
+    def test_admin_can_disable_client_portal(
+        self, app, admin_authenticated_client, user, test_client
+    ):
         """Test admin can disable client portal for user"""
         with app.app_context():
             user = set_client_portal_access(user, test_client.id)
 
             # Get the edit form page first to get CSRF token
-            get_response = admin_authenticated_client.get(f"/admin/users/{user.id}/edit", follow_redirects=True)
+            get_response = admin_authenticated_client.get(
+                f"/admin/users/{user.id}/edit", follow_redirects=True
+            )
             assert get_response.status_code == 200
 
             # Extract CSRF token from the form if available
@@ -624,16 +666,21 @@ class TestAdminClientPortalManagement:
                 # Expire any cached objects to force fresh query
                 db.session.expire_all()
                 updated_user = safe_get_user(user.id)
-                if updated_user.client_portal_enabled is False and updated_user.client_id is None:
+                if (
+                    updated_user.client_portal_enabled is False
+                    and updated_user.client_id is None
+                ):
                     break
                 if attempt < max_retries - 1:
                     time.sleep(0.1 * (2**attempt))
                 else:
                     # Final attempt - verify the assertion
-                    assert (
-                        updated_user.client_portal_enabled is False
-                    ), f"User client_portal_enabled is {updated_user.client_portal_enabled}, expected False"
-                    assert updated_user.client_id is None, f"User client_id is {updated_user.client_id}, expected None"
+                    assert updated_user.client_portal_enabled is False, (
+                        f"User client_portal_enabled is {updated_user.client_portal_enabled}, expected False"
+                    )
+                    assert updated_user.client_id is None, (
+                        f"User client_id is {updated_user.client_id}, expected None"
+                    )
 
 
 # ============================================================================
@@ -644,7 +691,9 @@ class TestAdminClientPortalManagement:
 @pytest.mark.routes
 @pytest.mark.integration
 class TestPortalOnlyAccess:
-    def test_portal_only_login_redirects_to_client_portal(self, app, client, user, test_client):
+    def test_portal_only_login_redirects_to_client_portal(
+        self, app, client, user, test_client
+    ):
         with app.app_context():
             user = set_client_portal_access(user, test_client.id, portal_only=True)
             user.set_password("password123")
@@ -659,7 +708,9 @@ class TestPortalOnlyAccess:
         assert resp.status_code in (302, 303)
         assert "/client-portal" in resp.headers.get("Location", "")
 
-    def test_portal_only_user_blocked_from_main_app(self, app, client, user, test_client):
+    def test_portal_only_user_blocked_from_main_app(
+        self, app, client, user, test_client
+    ):
         with app.app_context():
             user = set_client_portal_access(user, test_client.id, portal_only=True)
             user.set_password("password123")
@@ -675,7 +726,9 @@ class TestPortalOnlyAccess:
         assert resp.status_code in (302, 303)
         assert "/client-portal" in resp.headers.get("Location", "")
 
-    def test_non_portal_only_user_can_access_main_app(self, app, client, user, test_client):
+    def test_non_portal_only_user_can_access_main_app(
+        self, app, client, user, test_client
+    ):
         with app.app_context():
             user = set_client_portal_access(user, test_client.id, portal_only=False)
             user.set_password("password123")
@@ -711,7 +764,9 @@ class TestClientPortalLogout:
         assert dash.status_code in (302, 303)
         assert "/client-portal/login" in dash.headers.get("Location", "")
 
-    def test_native_client_logout_redirects_to_portal_login(self, app, client, test_client):
+    def test_native_client_logout_redirects_to_portal_login(
+        self, app, client, test_client
+    ):
         with app.app_context():
             test_client.portal_enabled = True
             test_client.portal_username = "portaluser"
@@ -730,7 +785,9 @@ class TestClientPortalLogout:
 @pytest.mark.routes
 @pytest.mark.integration
 class TestUnifiedClientPortalLogin:
-    def test_main_login_with_portal_credentials_creates_portal_session(self, app, client, test_client):
+    def test_main_login_with_portal_credentials_creates_portal_session(
+        self, app, client, test_client
+    ):
         with app.app_context():
             test_client.portal_enabled = True
             test_client.portal_username = "portalclient"
@@ -749,7 +806,9 @@ class TestUnifiedClientPortalLogin:
             assert sess.get("client_portal_id") == test_client.id
             assert sess.get("_user_id") is None
 
-    def test_main_login_with_portal_username_wrong_password_does_not_self_register(self, app, client, test_client):
+    def test_main_login_with_portal_username_wrong_password_does_not_self_register(
+        self, app, client, test_client
+    ):
         with app.app_context():
             from app.models import Settings
 
@@ -770,7 +829,9 @@ class TestUnifiedClientPortalLogin:
         with app.app_context():
             assert User.query.filter_by(username="portalclient").first() is None
 
-    def test_auth_logout_for_portal_only_user_redirects_to_portal_login(self, app, client, user, test_client):
+    def test_auth_logout_for_portal_only_user_redirects_to_portal_login(
+        self, app, client, user, test_client
+    ):
         with app.app_context():
             user = set_client_portal_access(user, test_client.id, portal_only=True)
             user.set_password("password123")
@@ -789,6 +850,13 @@ class TestUnifiedClientPortalLogin:
 
     def test_authenticate_portal_is_case_insensitive(self, app, test_client):
         with app.app_context():
+            # Re-attach the fixture-created client to this context's session so the
+            # mutation is visible to the in-context query below. The test_client
+            # fixture creates the row in the outer (fixture) app context's session;
+            # inside this nested app context db.session is a different session, and
+            # without merge the pending change stays on the outer session and the
+            # authenticate_portal query here sees nothing (returns None).
+            test_client = db.session.merge(test_client)
             test_client.portal_enabled = True
             test_client.portal_username = "PortalClient"
             test_client.set_portal_password("password123")
@@ -854,7 +922,10 @@ class TestClientPortalDashboardPreferences:
                 sess["_user_id"] = str(user.id)
             post_resp = client.post(
                 "/client-portal/dashboard/preferences",
-                json={"widget_ids": ["stats", "projects"], "widget_order": ["stats", "projects"]},
+                json={
+                    "widget_ids": ["stats", "projects"],
+                    "widget_order": ["stats", "projects"],
+                },
                 headers={"Content-Type": "application/json"},
             )
             assert post_resp.status_code == 200
@@ -863,7 +934,9 @@ class TestClientPortalDashboardPreferences:
             data = get_resp.get_json()
             assert data["widget_ids"] == ["stats", "projects"]
 
-    def test_dashboard_preferences_reject_invalid_widget_id(self, app, client, user, test_client):
+    def test_dashboard_preferences_reject_invalid_widget_id(
+        self, app, client, user, test_client
+    ):
         """POST with invalid widget_ids returns 400"""
         with app.app_context():
             user = set_client_portal_access(user, test_client.id)
@@ -871,7 +944,10 @@ class TestClientPortalDashboardPreferences:
                 sess["_user_id"] = str(user.id)
             response = client.post(
                 "/client-portal/dashboard/preferences",
-                json={"widget_ids": ["stats", "invalid_widget"], "widget_order": ["stats", "invalid_widget"]},
+                json={
+                    "widget_ids": ["stats", "invalid_widget"],
+                    "widget_order": ["stats", "invalid_widget"],
+                },
                 headers={"Content-Type": "application/json"},
             )
             assert response.status_code == 400
@@ -881,7 +957,9 @@ class TestClientPortalDashboardPreferences:
         response = client.get("/client-portal/dashboard/preferences")
         assert response.status_code in (302, 403)
 
-    def test_dashboard_preferences_post_non_json_returns_400(self, app, client, user, test_client):
+    def test_dashboard_preferences_post_non_json_returns_400(
+        self, app, client, user, test_client
+    ):
         """POST with non-JSON body returns 400 (widget_ids missing or invalid)."""
         with app.app_context():
             user = set_client_portal_access(user, test_client.id)
@@ -894,7 +972,9 @@ class TestClientPortalDashboardPreferences:
             )
             assert response.status_code == 400
 
-    def test_dashboard_preferences_post_widget_ids_not_list_returns_400(self, app, client, user, test_client):
+    def test_dashboard_preferences_post_widget_ids_not_list_returns_400(
+        self, app, client, user, test_client
+    ):
         """POST with widget_ids not a list (e.g. string) returns 400."""
         with app.app_context():
             user = set_client_portal_access(user, test_client.id)
@@ -920,7 +1000,9 @@ class TestClientPortalDashboardPreferences:
 class TestClientPortalReportsVisibility:
     """Test that report data respects client visibility"""
 
-    def test_reports_only_show_authenticated_client_data(self, app, client, user, test_client):
+    def test_reports_only_show_authenticated_client_data(
+        self, app, client, user, test_client
+    ):
         """Reports page returns 200 and uses portal data for authenticated client only"""
         with app.app_context():
             from app.models import Client as ClientModel
@@ -928,7 +1010,9 @@ class TestClientPortalReportsVisibility:
             other_client = ClientModel(name="Other Client", email="other@example.com")
             db.session.add(other_client)
             db.session.flush()
-            other_project = Project(name="Other Project", client_id=other_client.id, status="active")
+            other_project = Project(
+                name="Other Project", client_id=other_client.id, status="active"
+            )
             db.session.add(other_project)
             db.session.commit()
             user = set_client_portal_access(user, test_client.id)
@@ -970,7 +1054,9 @@ class TestClientPortalReportsVisibility:
         response = client.get("/client-portal/reports?format=csv")
         assert response.status_code in (302, 403)
 
-    def test_reports_page_has_date_range_and_csv_link(self, app, client, user, test_client):
+    def test_reports_page_has_date_range_and_csv_link(
+        self, app, client, user, test_client
+    ):
         """Reports page exposes date range controls and CSV download link."""
         with app.app_context():
             user = set_client_portal_access(user, test_client.id)
@@ -993,7 +1079,9 @@ class TestClientPortalReportsVisibility:
 class TestClientPortalDiscrepancyFixes:
     """Regression tests for client portal discrepancy fixes."""
 
-    def test_native_login_clears_stale_user_session(self, app, client, user, test_client):
+    def test_native_login_clears_stale_user_session(
+        self, app, client, user, test_client
+    ):
         with app.app_context():
             test_client.portal_enabled = True
             test_client.portal_username = "portaluser"
@@ -1040,7 +1128,9 @@ class TestClientPortalDiscrepancyFixes:
         html = response.get_data(as_text=True)
         assert "Issues" in html or "issues" in html.lower()
 
-    def test_inactive_client_blocked_for_user_based_auth(self, app, client, user, test_client):
+    def test_inactive_client_blocked_for_user_based_auth(
+        self, app, client, user, test_client
+    ):
         with app.app_context():
             Client.query.filter_by(id=test_client.id).update(
                 {"status": "inactive"},
@@ -1085,13 +1175,17 @@ class TestClientPortalDiscrepancyFixes:
         assert response.status_code in (302, 303)
         assert "/client-portal/notifications" in response.headers.get("Location", "")
 
-    def test_download_attachment_wrong_type_denied(self, app, client, user, test_client):
+    def test_download_attachment_wrong_type_denied(
+        self, app, client, user, test_client
+    ):
         with app.app_context():
             from app.models import ProjectAttachment
 
             user = set_client_portal_access(user, test_client.id)
             user_id = user.id
-            project = Project(name="Attachment Project", client_id=test_client.id, status="active")
+            project = Project(
+                name="Attachment Project", client_id=test_client.id, status="active"
+            )
             db.session.add(project)
             db.session.flush()
             attachment = ProjectAttachment(
@@ -1176,14 +1270,19 @@ class TestClientPortalActivityFeed:
     def test_activity_feed_service_only_client_projects(self, app, test_client):
         """get_client_activity_feed returns only activities for client's projects"""
         with app.app_context():
-            from app.models import Activity
             from app.models import Client as ClientModel
-            from app.services.client_activity_feed_service import get_client_activity_feed
+            from app.services.client_activity_feed_service import (
+                get_client_activity_feed,
+            )
 
-            other_client = ClientModel(name="Other Client Feed", email="other2@example.com")
+            other_client = ClientModel(
+                name="Other Client Feed", email="other2@example.com"
+            )
             db.session.add(other_client)
             db.session.flush()
-            other_project = Project(name="Other Project Feed", client_id=other_client.id, status="active")
+            other_project = Project(
+                name="Other Project Feed", client_id=other_client.id, status="active"
+            )
             db.session.add(other_project)
             db.session.commit()
             proj = Project(name="My Project", client_id=test_client.id, status="active")
@@ -1192,7 +1291,10 @@ class TestClientPortalActivityFeed:
             feed = get_client_activity_feed(test_client.id, limit=10)
             for item in feed:
                 if item.get("project_id"):
-                    assert item["project_id"] == proj.id or item["project_name"] != "Other Project Feed"
+                    assert (
+                        item["project_id"] == proj.id
+                        or item["project_name"] != "Other Project Feed"
+                    )
 
 
 # ============================================================================
@@ -1253,7 +1355,9 @@ def test_create_notification_emits_to_client_room(app, test_client):
 
         with patch("app.socketio") as mock_socketio:
             mock_socketio.emit = MagicMock()
-            from app.services.client_notification_service import ClientNotificationService
+            from app.services.client_notification_service import (
+                ClientNotificationService,
+            )
 
             service = ClientNotificationService()
             service.create_notification(

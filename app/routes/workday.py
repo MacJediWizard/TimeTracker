@@ -84,9 +84,7 @@ def workday_history():
 
     service = AttendanceComplianceService()
     records = service.list_days(current_user.id, start_date, end_date)
-    warnings_by_date = {
-        r.work_date: service.get_compliance_warnings(current_user.id, r.work_date) for r in records
-    }
+    warnings_by_date = {r.work_date: service.get_compliance_warnings(current_user.id, r.work_date) for r in records}
 
     total = len(records)
     start_idx = (page - 1) * per_page

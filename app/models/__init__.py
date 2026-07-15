@@ -1,3 +1,6 @@
+from .activity import Activity
+from .api_idempotency_key import ApiIdempotencyKey
+from .api_token import ApiToken
 from .attendance_compliance import (
     AttendanceBreak,
     AttendanceBreakType,
@@ -7,9 +10,6 @@ from .attendance_compliance import (
     AttendanceWorkPeriod,
     DailyAttendanceRecord,
 )
-from .activity import Activity
-from .api_idempotency_key import ApiIdempotencyKey
-from .api_token import ApiToken
 from .audit_log import AuditLog
 from .branding_asset import BrandingAsset
 from .budget_alert import BudgetAlert

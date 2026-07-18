@@ -108,6 +108,10 @@ TimeTracker has been continuously enhanced with powerful new features! Here's wh
 ### ✨ Fork additions
 
 - 🪄 **SOW auto-provisioning (Claude API)** — Paste or upload a Statement of Work (text/PDF/DOCX); Claude parses it into a structured plan that you review and edit, then provisions a **Client, Project, Kanban board, and Tasks** in one step. Includes a dedicated Claude provider in **Settings → Claude / SOW** with selectable model and effort. ([docs](docs/features/SOW_AUTO_PROVISIONING.md))
+### ✨ Highlights of v5.9.3
+
+**Patch (5.9.3):** **Kanban** — per-column WIP limits, per-task checklists, and saveable board templates. **Comments** — @mention notifications for teammates. **Calendar** — holiday overlays in day/week views and fixed workday history dates. **Client portal** — native portal sessions stay in the portal UI ([#677](https://github.com/DRYTRIX/TimeTracker/issues/677)). **CI** — automated Docker Hub publishing with resilient credential handling. See [CHANGELOG.md](CHANGELOG.md#593---2026-07-16).
+
 ### ✨ Highlights of v5.9.2
 
 **Patch (5.9.2):** **Distribution** — new distribution hub, Portainer/Unraid templates, Fly.io and Railway configs, and refreshed deploy scripts for installs without cloning the repo. **Docker Hub** — images now publish to `drytrix/timetracker` (replacing `driesp/timetracker`). See [CHANGELOG.md](CHANGELOG.md#592---2026-07-13).

@@ -11,8 +11,12 @@ _COLUMN_SPEC_FIELDS = (
     "color",
     "position",
     "is_complete_state",
-    "wip_limit",
 )
+
+# Column attributes captured only when the running schema actually has them, so
+# templates stay decoupled from optional features that add columns to
+# KanbanColumn (e.g. per-column WIP limits).
+_OPTIONAL_COLUMN_SPEC_FIELDS = ("wip_limit",)
 
 
 class KanbanBoardTemplate(db.Model):
@@ -53,7 +57,11 @@ class KanbanBoardTemplate(db.Model):
     @staticmethod
     def spec_from_column(column):
         """Build a template column-spec dict from a KanbanColumn instance."""
-        return {field: getattr(column, field) for field in _COLUMN_SPEC_FIELDS}
+        spec = {field: getattr(column, field) for field in _COLUMN_SPEC_FIELDS}
+        for field in _OPTIONAL_COLUMN_SPEC_FIELDS:
+            if hasattr(column, field):
+                spec[field] = getattr(column, field)
+        return spec
 
     @classmethod
     def from_columns(cls, name, columns, description=None, created_by=None):
@@ -99,11 +107,13 @@ class KanbanBoardTemplate(db.Model):
                 color=spec.get("color") or "secondary",
                 position=spec.get("position", position),
                 is_complete_state=bool(spec.get("is_complete_state")),
-                wip_limit=spec.get("wip_limit"),
                 is_system=False,
                 is_active=True,
                 project_id=project_id,
             )
+            for field in _OPTIONAL_COLUMN_SPEC_FIELDS:
+                if field in spec and hasattr(KanbanColumn, field):
+                    setattr(column, field, spec.get(field))
             db.session.add(column)
             existing_keys.add(key)
             created += 1

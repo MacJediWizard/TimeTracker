@@ -8,11 +8,7 @@ from flask_login import current_user, login_required
 
 from app import db
 from app.models.workflow import WorkflowExecution, WorkflowRule, WorkflowTemplate
-from app.routes.workflow_helpers import (
-    get_action_types,
-    get_trigger_types,
-    parse_workflow_form_data,
-)
+from app.routes.workflow_helpers import get_action_types, get_trigger_types, parse_workflow_form_data
 from app.services.workflow_engine import WorkflowEngine
 from app.services.workflow_template_service import WorkflowTemplateService
 from app.utils.decorators import admin_required
@@ -91,9 +87,7 @@ def view_workflow(workflow_id):
         .all()
     )
 
-    return render_template(
-        "workflows/view.html", workflow=workflow, executions=executions
-    )
+    return render_template("workflows/view.html", workflow=workflow, executions=executions)
 
 
 @workflows_bp.route("/workflows/<int:workflow_id>/edit", methods=["GET", "POST"])
@@ -196,9 +190,7 @@ def create_workflow_template():
             {
                 **fields,
                 "category": data.get("category"),
-                "tags": [
-                    t.strip() for t in (data.get("tags") or "").split(",") if t.strip()
-                ],
+                "tags": [t.strip() for t in (data.get("tags") or "").split(",") if t.strip()],
                 "is_public": data.get("is_public") == "on",
             },
             current_user.id,
@@ -216,9 +208,7 @@ def create_workflow_template():
     )
 
 
-@workflows_bp.route(
-    "/workflows/templates/<int:template_id>/edit", methods=["GET", "POST"]
-)
+@workflows_bp.route("/workflows/templates/<int:template_id>/edit", methods=["GET", "POST"])
 @login_required
 @module_enabled("workflows")
 @admin_required
@@ -232,9 +222,7 @@ def edit_workflow_template(template_id):
             {
                 **fields,
                 "category": data.get("category"),
-                "tags": [
-                    t.strip() for t in (data.get("tags") or "").split(",") if t.strip()
-                ],
+                "tags": [t.strip() for t in (data.get("tags") or "").split(",") if t.strip()],
                 "is_public": data.get("is_public") == "on",
             },
         )
@@ -246,9 +234,7 @@ def edit_workflow_template(template_id):
         template=template,
         trigger_types=get_trigger_types(),
         action_types=get_action_types(),
-        form_action=url_for(
-            "workflows.edit_workflow_template", template_id=template.id
-        ),
+        form_action=url_for("workflows.edit_workflow_template", template_id=template.id),
         submit_label=_("Save Template"),
     )
 
@@ -329,9 +315,7 @@ def api_update_workflow(workflow_id):
     workflow.name = data.get("name", workflow.name)
     workflow.description = data.get("description", workflow.description)
     workflow.trigger_type = data.get("trigger_type", workflow.trigger_type)
-    workflow.trigger_conditions = data.get(
-        "trigger_conditions", workflow.trigger_conditions
-    )
+    workflow.trigger_conditions = data.get("trigger_conditions", workflow.trigger_conditions)
     workflow.actions = data.get("actions", workflow.actions)
     workflow.enabled = data.get("enabled", workflow.enabled)
     workflow.priority = data.get("priority", workflow.priority)
@@ -368,9 +352,7 @@ def test_workflow(workflow_id):
         return jsonify({"error": "Access denied"}), 403
 
     data = request.get_json()
-    test_event = data.get(
-        "event", {"type": workflow.trigger_type, "data": {"user_id": current_user.id}}
-    )
+    test_event = data.get("event", {"type": workflow.trigger_type, "data": {"user_id": current_user.id}})
 
     result = WorkflowEngine.execute_rule(workflow, test_event)
 

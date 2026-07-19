@@ -158,3 +158,43 @@ def test_parse_sow_raises_on_unparseable(monkeypatch):
     with pytest.raises(AIServiceError) as exc:
         svc.parse_sow(sow_text="something")
     assert exc.value.code == "claude_invalid_plan"
+
+
+# --- Env/app-config fallback for get_claude_config -----------------------------
+# Regression guard: get_claude_config's docstring promises an env/app-config
+# fallback, but that only works if the Config class actually defines the CLAUDE_*
+# keys (Flask does not auto-import arbitrary env vars). If these are missing,
+# setting CLAUDE_API_KEY / CLAUDE_ENABLED / etc. in the environment silently
+# does nothing and only the DB/UI path works.
+
+
+def test_config_class_defines_claude_env_keys():
+    """The five CLAUDE_* keys must exist on Config or the env fallback is dead."""
+    from app.config import Config
+
+    for key in ("CLAUDE_ENABLED", "CLAUDE_MODEL", "CLAUDE_EFFORT", "CLAUDE_API_KEY", "CLAUDE_TIMEOUT_SECONDS"):
+        assert hasattr(Config, key), f"Config is missing {key} -> env override for it is silently ignored"
+
+
+def test_get_claude_config_falls_back_to_app_config(app):
+    """With no DB overrides, get_claude_config must read CLAUDE_* from app config."""
+    from app.models.settings import Settings
+
+    with app.app_context():
+        app.config["CLAUDE_ENABLED"] = True
+        app.config["CLAUDE_MODEL"] = "claude-sonnet-4-6"
+        app.config["CLAUDE_EFFORT"] = "medium"
+        app.config["CLAUDE_TIMEOUT_SECONDS"] = 222
+
+        s = Settings()
+        s.claude_enabled = None
+        s.claude_model = None
+        s.claude_effort = None
+        s.claude_timeout_seconds = None
+        s.claude_api_key = None
+
+        cfg = s.get_claude_config()
+        assert cfg["enabled"] is True
+        assert cfg["model"] == "claude-sonnet-4-6"
+        assert cfg["effort"] == "medium"
+        assert cfg["timeout_seconds"] == 222

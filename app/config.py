@@ -333,6 +333,15 @@ class Config:
         "You are TimeTracker's AI helper. Be concise, explain assumptions, and return suggested actions only when the user asks for changes.",
     ).strip()
 
+    # Claude / SOW auto-provisioning (Anthropic API; keys are never sent to clients).
+    # Database settings (Admin -> Settings -> "Claude / SOW") take precedence; these env
+    # vars are the fallback. Empty model/effort/key mean "unset" -> use built-in defaults.
+    CLAUDE_ENABLED = os.getenv("CLAUDE_ENABLED", "false").lower() == "true"
+    CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "").strip()
+    CLAUDE_EFFORT = os.getenv("CLAUDE_EFFORT", "").strip()
+    CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "").strip()
+    CLAUDE_TIMEOUT_SECONDS = max(5, int(os.getenv("CLAUDE_TIMEOUT_SECONDS", "120")))
+
     # Password reset
     PASSWORD_RESET_TOKEN_MAX_AGE_SECONDS = max(300, int(os.getenv("PASSWORD_RESET_TOKEN_MAX_AGE_SECONDS", "3600")))
 

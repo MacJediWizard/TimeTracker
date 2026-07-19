@@ -77,9 +77,7 @@ def test_provision_reuses_existing_client(app, user):
 def test_provision_coerces_invalid_task_status_to_todo(app, user):
     with app.app_context():
         plan = _plan()
-        plan["tasks"] = [
-            {"name": "Mystery task", "status": "nonsense_status", "priority": "low"}
-        ]
+        plan["tasks"] = [{"name": "Mystery task", "status": "nonsense_status", "priority": "low"}]
         SowProvisioningService().provision(plan, created_by=user.id)
 
         task = Task.query.filter_by(name="Mystery task").one()
@@ -89,9 +87,7 @@ def test_provision_coerces_invalid_task_status_to_todo(app, user):
 def test_provision_requires_client_and_project_names(app, user):
     with app.app_context():
         with pytest.raises(AIServiceError) as exc:
-            SowProvisioningService().provision(
-                {"client": {"name": ""}, "project": {"name": "X"}}, created_by=user.id
-            )
+            SowProvisioningService().provision({"client": {"name": ""}, "project": {"name": "X"}}, created_by=user.id)
         assert exc.value.code == "validation_error"
 
 
@@ -152,9 +148,7 @@ def test_provision_route_requires_plan(app, client, admin_user):
     assert resp.status_code == 400
 
 
-def test_parse_route_allows_admin_with_mocked_claude(
-    app, client, admin_user, monkeypatch
-):
+def test_parse_route_allows_admin_with_mocked_claude(app, client, admin_user, monkeypatch):
     # api.py is loaded under a synthetic name by the api package, so patch the
     # service class itself — the route references the same class object by identity.
     from app.services.claude_service import ClaudeService
@@ -165,9 +159,7 @@ def test_parse_route_allows_admin_with_mocked_claude(
     monkeypatch.setattr(ClaudeService, "parse_sow", fake_parse)
 
     _login(client, admin_user)
-    resp = client.post(
-        "/api/ai/sow/parse", json={"sow_text": "Acme network refresh SOW..."}
-    )
+    resp = client.post("/api/ai/sow/parse", json={"sow_text": "Acme network refresh SOW..."})
     assert resp.status_code == 200
     body = resp.get_json()
     assert body["ok"] is True

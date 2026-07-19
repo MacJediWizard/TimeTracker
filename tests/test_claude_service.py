@@ -78,9 +78,7 @@ def test_allowed_efforts_per_tier():
 
 def test_request_kwargs_opus_includes_effort_and_thinking():
     svc = ClaudeService(config=_config(model="claude-opus-4-8", effort="xhigh"))
-    kwargs = svc._request_kwargs(
-        max_tokens=16000, output_format={"type": "json_schema", "schema": {}}
-    )
+    kwargs = svc._request_kwargs(max_tokens=16000, output_format={"type": "json_schema", "schema": {}})
     assert kwargs["model"] == "claude-opus-4-8"
     assert kwargs["thinking"] == {"type": "adaptive"}
     assert kwargs["output_config"]["effort"] == "xhigh"

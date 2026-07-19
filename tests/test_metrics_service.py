@@ -12,8 +12,8 @@ from datetime import date, datetime, timedelta
 
 from app import db
 from app.models import TimeEntry
+from app.models.time_entry import local_now
 from app.services.metrics_service import MetricsService
-
 
 # ---------------------------------------------------------------------------
 # linear_forecast_with_bands (pure function)
@@ -84,9 +84,9 @@ def test_profitability_computes_labor_cost_and_margin(app, user, project):
 
 
 def test_org_utilization_forecast_ratio_and_shape(app, user, project):
-    start = date.today() - timedelta(days=7)
-    end = date.today()
-    when = datetime.utcnow() - timedelta(days=1)
+    start = local_now().date() - timedelta(days=7)
+    end = local_now().date()
+    when = local_now() - timedelta(days=1)
     _add_entry(user, project, seconds=3600, billable=True, when=when)
     _add_entry(user, project, seconds=3600, billable=False, when=when)
     db.session.commit()

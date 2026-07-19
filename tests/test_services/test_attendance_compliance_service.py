@@ -10,6 +10,7 @@ from app.models.attendance_compliance import (
     AttendanceDayStatus,
     DailyAttendanceRecord,
 )
+from app.models.time_entry import local_now
 from app.models.time_off import LeaveType, TimeOffRequest, TimeOffRequestStatus
 from app.services.attendance_compliance_service import AttendanceComplianceService
 
@@ -45,7 +46,7 @@ class TestAttendanceComplianceService:
             assert end["success"] is True
             assert svc.get_active_work_period(compliance_user.id) is None
 
-            today = date.today()
+            today = local_now().date()
             hours = svc.get_total_hours(compliance_user.id, today, today)
             assert hours >= 0
 
@@ -59,10 +60,8 @@ class TestAttendanceComplianceService:
             assert brk_end["success"] is True
             svc.clock_out(compliance_user.id)
 
-            today = date.today()
-            day = DailyAttendanceRecord.query.filter_by(
-                user_id=compliance_user.id, work_date=today
-            ).first()
+            today = local_now().date()
+            day = DailyAttendanceRecord.query.filter_by(user_id=compliance_user.id, work_date=today).first()
             assert day is not None
             assert (day.total_break_seconds or 0) >= 0
 
@@ -88,9 +87,7 @@ class TestAttendanceComplianceService:
             count = svc.sync_time_off_request(req)
             assert count == 1
 
-            day = DailyAttendanceRecord.query.filter_by(
-                user_id=compliance_user.id, work_date=date.today()
-            ).first()
+            day = DailyAttendanceRecord.query.filter_by(user_id=compliance_user.id, work_date=date.today()).first()
             assert day is not None
             assert day.status == AttendanceDayStatus.ABSENT
 
@@ -138,12 +135,8 @@ class TestAttendanceComplianceService:
 
             svc = AttendanceComplianceService()
             work_date = date.today() - timedelta(days=1)
-            start = datetime.combine(work_date, datetime.min.time()).replace(
-                hour=9, minute=0
-            )
-            end = datetime.combine(work_date, datetime.min.time()).replace(
-                hour=17, minute=0
-            )
+            start = datetime.combine(work_date, datetime.min.time()).replace(hour=9, minute=0)
+            end = datetime.combine(work_date, datetime.min.time()).replace(hour=17, minute=0)
 
             corr = svc.request_missing_work_period(
                 user_id=compliance_user.id,
@@ -154,14 +147,10 @@ class TestAttendanceComplianceService:
             )
             assert corr["success"] is True
 
-            review = svc.review_correction(
-                corr["correction"].id, admin.id, approve=True
-            )
+            review = svc.review_correction(corr["correction"].id, admin.id, approve=True)
             assert review["success"] is True
 
-            day = DailyAttendanceRecord.query.filter_by(
-                user_id=compliance_user.id, work_date=work_date
-            ).first()
+            day = DailyAttendanceRecord.query.filter_by(user_id=compliance_user.id, work_date=work_date).first()
             assert day is not None
             assert day.work_periods.count() == 1
             period = day.work_periods.first()
@@ -174,7 +163,7 @@ class TestAttendanceComplianceService:
             svc.clock_in(compliance_user.id)
             svc.clock_out(compliance_user.id)
 
-            today = date.today()
+            today = local_now().date()
             rows = svc.belgium_inspector_rows(
                 start_date=today,
                 end_date=today,
@@ -202,7 +191,7 @@ class TestAttendanceComplianceService:
             svc.clock_in(compliance_user.id)
             svc.clock_out(compliance_user.id)
 
-            today = date.today()
+            today = local_now().date()
             records = svc.list_days(compliance_user.id, today, today)
             assert len(records) == 1
             assert records[0].work_periods.count() == 1

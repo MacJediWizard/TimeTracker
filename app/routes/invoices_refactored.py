@@ -17,6 +17,7 @@ from flask_login import current_user, login_required
 from app import db, log_event, track_event
 from app.constants import InvoiceStatus, WebhookEvent
 from app.models import Invoice, Project, Settings
+from app.models.time_entry import local_now
 from app.repositories import InvoiceRepository, ProjectRepository
 from app.services import InvoiceService, ProjectService
 from app.utils.api_responses import error_response, paginated_response, success_response
@@ -63,7 +64,7 @@ def list_invoices():
     invoices_pagination = query.order_by(Invoice.created_at.desc()).paginate(page=page, per_page=50, error_out=False)
 
     # Calculate overdue status
-    today = date.today()
+    today = local_now().date()
     for invoice in invoices_pagination.items:
         invoice._is_overdue = (
             invoice.due_date
@@ -198,7 +199,7 @@ def create_invoice():
     project_repo = ProjectRepository()
     projects = project_repo.get_billable_projects()
     settings = Settings.get_settings()
-    default_due_date = (datetime.utcnow() + timedelta(days=30)).strftime("%Y-%m-%d")
+    default_due_date = (local_now() + timedelta(days=30)).strftime("%Y-%m-%d")
 
     return render_template(
         "invoices/create.html", projects=projects, settings=settings, default_due_date=default_due_date
@@ -237,9 +238,9 @@ def mark_invoice_paid(invoice_id):
         try:
             payment_date = datetime.strptime(payment_date_str, "%Y-%m-%d").date()
         except ValueError:
-            payment_date = date.today()
+            payment_date = local_now().date()
     else:
-        payment_date = date.today()
+        payment_date = local_now().date()
 
     # Use service layer
     service = InvoiceService()

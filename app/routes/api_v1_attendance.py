@@ -46,10 +46,13 @@ def api_attendance_break_end():
 @api_v1_bp.route("/attendance/history", methods=["GET"])
 @require_api_token("read:time_entries")
 def api_attendance_history():
-    from datetime import datetime, timedelta
+    from datetime import timedelta
+
+    from app.models.time_entry import local_now
 
     days = request.args.get("days", 30, type=int)
-    end_date = datetime.utcnow().date()
+    # Business-calendar "today" — DailyAttendanceRecord.work_date is a business day.
+    end_date = local_now().date()
     start_date = end_date - timedelta(days=max(1, days))
     records = AttendanceComplianceService().list_days(g.api_user.id, start_date, end_date, include_periods=False)
     return success_response(

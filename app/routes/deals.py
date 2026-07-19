@@ -12,7 +12,7 @@ from app.models import Client, Contact, Deal, DealActivity, Lead, Project, Quote
 from app.models.audit_log import AuditLog
 from app.utils.db import safe_commit
 from app.utils.module_helpers import module_enabled
-from app.utils.timezone import parse_local_datetime_from_string
+from app.utils.timezone import local_now, parse_local_naive_from_string
 
 deals_bp = Blueprint("deals", __name__)
 
@@ -300,14 +300,12 @@ def create_activity(deal_id):
     if request.method == "POST":
         try:
             activity_date_str = request.form.get("activity_date", "")
-            activity_date = (
-                parse_local_datetime_from_string(activity_date_str) if activity_date_str else datetime.utcnow()
-            )
+            activity_date = parse_local_naive_from_string(activity_date_str) if activity_date_str else local_now()
             if activity_date is None:
-                activity_date = datetime.utcnow()
+                activity_date = local_now()
 
             due_date_str = request.form.get("due_date", "")
-            due_date = parse_local_datetime_from_string(due_date_str) if due_date_str else None
+            due_date = parse_local_naive_from_string(due_date_str) if due_date_str else None
 
             activity = DealActivity(
                 deal_id=deal_id,

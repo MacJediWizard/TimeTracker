@@ -25,6 +25,7 @@ from app.models import (
     Warehouse,
     WarehouseStock,
 )
+from app.models.time_entry import local_now
 from app.utils.db import safe_commit
 from app.utils.module_helpers import module_enabled
 from app.utils.permissions import admin_or_permission_required
@@ -39,7 +40,7 @@ def _provisional_po_number():
 
 def _finalize_po_number(purchase_order):
     """Assign deterministic PO number based on persisted id."""
-    order_date = purchase_order.order_date or datetime.utcnow().date()
+    order_date = purchase_order.order_date or local_now().date()
     purchase_order.po_number = f"PO-{order_date.strftime('%Y%m%d')}-{purchase_order.id:04d}"
 
 
@@ -1955,7 +1956,7 @@ def view_purchase_order(po_id):
     return render_template(
         "inventory/purchase_orders/view.html",
         purchase_order=purchase_order,
-        default_received_date=date.today().isoformat(),
+        default_received_date=local_now().date().isoformat(),
     )
 
 
@@ -2170,9 +2171,7 @@ def receive_purchase_order(po_id):
             # Mark as received (this will create stock movements)
             received_date_str = request.form.get("received_date", "").strip()
             received_date = (
-                datetime.strptime(received_date_str, "%Y-%m-%d").date()
-                if received_date_str
-                else datetime.utcnow().date()
+                datetime.strptime(received_date_str, "%Y-%m-%d").date() if received_date_str else local_now().date()
             )
             purchase_order.mark_as_received(received_date)
 
@@ -2382,18 +2381,20 @@ def reports_turnover():
     date_from = request.args.get("date_from")
     date_to = request.args.get("date_to")
 
+    # StockMovement.moved_at is stored in UTC (default=datetime.utcnow), so the
+    # default window boundaries must be anchored on UTC too — not OS-local now().
     if not date_from:
-        date_from = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+        date_from = (datetime.utcnow() - timedelta(days=365)).strftime("%Y-%m-%d")
     if not date_to:
-        date_to = datetime.now().strftime("%Y-%m-%d")
+        date_to = datetime.utcnow().strftime("%Y-%m-%d")
 
     try:
         date_from_obj = datetime.strptime(date_from, "%Y-%m-%d")
         date_to_obj = datetime.strptime(date_to, "%Y-%m-%d")
         date_to_obj = date_to_obj.replace(hour=23, minute=59, second=59)
     except ValueError:
-        date_from_obj = datetime.now() - timedelta(days=365)
-        date_to_obj = datetime.now()
+        date_from_obj = datetime.utcnow() - timedelta(days=365)
+        date_to_obj = datetime.utcnow()
 
     items_with_sales = (
         db.session.query(StockItem, func.sum(StockMovement.quantity).label("total_sold"))

@@ -1,6 +1,6 @@
 import csv
 import io
-from datetime import date, datetime, time
+from datetime import datetime, time
 from decimal import Decimal
 
 from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
@@ -10,6 +10,7 @@ from flask_login import current_user, login_required
 from app import db, log_event, track_event
 from app.constants import SUPPORTED_CURRENCIES
 from app.models import Client, PerDiem, PerDiemRate, Project, Settings
+from app.models.time_entry import local_now
 from app.utils.db import safe_commit
 from app.utils.module_helpers import module_enabled
 from app.utils.permissions import admin_or_permission_required
@@ -931,7 +932,7 @@ def api_search_rates():
     if not country:
         return jsonify({"error": "Country is required"}), 400
 
-    search_date = datetime.strptime(date_str, "%Y-%m-%d").date() if date_str else date.today()
+    search_date = datetime.strptime(date_str, "%Y-%m-%d").date() if date_str else local_now().date()
 
     rate = PerDiemRate.get_rate_for_location(country, city, search_date)
 

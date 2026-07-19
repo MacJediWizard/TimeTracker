@@ -67,6 +67,7 @@ def calculate_period_overtime(
     from datetime import datetime as dt
 
     from app.models import TimeEntry
+    from app.models.time_entry import local_now
 
     start_datetime = dt.combine(start_date, dt.min.time())
     end_datetime = dt.combine(end_date, dt.max.time())
@@ -294,8 +295,9 @@ def get_weekly_overtime_summary(user, weeks: int = 4) -> List[Dict]:
     week's total to standard_hours_per_week; in daily mode uses per-day cap then sums.
     """
     from app.models import TimeEntry
+    from app.models.time_entry import local_now
 
-    end_date = datetime.now().date()
+    end_date = local_now().date()
     start_date = end_date - timedelta(weeks=weeks)
     start_datetime = datetime.combine(start_date, datetime.min.time())
     end_datetime = datetime.combine(end_date, datetime.max.time())
@@ -361,7 +363,9 @@ def get_overtime_ytd(user) -> Dict[str, float]:
     Return overtime for the current year to date (Jan 1 through today).
     Uses calculate_period_overtime; no stored balance.
     """
-    today = datetime.now().date()
+    from app.models.time_entry import local_now
+
+    today = local_now().date()
     start_ytd = date(today.year, 1, 1)
     return calculate_period_overtime(user, start_ytd, today)
 
@@ -370,7 +374,9 @@ def get_overtime_last_12_months(user) -> Dict[str, float]:
     """
     Return overtime for the last 12 months (rolling).
     """
-    today = datetime.now().date()
+    from app.models.time_entry import local_now
+
+    today = local_now().date()
     start = today - timedelta(days=365)
     return calculate_period_overtime(user, start, today)
 

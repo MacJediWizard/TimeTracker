@@ -344,7 +344,9 @@ class TimesheetSignoffService:
     def reconcile_stuck_requests(cls, *, limit: int = 100) -> int:
         """Cron entry point. Fetch any ``ESignatureRequest`` rows in a
         non-terminal state that haven't seen activity in 5+ minutes and
-        re-fetch authoritative status from the provider. Returns the
+        re-fetch authoritative status from the provider. Also recovers
+        already-signed rows whose signed PDF / hash never landed (e.g. a
+        transient download failure during the signed webhook). Returns the
         number of requests touched."""
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
         stuck = (
@@ -374,7 +376,50 @@ class TimesheetSignoffService:
                     touched += 1
             except Exception:
                 current_app.logger.exception("Reconcile failed for esignature_request %s", esig_req.id)
+
+        touched += cls._recover_missing_signed_artefacts(cutoff=cutoff, limit=limit)
         return touched
+
+    @classmethod
+    def _recover_missing_signed_artefacts(cls, *, cutoff: datetime, limit: int) -> int:
+        """Re-run artefact capture for rows already marked SIGNED but missing
+        their signed PDF or hash. ``apply_webhook_event`` commits status=SIGNED
+        even when ``_capture_signed_artefacts`` swallows a download failure, and
+        the status-based reconcile above only re-fetches SENT/VIEWED rows — so
+        without this the signed PDF + sha256 (part of the audit trail) are lost
+        permanently. Returns the number of rows whose artefacts were recovered."""
+        orphaned = (
+            ESignatureRequest.query.filter(
+                ESignatureRequest.status == ESignatureStatus.SIGNED,
+                ESignatureRequest.external_id.isnot(None),
+                db.or_(
+                    ESignatureRequest.signed_document_path.is_(None),
+                    ESignatureRequest.document_hash.is_(None),
+                ),
+                db.or_(
+                    ESignatureRequest.signed_at.is_(None),
+                    ESignatureRequest.signed_at < cutoff,
+                ),
+            )
+            .limit(limit)
+            .all()
+        )
+
+        recovered = 0
+        for esig_req in orphaned:
+            try:
+                cls._capture_signed_artefacts(esig_req)
+                # Only count it as recovered if the download actually succeeded
+                # (_capture_signed_artefacts swallows failures and leaves NULLs).
+                if esig_req.signed_document_path and esig_req.document_hash:
+                    db.session.commit()
+                    recovered += 1
+                else:
+                    db.session.rollback()
+            except Exception:
+                db.session.rollback()
+                current_app.logger.exception("Artefact recovery failed for esignature_request %s", esig_req.id)
+        return recovered
 
     @classmethod
     def cancel_active_signoff(

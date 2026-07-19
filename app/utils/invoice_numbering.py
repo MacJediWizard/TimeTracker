@@ -1,5 +1,4 @@
 import re
-from datetime import datetime
 
 DEFAULT_INVOICE_PATTERN = "{PREFIX}-{YYYY}{MM}{DD}-{SEQ}"
 DEFAULT_QUOTE_PATTERN = "{PREFIX}-{YYYY}{MM}{DD}-{SEQ}"
@@ -97,7 +96,11 @@ def generate_next_document_number(
     now=None,
 ):
     """Generate next document number for the given pattern and settings values."""
-    now = now or datetime.utcnow()
+    if now is None:
+        # Date tokens (YYYY/MM/DD) are keyed to the business calendar, not UTC.
+        from app.utils.timezone import now_in_app_timezone
+
+        now = now_in_app_timezone().replace(tzinfo=None)
     prefix = sanitize_invoice_prefix(prefix)
     start_number = _normalize_start_number(start_number)
     pattern = resolve_pattern(pattern)
@@ -148,7 +151,11 @@ def generate_next_invoice_number(invoice_model, invoice_query=None, settings=Non
 
         settings = Settings.get_settings()
 
-    now = now or datetime.utcnow()
+    if now is None:
+        # Date tokens (YYYY/MM/DD) are keyed to the business calendar, not UTC.
+        from app.utils.timezone import now_in_app_timezone
+
+        now = now_in_app_timezone().replace(tzinfo=None)
     prefix = sanitize_invoice_prefix(getattr(settings, "invoice_prefix", ""))
     start_number = _normalize_start_number(getattr(settings, "invoice_start_number", 1))
     pattern = resolve_invoice_pattern(settings)

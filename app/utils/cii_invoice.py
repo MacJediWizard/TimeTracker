@@ -161,7 +161,9 @@ def build_cii_invoice_xml(
     )
     _text_el(doc, ram + "TypeCode", "380")
 
-    issue_date = getattr(invoice, "issue_date", None) or date.today()
+    from app.models.time_entry import local_now
+
+    issue_date = getattr(invoice, "issue_date", None) or local_now().date()
     issue_dt = _sub(doc, ram + "IssueDateTime")
     _date_el(issue_dt, issue_date)
 

@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 
 from app import db
 from app.models import Invoice, InvoiceItem, RecurringInvoice, Settings, TimeEntry
+from app.models.time_entry import local_now
 from app.repositories.recurring_invoice_repository import RecurringInvoiceRepository
 
 
@@ -50,7 +51,8 @@ class RecurringInvoiceService:
         settings = Settings.get_settings()
         currency_code = recurring_invoice.currency_code or (settings.currency if settings else "EUR")
 
-        issue_date = datetime.utcnow().date()
+        # App business clock — issue_date is a business-calendar date stamped on a real invoice.
+        issue_date = local_now().date()
         due_date = issue_date + timedelta(days=recurring_invoice.due_date_days)
 
         invoice_number = Invoice.generate_invoice_number()

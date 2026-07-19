@@ -36,6 +36,7 @@ from app.models import (
     TimeEntry,
     User,
 )
+from app.models.time_entry import local_now
 from app.utils.db import safe_commit
 from app.utils.excel_export import create_invoices_list_excel
 from app.utils.module_helpers import module_enabled
@@ -239,7 +240,7 @@ def create_invoice():
     settings = Settings.get_settings()
 
     # Set default due date to 30 days from now
-    default_due_date = (datetime.utcnow() + timedelta(days=30)).strftime("%Y-%m-%d")
+    default_due_date = (local_now() + timedelta(days=30)).strftime("%Y-%m-%d")
 
     return render_template(
         "invoices/create.html", projects=projects, settings=settings, default_due_date=default_due_date
@@ -649,7 +650,7 @@ def update_invoice_status(invoice_id):
         invoice.amount_paid = invoice.total_amount
         invoice.payment_status = "fully_paid"
         if not invoice.payment_date:
-            invoice.payment_date = datetime.utcnow().date()
+            invoice.payment_date = local_now().date()
 
     # Mark time entries as paid when invoice is sent (non-external invoices)
     if new_status == "sent":
@@ -858,7 +859,7 @@ def bulk_update_status():
                 invoice.amount_paid = invoice.total_amount
                 invoice.payment_status = "fully_paid"
                 if not invoice.payment_date:
-                    invoice.payment_date = datetime.utcnow().date()
+                    invoice.payment_date = local_now().date()
                 # Set invoice reference if provided
                 if invoice_reference:
                     invoice.payment_reference = invoice_reference

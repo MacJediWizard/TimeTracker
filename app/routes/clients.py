@@ -25,6 +25,7 @@ from sqlalchemy.orm import joinedload
 import app as app_module
 from app import db, log_event, track_event
 from app.models import Client, ClientAttachment, Contact, CustomFieldDefinition, Project, Settings, TimeEntry
+from app.models.time_entry import local_now
 from app.services.client_service import ClientService
 from app.utils.db import safe_commit
 from app.utils.email import send_client_portal_password_setup_email
@@ -465,7 +466,7 @@ def view_client(client_id):
 
     prepaid_overview = None
     if client.prepaid_plan_enabled:
-        today = datetime.utcnow()
+        today = local_now()
         month_start = client.prepaid_month_start(today)
         consumed_hours = client.get_prepaid_consumed_hours(month_start).quantize(Decimal("0.01"))
         remaining_hours = client.get_prepaid_remaining_hours(month_start).quantize(Decimal("0.01"))

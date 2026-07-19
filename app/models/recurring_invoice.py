@@ -85,7 +85,9 @@ class RecurringInvoice(db.Model):
     def calculate_next_run_date(self, from_date=None):
         """Calculate the next run date based on frequency and interval"""
         if from_date is None:
-            from_date = datetime.utcnow().date()
+            from app.models.time_entry import local_now
+
+            from_date = local_now().date()
 
         if self.frequency == "daily":
             return from_date + timedelta(days=self.interval)
@@ -103,7 +105,10 @@ class RecurringInvoice(db.Model):
         if not self.is_active:
             return False
 
-        today = datetime.utcnow().date()
+        # Business-calendar "today" — next_run_date/end_date are business-calendar dates.
+        from app.models.time_entry import local_now
+
+        today = local_now().date()
 
         # Check if we've reached the end date
         if self.end_date and today > self.end_date:

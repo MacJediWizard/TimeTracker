@@ -8,6 +8,7 @@ from flask_login import current_user, login_required
 
 from app import db, log_event
 from app.models import Client, Invoice, Project, RecurringInvoice, Settings
+from app.models.time_entry import local_now
 from app.utils.db import safe_commit
 from app.utils.module_helpers import module_enabled
 
@@ -148,7 +149,7 @@ def create_recurring_invoice():
     settings = Settings.get_settings()
 
     # Set default next run date to tomorrow
-    default_next_run_date = (datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d")
+    default_next_run_date = (local_now() + timedelta(days=1)).strftime("%Y-%m-%d")
 
     return render_template(
         "recurring_invoices/create.html",
@@ -275,7 +276,7 @@ def generate_invoice_now(recurring_id):
     try:
         # Temporarily set next_run_date to today to allow generation
         original_next_run_date = recurring.next_run_date
-        recurring.next_run_date = datetime.utcnow().date()
+        recurring.next_run_date = local_now().date()
 
         invoice = recurring.generate_invoice()
         if invoice:

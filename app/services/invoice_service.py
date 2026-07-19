@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 from app import db
 from app.constants import InvoiceStatus, PaymentStatus, WebhookEvent
 from app.models import Invoice, InvoiceItem, TimeEntry
+from app.models.time_entry import local_now
 from app.repositories import InvoiceRepository, ProjectRepository
 from app.utils.db import safe_commit
 from app.utils.event_bus import emit_event
@@ -74,8 +75,8 @@ class InvoiceService:
             client_id=project.client_id,
             # Project.client is a string property; relationship is Project.client_obj
             client_name=(project.client_obj.name if getattr(project, "client_obj", None) else project.client) or "",
-            issue_date=issue_date or date.today(),
-            due_date=due_date or date.today(),
+            issue_date=issue_date or local_now().date(),
+            due_date=due_date or local_now().date(),
             status=InvoiceStatus.DRAFT.value,
             subtotal=subtotal,
             tax_rate=tax_rate,
@@ -192,7 +193,7 @@ class InvoiceService:
             terms=terms,
             tax_rate=Decimal(str(tax_rate)) if tax_rate else Decimal("0.00"),
             currency_code=currency_code or "EUR",
-            issue_date=issue_date or date.today(),
+            issue_date=issue_date or local_now().date(),
             status=InvoiceStatus.DRAFT.value,
             subtotal=Decimal("0.00"),
             tax_amount=Decimal("0.00"),
@@ -418,8 +419,6 @@ class InvoiceService:
         Returns:
             dict with 'invoices', 'summary' keys
         """
-        from datetime import date
-
         from sqlalchemy.orm import joinedload
 
         query = self.invoice_repo.query()
@@ -446,8 +445,8 @@ class InvoiceService:
         pagination = query.order_by(Invoice.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
         invoices = pagination.items
 
-        # Calculate overdue status
-        today = date.today()
+        # Calculate overdue status on the app business clock (matches Invoice.is_overdue)
+        today = local_now().date()
         for invoice in invoices:
             if (
                 invoice.due_date
@@ -827,7 +826,7 @@ class InvoiceService:
             }
 
         client = Client.query.get(client_id)
-        issue_date = date.today()
+        issue_date = local_now().date()
         due_date = issue_date + timedelta(days=30)
         invoice_number = self.invoice_repo.generate_invoice_number()
 

@@ -5,12 +5,13 @@ Builds client-visible report data from get_portal_data and client-scoped queries
 All data respects client visibility boundaries (client_id, project_ids).
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 from app.models import Project, Task
 from app.models.client import Client
+from app.models.time_entry import local_now
 
 
 def build_report_data(
@@ -79,7 +80,7 @@ def build_report_data(
     # Time by date (last N days)
     time_by_date = []
     if date_range_days and time_entries:
-        cutoff = datetime.utcnow() - timedelta(days=date_range_days)
+        cutoff = local_now() - timedelta(days=date_range_days)
         by_date: Dict[str, float] = {}
         for entry in time_entries:
             if entry.start_time and entry.start_time >= cutoff:
@@ -88,7 +89,7 @@ def build_report_data(
         time_by_date = [{"date": k, "hours": round(v, 2)} for k, v in sorted(by_date.items(), reverse=True)[:31]]
 
     # Recent time entries (last 30 days)
-    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+    thirty_days_ago = local_now() - timedelta(days=30)
     recent_entries = [e for e in time_entries if e.start_time and e.start_time >= thirty_days_ago]
 
     return {

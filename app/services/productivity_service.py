@@ -57,7 +57,9 @@ def _user_today(user) -> date:
     try:
         return now_in_user_timezone(user).date()
     except Exception:
-        return datetime.utcnow().date()
+        from app.models.time_entry import local_now
+
+        return local_now().date()
 
 
 def _week_start_for(user, today: date) -> date:

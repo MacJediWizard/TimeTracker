@@ -11,6 +11,7 @@ from sqlalchemy import and_, desc, func
 from app import db
 from app.models import Project, Task, TimeEntry, User
 from app.models.gamification import Badge, Leaderboard, LeaderboardEntry, UserBadge
+from app.models.time_entry import local_now
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +105,7 @@ class GamificationService:
 
     def _get_streak(self, user_id: int, criteria: Dict) -> int:
         """Get current streak of days with time entries"""
-        today = date.today()
+        today = local_now().date()
         streak = 0
 
         for i in range(365):  # Check up to 1 year
@@ -184,7 +185,7 @@ class GamificationService:
 
     def _get_period_dates(self, period: str) -> tuple:
         """Get period start and end dates"""
-        today = datetime.now().date()
+        today = local_now().date()
 
         if period == "daily":
             start = datetime.combine(today, datetime.min.time())
@@ -201,7 +202,7 @@ class GamificationService:
                 end = datetime(today.year, today.month + 1, 1) - timedelta(seconds=1)
         else:  # all_time
             start = datetime(2000, 1, 1)
-            end = datetime.now()
+            end = local_now()
 
         return start, end
 

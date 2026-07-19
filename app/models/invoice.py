@@ -5,6 +5,18 @@ from app import db
 from app.utils.invoice_numbering import generate_next_invoice_number
 
 
+def _default_issue_date():
+    """Today's date on the app's business clock (evaluated at insert time).
+
+    Local import avoids a circular import at module load. Must be a callable
+    default: ``datetime.utcnow().date`` bound the date once at import time, so
+    every invoice inherited the process-start date instead of today's.
+    """
+    from app.models.time_entry import local_now
+
+    return local_now().date()
+
+
 class Invoice(db.Model):
     """Invoice model for client billing"""
 
@@ -22,7 +34,7 @@ class Invoice(db.Model):
     quote_id = db.Column(db.Integer, db.ForeignKey("quotes.id"), nullable=True, index=True)
 
     # Invoice details
-    issue_date = db.Column(db.Date, nullable=False, default=datetime.utcnow().date)
+    issue_date = db.Column(db.Date, nullable=False, default=_default_issue_date)
     due_date = db.Column(db.Date, nullable=False)
     status = db.Column(
         db.String(20), default="draft", nullable=False
@@ -86,7 +98,7 @@ class Invoice(db.Model):
         self.client_email = kwargs.get("client_email")
         self.client_address = kwargs.get("client_address")
         self.buyer_reference = kwargs.get("buyer_reference")
-        self.issue_date = kwargs.get("issue_date", datetime.utcnow().date())
+        self.issue_date = kwargs.get("issue_date") or _default_issue_date()
         self.notes = kwargs.get("notes")
         self.terms = kwargs.get("terms")
         self.tax_rate = Decimal(str(kwargs.get("tax_rate", 0)))
@@ -179,12 +191,14 @@ class Invoice(db.Model):
         """
         import warnings
 
+        from app.models.time_entry import local_now
+
         warnings.warn(
             "Invoice.record_payment() is deprecated. Use the Payment model instead.", DeprecationWarning, stacklevel=2
         )
 
         self.amount_paid = (self.amount_paid or 0) + Decimal(str(amount))
-        self.payment_date = payment_date or datetime.utcnow().date()
+        self.payment_date = payment_date or local_now().date()
         if payment_method:
             self.payment_method = payment_method
         if payment_reference:
@@ -228,7 +242,7 @@ class Invoice(db.Model):
         try:
             from .tax_rule import TaxRule  # local import to avoid circular
 
-            today = self.issue_date or datetime.utcnow().date()
+            today = self.issue_date or _default_issue_date()
             query = TaxRule.query.filter(TaxRule.active == True)
             # constrain by date range
             query = query.filter(

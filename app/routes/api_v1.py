@@ -2885,9 +2885,9 @@ def report_summary():
     start_date = request.args.get("start_date")
 
     if not end_date:
-        end_dt = datetime.utcnow()
+        end_dt = local_now()
     else:
-        end_dt = parse_datetime(end_date) or datetime.utcnow()
+        end_dt = parse_datetime(end_date) or local_now()
 
     if not start_date:
         start_dt = end_dt - timedelta(days=30)
@@ -4445,7 +4445,7 @@ def create_purchase_order_api():
         order_date = (
             datetime.strptime(data.get("order_date"), "%Y-%m-%d").date()
             if data.get("order_date")
-            else datetime.now().date()
+            else local_now().date()
         )
         expected_delivery_date = (
             datetime.strptime(data.get("expected_delivery_date"), "%Y-%m-%d").date()
@@ -4659,7 +4659,7 @@ def receive_purchase_order_api(po_id):
 
         received_date_str = data.get("received_date")
         received_date = (
-            datetime.strptime(received_date_str, "%Y-%m-%d").date() if received_date_str else datetime.now().date()
+            datetime.strptime(received_date_str, "%Y-%m-%d").date() if received_date_str else local_now().date()
         )
         purchase_order.mark_as_received(received_date)
 
@@ -4820,7 +4820,7 @@ def create_or_get_timesheet_period():
     from app.services.workforce_governance_service import WorkforceGovernanceService
 
     data = request.get_json() or {}
-    ref = _parse_date(data.get("reference_date")) or date.today()
+    ref = _parse_date(data.get("reference_date")) or local_now().date()
     period_type = (data.get("period_type") or "weekly").strip().lower()
 
     user_id = data.get("user_id") if g.api_user.is_admin else g.api_user.id

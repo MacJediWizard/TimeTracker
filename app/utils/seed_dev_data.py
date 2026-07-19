@@ -8,7 +8,7 @@ tax rules, invoices, payments) for realistic local testing.
 """
 
 import os
-from datetime import date, datetime, time, timedelta
+from datetime import datetime, time, timedelta
 from decimal import Decimal
 
 from app import db
@@ -31,6 +31,7 @@ from app.models import (
     Warehouse,
     WarehouseStock,
 )
+from app.models.time_entry import local_now
 
 # Default password for seeded dev users (development only)
 DEV_USER_PASSWORD = "dev"
@@ -395,7 +396,7 @@ def run_seed(
         proj = projects_to_use[i % len(projects_to_use)] if projects_to_use else None
         client = proj.client_obj if proj else (clients_to_use[i % len(clients_to_use)] if clients_to_use else None)
         cat_name, cat_code, _ = EXPENSE_CATEGORIES_SEED[i % len(EXPENSE_CATEGORIES_SEED)]
-        expense_date = date.today() - timedelta(days=i % 90)
+        expense_date = local_now().date() - timedelta(days=i % 90)
         amt = Decimal(str(round(10 + (i % 200), 2)))
         exp = Expense(
             user_id=user.id,
@@ -541,7 +542,7 @@ def run_seed(
         inv_num = f"INV-SEED-{invoice_number_base + i}"
         if Invoice.query.filter_by(invoice_number=inv_num).first():
             continue
-        issue_d = date.today() - timedelta(days=30 + (i % 60))
+        issue_d = local_now().date() - timedelta(days=30 + (i % 60))
         due_d = issue_d + timedelta(days=30)
         inv = Invoice(
             invoice_number=inv_num,

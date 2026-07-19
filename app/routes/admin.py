@@ -716,7 +716,10 @@ def admin_dashboard():
     if chart_data is None:
         from datetime import date as date_type
 
-        end_date = datetime.utcnow()
+        from app.models.time_entry import local_now
+
+        # App business clock — the chart buckets TimeEntry.start_time (naive business tz).
+        end_date = local_now()
         range_start = (end_date - timedelta(days=29)).replace(hour=0, minute=0, second=0, microsecond=0)
         range_end = end_date
         all_dates = [(end_date - timedelta(days=i)).date() for i in range(29, -1, -1)]
@@ -1488,30 +1491,6 @@ def settings():
                 claude_config=claude_config,
                 system_instance_id=system_instance_id,
             )
-        # #region agent log
-        try:
-            import json
-
-            log_data = {
-                "location": "admin.py:952",
-                "message": "Saving invoice prefix and start number",
-                "data": {
-                    "invoice_prefix_form": str(invoice_prefix_form),
-                    "invoice_number_pattern_form": str(invoice_number_pattern_form),
-                    "invoice_start_number_form": str(invoice_start_number_form),
-                    "settings_obj_id": settings_obj.id if hasattr(settings_obj, "id") else "NO_ID",
-                },
-                "timestamp": int(datetime.utcnow().timestamp() * 1000),
-                "sessionId": "debug-session",
-                "runId": "run1",
-                "hypothesisId": "F",
-            }
-            log_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".cursor", "debug.log")
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except (OSError, IOError, TypeError, ValueError):
-            pass
-        # #endregion
         settings_obj.invoice_prefix = invoice_prefix_form
         settings_obj.invoice_number_pattern = invoice_number_pattern_form
         settings_obj.invoice_start_number = int(invoice_start_number_form)
@@ -1769,30 +1748,6 @@ def settings():
                 claude_config=claude_config,
                 system_instance_id=system_instance_id,
             )
-        # #region agent log
-        try:
-            import json
-
-            log_data = {
-                "location": "admin.py:1027",
-                "message": "After commit - settings values",
-                "data": {
-                    "invoice_prefix": str(settings_obj.invoice_prefix),
-                    "invoice_number_pattern": str(getattr(settings_obj, "invoice_number_pattern", "")),
-                    "invoice_start_number": int(settings_obj.invoice_start_number),
-                    "settings_obj_id": settings_obj.id if hasattr(settings_obj, "id") else "NO_ID",
-                },
-                "timestamp": int(datetime.utcnow().timestamp() * 1000),
-                "sessionId": "debug-session",
-                "runId": "run1",
-                "hypothesisId": "G",
-            }
-            log_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".cursor", "debug.log")
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except (OSError, IOError, TypeError, ValueError):
-            pass
-        # #endregion
         flash(_("Settings updated successfully"), "success")
         return redirect(url_for("admin.settings"))
 

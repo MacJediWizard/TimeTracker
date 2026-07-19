@@ -80,9 +80,7 @@ class Task(db.Model):
         """Check if task is overdue"""
         if not self.due_date:
             return False
-        from datetime import date
-
-        return date.today() > self.due_date and self.status not in ["done", "cancelled"]
+        return now_in_app_timezone().date() > self.due_date and self.status not in ["done", "cancelled"]
 
     @property
     def checklist_total(self):
@@ -333,9 +331,7 @@ class Task(db.Model):
     @classmethod
     def get_overdue_tasks(cls):
         """Get all overdue tasks"""
-        from datetime import date
-
-        today = date.today()
+        today = now_in_app_timezone().date()
 
         return (
             cls.query.filter(cls.due_date < today, cls.status.in_(["todo", "in_progress", "review"]))

@@ -173,7 +173,9 @@ def build_peppol_ubl_invoice_xml(invoice: Any, supplier: PeppolParty, customer: 
     if _buyer_ref:
         _text(inv_el, cbc + "BuyerReference", _buyer_ref)
 
-    issue_date = getattr(invoice, "issue_date", None) or date.today()
+    from app.models.time_entry import local_now
+
+    issue_date = getattr(invoice, "issue_date", None) or local_now().date()
     if hasattr(issue_date, "isoformat"):
         _text(inv_el, cbc + "IssueDate", issue_date.isoformat())
     due_date = getattr(invoice, "due_date", None)

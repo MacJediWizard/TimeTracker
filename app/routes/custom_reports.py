@@ -11,6 +11,7 @@ from flask_login import current_user, login_required
 
 from app import db
 from app.models import Client, Expense, Invoice, Project, SavedReportView, Task, TimeEntry, User
+from app.models.time_entry import local_now
 from app.services.unpaid_hours_service import UnpaidHoursService
 from app.utils.db import safe_commit
 from app.utils.module_helpers import module_enabled
@@ -303,9 +304,9 @@ def generate_report_data(config, user_id=None):
             start_dt = datetime.strptime(sanitized_date, "%Y-%m-%d")
         except (ValueError, AttributeError, TypeError) as e:
             current_app.logger.warning(f"Invalid start_date format: {start_date}, using default. Error: {e}")
-            start_dt = datetime.utcnow() - timedelta(days=30)
+            start_dt = local_now() - timedelta(days=30)
     else:
-        start_dt = datetime.utcnow() - timedelta(days=30)
+        start_dt = local_now() - timedelta(days=30)
 
     # Validate and parse end_date with stricter validation
     if end_date and isinstance(end_date, str) and end_date.strip():
@@ -322,9 +323,9 @@ def generate_report_data(config, user_id=None):
                 end_dt = start_dt + timedelta(days=1)
         except (ValueError, AttributeError, TypeError) as e:
             current_app.logger.warning(f"Invalid end_date format: {end_date}, using default. Error: {e}")
-            end_dt = datetime.utcnow()
+            end_dt = local_now()
     else:
-        end_dt = datetime.utcnow()
+        end_dt = local_now()
 
     # Generate data based on source
     if data_source == "time_entries":
@@ -741,17 +742,17 @@ def _generate_iterative_reports(saved_view: SavedReportView, config: dict, user_
         if start_date and isinstance(start_date, str) and start_date.strip():
             start_dt = datetime.strptime(start_date.strip(), "%Y-%m-%d")
         else:
-            start_dt = datetime.utcnow() - timedelta(days=30)
+            start_dt = local_now() - timedelta(days=30)
     except (ValueError, AttributeError):
-        start_dt = datetime.utcnow() - timedelta(days=30)
+        start_dt = local_now() - timedelta(days=30)
 
     try:
         if end_date and isinstance(end_date, str) and end_date.strip():
             end_dt = datetime.strptime(end_date.strip(), "%Y-%m-%d") + timedelta(days=1) - timedelta(seconds=1)
         else:
-            end_dt = datetime.utcnow()
+            end_dt = local_now()
     except (ValueError, AttributeError):
-        end_dt = datetime.utcnow()
+        end_dt = local_now()
 
     # Get all unique values for the custom field
     clients = Client.query.filter_by(status="active").all()

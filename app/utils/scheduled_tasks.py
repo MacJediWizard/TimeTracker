@@ -41,8 +41,11 @@ def check_overdue_invoices():
         try:
             logger.info("Checking for overdue invoices...")
 
+            from app.utils.timezone import local_now
+
             # Get all invoices that are overdue and not paid/cancelled
-            today = datetime.utcnow().date()
+            # Invoice.due_date is a business-calendar date (matches Invoice.is_overdue).
+            today = local_now().date()
             overdue_invoices = Invoice.query.filter(
                 Invoice.due_date < today, Invoice.status.in_(["draft", "sent"])
             ).all()
@@ -106,8 +109,11 @@ def send_weekly_summaries():
 
             logger.info(f"Found {len(users)} users with weekly summaries enabled")
 
-            # Calculate date range (last 7 days)
-            end_date = datetime.utcnow().date()
+            # Calculate date range (last 7 days) on the app business clock; the
+            # window is compared against TimeEntry.start_time (naive app-local).
+            from app.utils.timezone import local_now
+
+            end_date = local_now().date()
             start_date = end_date - timedelta(days=7)
 
             summaries_sent = 0
@@ -220,14 +226,16 @@ def check_project_budget_alerts():
 
 def check_task_deadline_approaching():
     """Notify workflow rules for tasks due tomorrow."""
-    from datetime import date, timedelta
+    from datetime import timedelta
 
     from app.models import Task
+    from app.utils.timezone import local_now
     from app.utils.workflow_bridge import fire_deadline_approaching_workflow
 
     with current_app.app_context():
         try:
-            target_date = date.today() + timedelta(days=1)
+            # Task.due_date is a business-calendar date; use the app clock for "tomorrow".
+            target_date = local_now().date() + timedelta(days=1)
             tasks = Task.query.filter(
                 Task.due_date == target_date,
                 Task.status.notin_(["done", "cancelled"]),
@@ -253,8 +261,11 @@ def generate_recurring_invoices():
     try:
         logger.info("Generating recurring invoices...")
 
+        from app.utils.timezone import local_now
+
         # Get all active recurring invoices that should generate today
-        today = datetime.utcnow().date()
+        # RecurringInvoice.next_run_date is a business-calendar date.
+        today = local_now().date()
         recurring_invoices = RecurringInvoice.query.filter(
             RecurringInvoice.is_active == True, RecurringInvoice.next_run_date <= today
         ).all()
@@ -324,9 +335,11 @@ def send_monthly_unpaid_hours_reports():
             from app.models import SalesmanEmailMapping
             from app.services.unpaid_hours_service import UnpaidHoursService
             from app.utils.email import send_email
+            from app.utils.timezone import local_now
 
-            # Get last month's date range
-            now = datetime.now()
+            # Get last month's date range on the app business clock; the window
+            # feeds UnpaidHoursService which filters TimeEntry.start_time (app-local).
+            now = local_now()
             if now.month == 1:
                 last_month_start = datetime(now.year - 1, 12, 1)
                 last_month_end = datetime(now.year, 1, 1) - timedelta(seconds=1)
@@ -1154,7 +1167,9 @@ def check_working_time_limits():
 
             svc = AttendanceComplianceService()
             svc.sync_all_approved_time_off()
-            today = datetime.utcnow().date()
+            from app.utils.timezone import local_now
+
+            today = local_now().date()
             svc.sync_company_holidays(today - timedelta(days=7), today + timedelta(days=365))
 
         return emails_sent
@@ -1175,7 +1190,11 @@ def process_scheduled_reports():
     try:
         logger.info("Processing scheduled reports...")
 
-        now = datetime.utcnow()
+        from app.utils.timezone import local_now
+
+        # next_run_at is stored in business-local naive time (_calculate_next_run uses
+        # now_in_app_timezone), so the comparison clock must be the app clock too.
+        now = local_now()
         due_schedules = ReportEmailSchedule.query.filter(
             ReportEmailSchedule.active == True, ReportEmailSchedule.next_run_at <= now
         ).all()

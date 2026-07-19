@@ -102,7 +102,11 @@ class PurchaseOrder(db.Model):
         # Allow receiving from draft, sent, or confirmed status
         if self.status not in ["received", "cancelled"]:
             self.status = "received"
-            self.received_date = received_date or datetime.utcnow().date()
+            # received_date is a business-calendar date (db.Date); default it on
+            # the app clock, not naive UTC, so it lands on the correct local day.
+            from app.models.time_entry import local_now
+
+            self.received_date = received_date or local_now().date()
             self.updated_at = datetime.utcnow()
 
             # Create stock movements for received items

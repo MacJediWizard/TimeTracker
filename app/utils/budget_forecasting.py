@@ -15,6 +15,7 @@ from sqlalchemy import func
 
 from app import db
 from app.models import Project, ProjectCost, TimeEntry, User
+from app.models.time_entry import local_now
 
 
 def calculate_burn_rate(project_id: int, days: int = 30) -> Optional[Dict]:
@@ -37,7 +38,7 @@ def calculate_burn_rate(project_id: int, days: int = 30) -> Optional[Dict]:
     if not project:
         return None
 
-    end_date = datetime.now().date()
+    end_date = local_now().date()
     start_date = end_date - timedelta(days=days)
 
     # Calculate time-based costs
@@ -169,7 +170,7 @@ def analyze_resource_allocation(project_id: int, days: int = 30) -> Optional[Dic
     if not project:
         return None
 
-    end_date = datetime.now().date()
+    end_date = local_now().date()
     start_date = end_date - timedelta(days=days)
 
     # Query time entries by user
@@ -255,7 +256,7 @@ def analyze_cost_trends(project_id: int, days: int = 90, granularity: str = "wee
     if not project:
         return None
 
-    end_date = datetime.now().date()
+    end_date = local_now().date()
     start_date = end_date - timedelta(days=days)
 
     # Get all time entries
@@ -407,7 +408,7 @@ def _calculate_confidence(project_id: int, days: int) -> str:
         'high', 'medium', or 'low'
     """
     # Get daily costs for the period
-    end_date = datetime.now().date()
+    end_date = local_now().date()
     start_date = end_date - timedelta(days=days)
 
     project = Project.query.get(project_id)

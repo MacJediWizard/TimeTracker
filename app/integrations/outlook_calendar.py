@@ -215,11 +215,13 @@ class OutlookCalendarConnector(BaseConnector):
             # Get calendar ID from integration config
             calendar_id = self.integration.config.get("calendar_id", "calendar")
 
-            # Get time entries to sync
+            # Get time entries to sync — window on the app clock (vs TimeEntry.start_time).
+            from app.models.time_entry import local_now
+
             if sync_type == "incremental":
-                start_date = datetime.utcnow() - timedelta(days=30)
+                start_date = local_now() - timedelta(days=30)
             else:
-                start_date = datetime.utcnow() - timedelta(days=90)
+                start_date = local_now() - timedelta(days=90)
 
             # Get time entries
             time_entries = TimeEntry.query.filter(

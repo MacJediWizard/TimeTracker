@@ -2041,7 +2041,9 @@ def timer_page():
     single_client = active_clients[0] if only_one_client else None
 
     # Get recent projects (projects used in last 30 days)
-    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+    from app.models.time_entry import local_now
+
+    thirty_days_ago = local_now() - timedelta(days=30)
     recent_project_ids = (
         db.session.query(TimeEntry.project_id)
         .filter(

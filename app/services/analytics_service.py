@@ -2,7 +2,7 @@
 Service for analytics and insights business logic.
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
@@ -11,6 +11,7 @@ from sqlalchemy.orm import joinedload
 
 from app import db
 from app.models import Project, TimeEntry, WorkdaySession
+from app.models.time_entry import local_now
 from app.repositories import ExpenseRepository, InvoiceRepository, ProjectRepository, TimeEntryRepository
 
 
@@ -30,23 +31,21 @@ class AnalyticsService:
         Returns:
             dict with dashboard metrics
         """
-        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        today = local_now().replace(hour=0, minute=0, second=0, microsecond=0)
         week_start = today - timedelta(days=today.weekday())
         month_start = today.replace(day=1)
 
         # Today's time
-        today_seconds = self.time_entry_repo.get_total_duration(
-            user_id=user_id, start_date=today, end_date=datetime.now()
-        )
+        today_seconds = self.time_entry_repo.get_total_duration(user_id=user_id, start_date=today, end_date=local_now())
 
         # This week's time
         week_seconds = self.time_entry_repo.get_total_duration(
-            user_id=user_id, start_date=week_start, end_date=datetime.now()
+            user_id=user_id, start_date=week_start, end_date=local_now()
         )
 
         # This month's time
         month_seconds = self.time_entry_repo.get_total_duration(
-            user_id=user_id, start_date=month_start, end_date=datetime.now()
+            user_id=user_id, start_date=month_start, end_date=local_now()
         )
 
         # Workday hours (separate axis — never summed with project hours)
@@ -56,10 +55,8 @@ class AnalyticsService:
         if user_id:
             today_date = today.date()
             workday_today = WorkdaySession.get_total_hours_for_period(user_id, today_date, today_date)
-            workday_week = WorkdaySession.get_total_hours_for_period(user_id, week_start.date(), datetime.now().date())
-            workday_month = WorkdaySession.get_total_hours_for_period(
-                user_id, month_start.date(), datetime.now().date()
-            )
+            workday_week = WorkdaySession.get_total_hours_for_period(user_id, week_start.date(), local_now().date())
+            workday_month = WorkdaySession.get_total_hours_for_period(user_id, month_start.date(), local_now().date())
 
         # Active projects
         active_projects = self.project_repo.get_active_projects(user_id=user_id)
@@ -94,7 +91,7 @@ class AnalyticsService:
         Get top projects by hours for the dashboard (DB GROUP BY to avoid loading all entries).
         Returns list of dicts with keys: project, hours, billable_hours (sorted by hours desc, limited).
         """
-        period_start = datetime.utcnow().date() - timedelta(days=days)
+        period_start = local_now().date() - timedelta(days=days)
         rows = (
             db.session.query(
                 TimeEntry.project_id,
@@ -143,7 +140,7 @@ class AnalyticsService:
         Get time-by-project series for dashboard chart (DB GROUP BY to avoid loading all entries).
         Returns dict with keys: series (list of {label, hours}), chart_labels, chart_hours.
         """
-        period_start = datetime.utcnow().date() - timedelta(days=days)
+        period_start = local_now().date() - timedelta(days=days)
         rows = (
             db.session.query(
                 Project.name,
@@ -174,7 +171,7 @@ class AnalyticsService:
         Returns:
             dict with daily/hourly trends
         """
-        end_date = datetime.now()
+        end_date = local_now()
         start_date = end_date - timedelta(days=days)
 
         # Get entries

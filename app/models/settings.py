@@ -747,6 +747,7 @@ class Settings(db.Model):
         "mail_password",
         "peppol_access_point_token",
         "ai_api_key",
+        "claude_api_key",
         "jira_client_secret",
         "slack_client_secret",
         "github_client_secret",

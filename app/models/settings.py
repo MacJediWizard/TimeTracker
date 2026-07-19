@@ -802,36 +802,6 @@ class Settings(db.Model):
         """
         try:
             settings = cls.query.first()
-            # #region agent log
-            try:
-                import json
-
-                log_data = {
-                    "location": "settings.py:422",
-                    "message": "Settings query result",
-                    "data": {
-                        "settings_is_none": settings is None,
-                        "settings_has_id": settings is not None and hasattr(settings, "id") and settings.id is not None,
-                        "invoice_prefix": getattr(settings, "invoice_prefix", "MISSING") if settings else "N/A",
-                        "invoice_start_number": (
-                            getattr(settings, "invoice_start_number", "MISSING") if settings else "N/A"
-                        ),
-                    },
-                    "timestamp": int(datetime.utcnow().timestamp() * 1000),
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "D",
-                }
-                log_path = os.path.join(
-                    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                    ".cursor",
-                    "debug.log",
-                )
-                with open(log_path, "a", encoding="utf-8") as f:
-                    f.write(json.dumps(log_data) + "\n")
-            except (OSError, IOError, TypeError, ValueError):
-                pass
-            # #endregion
             if settings:
                 return settings
         except Exception as e:

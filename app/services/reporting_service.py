@@ -25,6 +25,7 @@ from sqlalchemy.orm import joinedload
 
 from app import db
 from app.models import Expense, Invoice, InvoiceItem, Payment, Project, ProjectCost, TimeEntry, User
+from app.models.time_entry import local_now
 from app.repositories import ExpenseRepository, InvoiceRepository, ProjectRepository, TimeEntryRepository
 
 
@@ -58,9 +59,9 @@ class ReportingService:
             dict with total hours, billable hours, entries count, etc.
         """
         if not start_date:
-            start_date = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            start_date = local_now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         if not end_date:
-            end_date = datetime.now()
+            end_date = local_now()
 
         # Get total duration
         total_seconds = self.time_entry_repo.get_total_duration(

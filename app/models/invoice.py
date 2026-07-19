@@ -107,14 +107,18 @@ class Invoice(db.Model):
     @property
     def is_overdue(self):
         """Check if invoice is overdue"""
-        return self.status in ["sent", "overdue"] and datetime.utcnow().date() > self.due_date
+        from app.models.time_entry import local_now
+
+        return self.status in ["sent", "overdue"] and local_now().date() > self.due_date
 
     @property
     def days_overdue(self):
         """Calculate days overdue"""
+        from app.models.time_entry import local_now
+
         if not self.is_overdue:
             return 0
-        return (datetime.utcnow().date() - self.due_date).days
+        return (local_now().date() - self.due_date).days
 
     @property
     def is_paid(self):

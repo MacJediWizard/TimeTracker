@@ -8,6 +8,7 @@ from flask_login import current_user, login_required
 
 from app.models import WorkingTimeViolation
 from app.models.attendance_compliance import AttendanceCorrection, AttendanceCorrectionStatus
+from app.models.time_entry import local_now
 from app.services.attendance_compliance_service import AttendanceComplianceService
 from app.services.workday_session_service import WorkdaySessionService
 from app.services.working_time_limit_service import WorkingTimeLimitService
@@ -79,7 +80,8 @@ def workday_history():
     page = request.args.get("page", 1, type=int)
     per_page = 20
     days = request.args.get("days", 30, type=int)
-    end_date = datetime.utcnow().date()
+    # Business-calendar "today" — DailyAttendanceRecord.work_date is a business day.
+    end_date = local_now().date()
     start_date = end_date - timedelta(days=days)
 
     service = AttendanceComplianceService()

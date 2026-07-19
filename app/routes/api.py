@@ -541,9 +541,9 @@ def search():
 @login_required
 def upcoming_deadlines():
     """Return upcoming task deadlines for the current user."""
-    now_utc = datetime.utcnow()
-    today = now_utc.date()
-    horizon = (now_utc + timedelta(days=2)).date()
+    now_local = local_now()
+    today = now_local.date()
+    horizon = (now_local + timedelta(days=2)).date()
 
     query = Task.query.join(Project).filter(
         Project.status == "active",
@@ -904,7 +904,7 @@ def project_burndown(project_id):
             return jsonify({"error": "Access denied"}), 403
 
     # Date range: last 30 days up to today
-    end_date = datetime.utcnow().date()
+    end_date = local_now().date()
     start_date = end_date - timedelta(days=29)
 
     # Fetch entries in range
@@ -1998,7 +1998,7 @@ def get_stats():
     from app.utils.overtime import calculate_period_overtime, get_week_start_for_date
 
     # Get date range
-    end_date = datetime.utcnow()
+    end_date = local_now()
     start_date = end_date - timedelta(days=30)
     today = end_date.date()
     week_start = get_week_start_for_date(today, current_user)
@@ -2048,7 +2048,7 @@ def value_dashboard_stats():
 @login_required
 def week_comparison():
     """This week (Mon 00:00–now) vs same calendar weekdays last week; matches dashboard week hours."""
-    now = datetime.now()
+    now = local_now()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week_start = today_start - timedelta(days=today_start.weekday())
     today_date = today_start.date()
@@ -2425,7 +2425,7 @@ def dashboard_stats():
     from app.models import TimeEntry
     from app.utils.overtime import calculate_period_overtime, get_overtime_ytd, get_week_start_for_date
 
-    today = datetime.utcnow().date()
+    today = local_now().date()
     week_start = get_week_start_for_date(today, current_user)
     month_start = today.replace(day=1)
 
@@ -2468,7 +2468,7 @@ def dashboard_sparklines():
     from app.models import TimeEntry
 
     # Get last 7 days of data
-    seven_days_ago = datetime.utcnow() - timedelta(days=7)
+    seven_days_ago = local_now() - timedelta(days=7)
 
     # Get daily totals for last 7 days
     daily_totals = (
@@ -2489,7 +2489,7 @@ def dashboard_sparklines():
     # Convert to hours and create array
     hours_data = []
     for i in range(7):
-        date = datetime.utcnow().date() - timedelta(days=6 - i)
+        date = local_now().date() - timedelta(days=6 - i)
         matching = next((d for d in daily_totals if d.date == date), None)
         if matching:
             # total_seconds is already in seconds (Integer), convert to hours

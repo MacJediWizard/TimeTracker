@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from app import db
 from app.models import Project, Task, TimeEntry, User
+from app.models.time_entry import local_now
 from app.models.workflow import WorkflowExecution, WorkflowRule
 from app.utils.db import safe_commit
 
@@ -209,7 +210,7 @@ class WorkflowEngine:
         # Calculate start/end time from duration
         from datetime import timedelta
 
-        end_time = datetime.utcnow()
+        end_time = local_now()
         start_time = end_time - timedelta(hours=float(duration) if duration else 0)
 
         result = service.create_manual_entry(

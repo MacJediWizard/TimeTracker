@@ -11,6 +11,7 @@ import requests
 
 from app import db
 from app.models.currency import Currency, ExchangeRate
+from app.models.time_entry import local_now
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ class CurrencyService:
             return amount
 
         if not conversion_date:
-            conversion_date = date.today()
+            conversion_date = local_now().date()
 
         # Get exchange rate
         rate = CurrencyService.get_exchange_rate(from_currency, to_currency, conversion_date)
@@ -42,7 +43,7 @@ class CurrencyService:
     def get_exchange_rate(base_currency: str, quote_currency: str, rate_date: date = None) -> Optional[Decimal]:
         """Get exchange rate, fetching if not in database"""
         if not rate_date:
-            rate_date = date.today()
+            rate_date = local_now().date()
 
         # Try database first
         rate = ExchangeRate.query.filter_by(base_code=base_currency, quote_code=quote_currency, date=rate_date).first()
@@ -70,7 +71,7 @@ class CurrencyService:
     def fetch_exchange_rate(base_currency: str, quote_currency: str, rate_date: date = None) -> Optional[Decimal]:
         """Fetch exchange rate from external API"""
         if not rate_date:
-            rate_date = date.today()
+            rate_date = local_now().date()
 
         try:
             # Try primary API (exchangerate.host)
@@ -125,7 +126,7 @@ class CurrencyService:
             currencies = [c.code for c in Currency.query.filter_by(is_active=True).all()]
 
         updated = 0
-        today = date.today()
+        today = local_now().date()
 
         for quote_currency in currencies:
             if quote_currency == base_currency:

@@ -1,12 +1,13 @@
 import csv
 import io
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 from flask import Blueprint, Response, flash, redirect, render_template, request, send_file, url_for
 from flask_babel import gettext as _
 from flask_login import current_user, login_required
 
 from app import db
+from app.models.time_entry import local_now
 from app.models.time_off import CompanyHoliday, LeaveType, TimeOffRequest
 from app.services.workforce_governance_service import WorkforceGovernanceService
 
@@ -61,7 +62,7 @@ def dashboard():
     policy = service.get_or_create_default_policy() if (current_user.is_admin or _can_approve()) else None
 
     # default capacity window: current week
-    today = date.today()
+    today = local_now().date()
     cap_start = start or (today - timedelta(days=today.weekday()))
     cap_end = end or (cap_start + timedelta(days=6))
     capacity = service.capacity_report(
@@ -154,7 +155,7 @@ def _build_signoff_state(periods):
 @workforce_bp.route("/workforce/periods/create", methods=["POST"])
 @login_required
 def create_period():
-    ref = _parse_date(request.form.get("reference_date")) or date.today()
+    ref = _parse_date(request.form.get("reference_date")) or local_now().date()
     period = WorkforceGovernanceService().get_or_create_period_for_date(
         user_id=current_user.id,
         reference=ref,

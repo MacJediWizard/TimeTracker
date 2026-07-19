@@ -163,7 +163,7 @@ class WorkforceGovernanceService:
         policy = self.get_or_create_default_policy()
         if policy.auto_lock_days is None:
             return 0
-        threshold = date.today() - timedelta(days=int(policy.auto_lock_days))
+        threshold = local_now().date() - timedelta(days=int(policy.auto_lock_days))
         candidates = TimesheetPeriod.query.filter(
             TimesheetPeriod.period_end <= threshold,
             TimesheetPeriod.status.in_([TimesheetPeriodStatus.APPROVED, TimesheetPeriodStatus.SUBMITTED]),

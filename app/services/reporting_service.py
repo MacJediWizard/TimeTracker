@@ -166,7 +166,7 @@ class ReportingService:
         )
 
         # Get comparison data for this month vs last month
-        now = datetime.utcnow()
+        now = local_now()
         this_month_start = datetime(now.year, now.month, 1)
         last_month_start = (this_month_start - timedelta(days=1)).replace(day=1)
         last_month_end = this_month_start - timedelta(seconds=1)
@@ -263,9 +263,9 @@ class ReportingService:
             dict with productivity statistics
         """
         if not start_date:
-            start_date = datetime.now() - timedelta(days=30)
+            start_date = local_now() - timedelta(days=30)
         if not end_date:
-            end_date = datetime.now()
+            end_date = local_now()
 
         # Get time summary
         time_summary = self.get_time_summary(user_id=user_id, start_date=start_date, end_date=end_date)
@@ -312,7 +312,7 @@ class ReportingService:
         user = User.query.get(user_id) if user_id else None
         if not user and user_id:
             return {"error": "User not found"}
-        today = date.today() if hasattr(date, "today") else datetime.utcnow().date()
+        today = local_now().date()
         week_start = get_week_start_for_date(today, user or object())
         week_end = week_start + timedelta(days=6)
         start_dt = datetime.combine(week_start, datetime.min.time())
@@ -366,7 +366,7 @@ class ReportingService:
         Returns:
             dict with current hours, previous hours, and change percent
         """
-        now = datetime.utcnow()
+        now = local_now()
         if period == "month":
             this_period_start = datetime(now.year, now.month, 1)
             last_period_start = (this_period_start - timedelta(days=1)).replace(day=1)

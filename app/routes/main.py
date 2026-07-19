@@ -111,7 +111,7 @@ def dashboard():
     pending_violations = WorkingTimeLimitService().get_violations_needing_justification(current_user.id)
 
     # Overtime for dashboard cards (today and week)
-    today_dt = datetime.utcnow().date()
+    today_dt = local_now().date()
     week_start_dt = get_week_start_for_date(today_dt, current_user)
     today_overtime = calculate_period_overtime(current_user, today_dt, today_dt)
     week_overtime = calculate_period_overtime(current_user, week_start_dt, today_dt)

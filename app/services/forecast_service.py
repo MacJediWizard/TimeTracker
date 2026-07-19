@@ -108,7 +108,10 @@ class ForecastService:
             return cls._empty_forecast(None)
 
         forecast = cls._empty_forecast(project)
-        today = date.today()
+        from app.models.time_entry import local_now
+
+        # Business-calendar "today": TimeEntry day-buckets + Task.due_date overdue boundary.
+        today = local_now().date()
 
         # ---------------------------------------------- velocity / time entries
         try:

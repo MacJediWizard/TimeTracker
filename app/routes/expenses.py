@@ -1059,8 +1059,10 @@ def dashboard():
 
     track_page_view("expenses_dashboard")
 
-    # Date range - default to current month
-    today = date.today()
+    from app.utils.timezone import local_now
+
+    # Date range - default to current month (business calendar; Expense.expense_date is a business date)
+    today = local_now().date()
     start_date = date(today.year, today.month, 1)
     end_date = today
 

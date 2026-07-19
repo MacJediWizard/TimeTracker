@@ -53,7 +53,10 @@ class InvoiceRepository(BaseRepository[Invoice]):
 
     def get_overdue(self, include_relations: bool = False) -> List[Invoice]:
         """Get overdue invoices"""
-        today = date.today()
+        # Business-calendar "today" (matches Invoice.is_overdue), not OS-local.
+        from app.models.time_entry import local_now
+
+        today = local_now().date()
         query = self.model.query.filter(
             Invoice.due_date < today, Invoice.status.in_([InvoiceStatus.SENT.value, InvoiceStatus.PARTIALLY_PAID.value])
         )
@@ -87,11 +90,13 @@ class InvoiceRepository(BaseRepository[Invoice]):
         payment_reference: Optional[str] = None,
     ) -> Optional[Invoice]:
         """Mark an invoice as paid"""
+        from app.models.time_entry import local_now
+
         invoice = self.get_by_id(invoice_id)
         if invoice:
             invoice.status = InvoiceStatus.PAID.value
             invoice.payment_status = PaymentStatus.FULLY_PAID.value
-            invoice.payment_date = payment_date or date.today()
+            invoice.payment_date = payment_date or local_now().date()
             invoice.payment_method = payment_method
             invoice.payment_reference = payment_reference
             invoice.amount_paid = invoice.total_amount

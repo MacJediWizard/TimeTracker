@@ -70,7 +70,9 @@ class ExpenseCategory(db.Model):
         """Get budget utilization percentage for the current period"""
         from datetime import date
 
-        today = date.today()
+        from app.models.time_entry import local_now
+
+        today = local_now().date()
 
         if period == "monthly":
             start_date = date(today.year, today.month, 1)

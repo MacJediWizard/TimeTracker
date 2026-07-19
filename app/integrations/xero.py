@@ -12,7 +12,13 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from app.integrations.base import BaseConnector
-from app.integrations.sync_config import export_enabled, should_sync_expenses, should_sync_invoices, sync_window_start
+from app.integrations.sync_config import (
+    export_enabled,
+    should_sync_expenses,
+    should_sync_invoices,
+    sync_window_start,
+    sync_window_start_date,
+)
 from app.utils.integration_metadata import get_integration_ref, set_integration_ref
 
 logger = logging.getLogger(__name__)
@@ -275,7 +281,7 @@ class XeroConnector(BaseConnector):
                         errors.append(f"Error syncing invoice {invoice.id}: {str(e)}")
 
             if should_sync_expenses(config, sync_type):
-                expense_query = Expense.query.filter(Expense.expense_date >= window_start.date())
+                expense_query = Expense.query.filter(Expense.expense_date >= sync_window_start_date(config))
                 if config.get("sync_approved_expenses_only", True):
                     expense_query = expense_query.filter(Expense.status == "approved")
                 expenses = expense_query.all()

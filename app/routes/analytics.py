@@ -7,6 +7,7 @@ from sqlalchemy import case, extract, func
 
 from app import db
 from app.models import Invoice, Payment, Project, Settings, Task, TimeEntry, User
+from app.models.time_entry import local_now
 from app.utils.module_helpers import module_enabled
 
 analytics_bp = Blueprint("analytics", __name__)
@@ -42,7 +43,7 @@ def hours_by_day():
     except (ValueError, TypeError):
         return jsonify({"error": "Invalid days parameter"}), 400
 
-    end_date = datetime.now().date()
+    end_date = local_now().date()
     start_date = end_date - timedelta(days=days)
 
     # Build query based on user permissions
@@ -104,7 +105,7 @@ def profitability_dashboard():
     except (ValueError, TypeError):
         return jsonify({"error": "Invalid parameters"}), 400
 
-    end_date = datetime.now().date()
+    end_date = local_now().date()
     start_date = end_date - timedelta(days=days)
 
     from app.services.metrics_service import MetricsService
@@ -132,7 +133,7 @@ def org_forecast():
     except (ValueError, TypeError):
         return jsonify({"error": "Invalid parameters"}), 400
 
-    end_date = datetime.now().date()
+    end_date = local_now().date()
     start_date = end_date - timedelta(days=days)
     from app.services.metrics_service import MetricsService
 
@@ -151,7 +152,7 @@ def hours_forecast():
     except (ValueError, TypeError):
         return jsonify({"error": "Invalid parameters"}), 400
 
-    end_date = datetime.now().date()
+    end_date = local_now().date()
     start_date = end_date - timedelta(days=days)
 
     query = db.session.query(
@@ -217,7 +218,7 @@ def hours_forecast():
 def hours_by_project():
     """Get total hours per project"""
     days = int(request.args.get("days", 30))
-    end_date = datetime.now().date()
+    end_date = local_now().date()
     start_date = end_date - timedelta(days=days)
 
     query = (
@@ -278,7 +279,7 @@ def hours_by_user():
         return jsonify({"error": "Unauthorized"}), 403
 
     days = int(request.args.get("days", 30))
-    end_date = datetime.now().date()
+    end_date = local_now().date()
     start_date = end_date - timedelta(days=days)
 
     results = (
@@ -320,7 +321,7 @@ def hours_by_user():
 def hours_by_hour():
     """Get hours worked by hour of day (24-hour format)"""
     days = int(request.args.get("days", 30))
-    end_date = datetime.now().date()
+    end_date = local_now().date()
     start_date = end_date - timedelta(days=days)
 
     query = db.session.query(
@@ -366,7 +367,7 @@ def hours_by_hour():
 def billable_vs_nonbillable():
     """Get billable vs non-billable hours breakdown"""
     days = int(request.args.get("days", 30))
-    end_date = datetime.now().date()
+    end_date = local_now().date()
     start_date = end_date - timedelta(days=days)
 
     query = db.session.query(TimeEntry.billable, func.sum(TimeEntry.duration_seconds).label("total_seconds")).filter(
@@ -416,7 +417,7 @@ def weekly_trends():
     except (ValueError, TypeError):
         return jsonify({"error": "Invalid weeks parameter"}), 400
 
-    end_date = datetime.now().date()
+    end_date = local_now().date()
     start_date = end_date - timedelta(weeks=weeks)
 
     # Get all time entries and group by week in Python (database-agnostic)
@@ -511,7 +512,7 @@ def overtime_analytics():
     Supports period=ytd (year-to-date), or days=N (last N days), or start_date/end_date."""
     from app.utils.overtime import calculate_period_overtime, get_daily_breakdown
 
-    end_date = datetime.now().date()
+    end_date = local_now().date()
     period = request.args.get("period", "").lower()
     if period == "ytd":
         start_date = end_date.replace(month=1, day=1)
@@ -612,7 +613,7 @@ def overtime_analytics():
 def project_efficiency():
     """Get project efficiency metrics (hours vs billable amount)"""
     days = int(request.args.get("days", 30))
-    end_date = datetime.now().date()
+    end_date = local_now().date()
     start_date = end_date - timedelta(days=days)
 
     query = (
@@ -685,7 +686,7 @@ def today_by_task():
         except ValueError:
             return jsonify({"error": "Invalid date format, expected YYYY-MM-DD"}), 400
     else:
-        target_date = datetime.now().date()
+        target_date = local_now().date()
 
     # Base query
     query = (
@@ -741,7 +742,7 @@ def today_by_task():
 def summary_with_comparison():
     """Get summary metrics with comparison to previous period"""
     days = int(request.args.get("days", 30))
-    end_date = datetime.now().date()
+    end_date = local_now().date()
     start_date = end_date - timedelta(days=days)
 
     # Previous period dates
@@ -829,7 +830,7 @@ def summary_with_comparison():
 def task_completion():
     """Get task completion analytics"""
     days = int(request.args.get("days", 30))
-    end_date = datetime.now().date()
+    end_date = local_now().date()
     start_date = end_date - timedelta(days=days)
 
     # Get tasks completed in period
@@ -898,7 +899,7 @@ def task_completion():
 def revenue_metrics():
     """Get revenue and financial metrics"""
     days = int(request.args.get("days", 30))
-    end_date = datetime.now().date()
+    end_date = local_now().date()
     start_date = end_date - timedelta(days=days)
 
     settings = Settings.get_settings()
@@ -999,7 +1000,7 @@ def revenue_metrics():
 def insights():
     """Generate insights and recommendations based on analytics data"""
     days = int(request.args.get("days", 30))
-    end_date = datetime.now().date()
+    end_date = local_now().date()
     start_date = end_date - timedelta(days=days)
 
     insights_list = []
@@ -1349,7 +1350,7 @@ def payment_summary():
 def revenue_vs_payments():
     """Compare potential revenue (from time tracking) with actual payments"""
     days = int(request.args.get("days", 30))
-    end_date = datetime.now().date()
+    end_date = local_now().date()
     start_date = end_date - timedelta(days=days)
 
     settings = Settings.get_settings()

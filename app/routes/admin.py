@@ -716,7 +716,10 @@ def admin_dashboard():
     if chart_data is None:
         from datetime import date as date_type
 
-        end_date = datetime.utcnow()
+        from app.models.time_entry import local_now
+
+        # App business clock — the chart buckets TimeEntry.start_time (naive business tz).
+        end_date = local_now()
         range_start = (end_date - timedelta(days=29)).replace(hour=0, minute=0, second=0, microsecond=0)
         range_end = end_date
         all_dates = [(end_date - timedelta(days=i)).date() for i in range(29, -1, -1)]

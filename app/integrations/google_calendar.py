@@ -269,10 +269,10 @@ class GoogleCalendarConnector(BaseConnector):
                     start_date = (
                         self.integration.last_sync_at
                         if self.integration.last_sync_at
-                        else datetime.utcnow() - timedelta(days=30)
+                        else now_in_app_timezone() - timedelta(days=30)
                     )
                 else:
-                    start_date = datetime.utcnow() - timedelta(days=90)
+                    start_date = now_in_app_timezone() - timedelta(days=90)
 
                 logger.info(
                     f"TimeTracker→Calendar sync starting: sync_direction='{sync_direction}', sync_type='{sync_type}'"

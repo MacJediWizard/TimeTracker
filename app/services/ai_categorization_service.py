@@ -12,6 +12,7 @@ from sqlalchemy import func
 
 from app import db
 from app.models import Client, Project, Task, TimeEntry
+from app.models.time_entry import local_now
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +101,7 @@ class AICategorizationService:
         # Get user's recent projects
         recent_projects = (
             Project.query.join(TimeEntry)
-            .filter(TimeEntry.user_id == user_id, TimeEntry.start_time >= datetime.utcnow() - timedelta(days=90))
+            .filter(TimeEntry.user_id == user_id, TimeEntry.start_time >= local_now() - timedelta(days=90))
             .distinct()
             .all()
         )

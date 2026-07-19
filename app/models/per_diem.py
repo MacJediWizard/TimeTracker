@@ -85,10 +85,11 @@ class PerDiemRate(db.Model):
     @classmethod
     def get_rate_for_location(cls, country, city=None, date=None):
         """Get applicable per diem rate for a location and date"""
-        from datetime import date as dt_date
+        from app.models.time_entry import local_now
 
         if date is None:
-            date = dt_date.today()
+            # Business-calendar "today" — compared against effective_from/effective_to db.Date window.
+            date = local_now().date()
 
         query = cls.query.filter(cls.country == country, cls.is_active == True, cls.effective_from <= date)
 

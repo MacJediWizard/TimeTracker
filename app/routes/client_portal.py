@@ -39,6 +39,7 @@ from app.models import (
     User,
 )
 from app.models.client_time_approval import ClientTimeApproval
+from app.models.time_entry import local_now
 from app.services.checkout_service import CheckoutService
 from app.services.client_approval_service import ClientApprovalService
 from app.services.client_notification_service import ClientNotificationService
@@ -503,7 +504,7 @@ def dashboard():
     )
 
     # Get recent activity (last 30 days)
-    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+    thirty_days_ago = local_now() - timedelta(days=30)
     recent_time_entries = [entry for entry in portal_data["time_entries"] if entry.start_time >= thirty_days_ago]
 
     # Group time entries by project
@@ -1076,7 +1077,7 @@ def accept_quote(quote_id):
 
     # Update quote status
     quote.status = "accepted"
-    quote.accepted_at = datetime.utcnow()
+    quote.accepted_at = local_now()
     quote.accepted_by = None  # Client acceptance, not user
 
     # Notify admin users
@@ -1123,7 +1124,7 @@ def reject_quote(quote_id):
 
     # Update quote status
     quote.status = "rejected"
-    quote.rejected_at = datetime.utcnow()
+    quote.rejected_at = local_now()
     quote.rejection_reason = reason
 
     # Notify admin users

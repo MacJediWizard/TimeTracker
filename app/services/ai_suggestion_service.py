@@ -11,6 +11,7 @@ from sqlalchemy import desc, func
 
 from app import db
 from app.models import Project, Task, TimeEntry, User
+from app.models.time_entry import local_now
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ class AISuggestionService:
         suggestions: list = []
 
         # Get recent entries (last 30 days)
-        cutoff = datetime.utcnow() - timedelta(days=30)
+        cutoff = local_now() - timedelta(days=30)
         recent_entries = (
             TimeEntry.query.filter(
                 TimeEntry.user_id == user_id, TimeEntry.start_time >= cutoff, TimeEntry.end_time.isnot(None)
@@ -105,7 +106,7 @@ class AISuggestionService:
 
         for task in active_tasks:
             # Check if already logged today
-            today = datetime.utcnow().date()
+            today = local_now().date()
             today_entry = TimeEntry.query.filter(
                 TimeEntry.user_id == user_id, TimeEntry.task_id == task.id, func.date(TimeEntry.start_time) == today
             ).first()
@@ -130,12 +131,12 @@ class AISuggestionService:
     def _suggest_by_time_pattern(self, user_id: int) -> List[Dict]:
         """Suggest based on time-of-day patterns"""
         suggestions: list = []
-        current_hour = datetime.utcnow().hour
+        current_hour = local_now().hour
 
         # Get entries by hour of day
         recent_entries = TimeEntry.query.filter(
             TimeEntry.user_id == user_id,
-            TimeEntry.start_time >= datetime.utcnow() - timedelta(days=30),
+            TimeEntry.start_time >= local_now() - timedelta(days=30),
             TimeEntry.end_time.isnot(None),
         ).all()
 
@@ -174,7 +175,7 @@ class AISuggestionService:
         suggestions = []
 
         # Get tasks with upcoming deadlines
-        upcoming_deadline = datetime.utcnow() + timedelta(days=7)
+        upcoming_deadline = local_now() + timedelta(days=7)
         urgent_tasks = (
             Task.query.filter(
                 Task.assigned_to == user_id,
@@ -188,7 +189,7 @@ class AISuggestionService:
         )
 
         for task in urgent_tasks:
-            days_until_deadline = (task.due_date.date() - datetime.utcnow().date()).days
+            days_until_deadline = (task.due_date - local_now().date()).days
 
             suggestions.append(
                 {

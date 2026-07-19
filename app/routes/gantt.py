@@ -9,6 +9,7 @@ from flask_babel import gettext as _
 from flask_login import current_user, login_required
 
 from app.models import Project
+from app.models.time_entry import local_now
 from app.services.gantt_service import GanttService
 from app.utils.module_helpers import module_enabled
 
@@ -37,11 +38,11 @@ def gantt_data():
     if start_date:
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
     else:
-        start_dt = datetime.utcnow() - timedelta(days=90)
+        start_dt = local_now() - timedelta(days=90)
     if end_date:
         end_dt = datetime.strptime(end_date, "%Y-%m-%d")
     else:
-        end_dt = datetime.utcnow() + timedelta(days=90)
+        end_dt = local_now() + timedelta(days=90)
 
     has_view_all_projects = current_user.is_admin or current_user.has_permission("view_projects")
     result = GanttService().get_gantt_data(

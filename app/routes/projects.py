@@ -31,6 +31,7 @@ from app.models import (
     TimeEntry,
     UserFavoriteProject,
 )
+from app.models.time_entry import local_now
 from app.services import ProjectService
 from app.utils.db import safe_commit
 from app.utils.error_handling import safe_log
@@ -713,13 +714,13 @@ def project_dashboard(project_id):
     end_date = None
 
     if period == "week":
-        start_date = datetime.now() - timedelta(days=7)
+        start_date = local_now() - timedelta(days=7)
     elif period == "month":
-        start_date = datetime.now() - timedelta(days=30)
+        start_date = local_now() - timedelta(days=30)
     elif period == "3months":
-        start_date = datetime.now() - timedelta(days=90)
+        start_date = local_now() - timedelta(days=90)
     elif period == "year":
-        start_date = datetime.now() - timedelta(days=365)
+        start_date = local_now() - timedelta(days=365)
 
     # === Budget vs Actual ===
     budget_data = {
@@ -842,7 +843,7 @@ def project_dashboard(project_id):
 
     timeline_data = []
     if start_date or period != "all":
-        timeline_start = start_date or (datetime.now() - timedelta(days=30))
+        timeline_start = start_date or (local_now() - timedelta(days=30))
 
         # Group time entries by date
         daily_hours = (

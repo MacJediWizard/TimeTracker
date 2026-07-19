@@ -23,6 +23,7 @@ from app.models import (
     TimeEntry,
     User,
 )
+from app.models.time_entry import local_now
 from app.repositories import TimeEntryRepository
 from app.services.scheduled_report_service import ScheduledReportService
 from app.utils.excel_export import create_project_report_excel, create_time_entries_excel
@@ -118,9 +119,9 @@ def project_report():
     users = User.query.filter_by(is_active=True).order_by(User.username).all()
 
     if not start_date:
-        start_date = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
+        start_date = (local_now() - timedelta(days=30)).strftime("%Y-%m-%d")
     if not end_date:
-        end_date = datetime.utcnow().strftime("%Y-%m-%d")
+        end_date = local_now().strftime("%Y-%m-%d")
 
     try:
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
@@ -178,9 +179,9 @@ def user_report():
 
     # Parse dates
     if not start_date:
-        start_date = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
+        start_date = (local_now() - timedelta(days=30)).strftime("%Y-%m-%d")
     if not end_date:
-        end_date = datetime.utcnow().strftime("%Y-%m-%d")
+        end_date = local_now().strftime("%Y-%m-%d")
 
     try:
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
@@ -308,8 +309,8 @@ def export_form():
     single_client = clients[0] if only_one_client else None
 
     # Set default date range (last 30 days)
-    default_end_date = datetime.utcnow().strftime("%Y-%m-%d")
-    default_start_date = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
+    default_end_date = local_now().strftime("%Y-%m-%d")
+    default_start_date = (local_now() - timedelta(days=30)).strftime("%Y-%m-%d")
 
     # Format from query (csv or excel) for Quick Actions consistency
     export_format = request.args.get("format", "csv").lower()
@@ -352,9 +353,9 @@ def export_csv():
 
     # Parse dates
     if not start_date:
-        start_date = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
+        start_date = (local_now() - timedelta(days=30)).strftime("%Y-%m-%d")
     if not end_date:
-        end_date = datetime.utcnow().strftime("%Y-%m-%d")
+        end_date = local_now().strftime("%Y-%m-%d")
 
     try:
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
@@ -526,7 +527,7 @@ def export_csv():
 @module_enabled("reports")
 def export_summary_pdf():
     """Export summary report as a one-page PDF (today/week/month hours + top projects)."""
-    end_date = datetime.utcnow()
+    end_date = local_now()
     start_date = end_date - timedelta(days=30)
     today_hours = TimeEntry.get_total_hours_for_period(
         start_date=end_date.date(), user_id=current_user.id if not current_user.is_admin else None
@@ -587,7 +588,7 @@ def export_summary_pdf():
 def summary_report():
     """Summary report with key metrics"""
     # Get date range
-    end_date = datetime.utcnow()
+    end_date = local_now()
     start_date = end_date - timedelta(days=30)
 
     # Get total hours for different periods
@@ -685,9 +686,9 @@ def task_report():
 
     # Default date range: last 30 days
     if not start_date:
-        start_date = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
+        start_date = (local_now() - timedelta(days=30)).strftime("%Y-%m-%d")
     if not end_date:
-        end_date = datetime.utcnow().strftime("%Y-%m-%d")
+        end_date = local_now().strftime("%Y-%m-%d")
 
     try:
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
@@ -778,9 +779,9 @@ def _time_entries_report_query(request, require_dates=True, return_query=False):
     billed = request.args.get("billed", "all")  # 'all', 'yes', 'no'
 
     if not start_date:
-        start_date = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
+        start_date = (local_now() - timedelta(days=30)).strftime("%Y-%m-%d")
     if not end_date:
-        end_date = datetime.utcnow().strftime("%Y-%m-%d")
+        end_date = local_now().strftime("%Y-%m-%d")
 
     try:
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
@@ -788,8 +789,8 @@ def _time_entries_report_query(request, require_dates=True, return_query=False):
     except ValueError:
         if require_dates:
             return None, None, None, start_date, end_date
-        start_dt = datetime.utcnow() - timedelta(days=30)
-        end_dt = datetime.utcnow()
+        start_dt = local_now() - timedelta(days=30)
+        end_dt = local_now()
 
     can_view_all = current_user.is_admin or current_user.has_permission("view_all_time_entries")
     query = TimeEntry.query.filter(
@@ -1064,9 +1065,9 @@ def export_excel():
 
     # Parse dates
     if not start_date:
-        start_date = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
+        start_date = (local_now() - timedelta(days=30)).strftime("%Y-%m-%d")
     if not end_date:
-        end_date = datetime.utcnow().strftime("%Y-%m-%d")
+        end_date = local_now().strftime("%Y-%m-%d")
 
     try:
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
@@ -1144,9 +1145,9 @@ def export_project_excel():
 
     # Parse dates
     if not start_date:
-        start_date = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
+        start_date = (local_now() - timedelta(days=30)).strftime("%Y-%m-%d")
     if not end_date:
-        end_date = datetime.utcnow().strftime("%Y-%m-%d")
+        end_date = local_now().strftime("%Y-%m-%d")
 
     try:
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
@@ -1241,9 +1242,9 @@ def export_user_excel():
 
     # Parse dates
     if not start_date:
-        start_date = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
+        start_date = (local_now() - timedelta(days=30)).strftime("%Y-%m-%d")
     if not end_date:
-        end_date = datetime.utcnow().strftime("%Y-%m-%d")
+        end_date = local_now().strftime("%Y-%m-%d")
 
     try:
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
@@ -1416,9 +1417,9 @@ def export_user_entries_excel():
 
     # Parse dates
     if not start_date:
-        start_date = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
+        start_date = (local_now() - timedelta(days=30)).strftime("%Y-%m-%d")
     if not end_date:
-        end_date = datetime.utcnow().strftime("%Y-%m-%d")
+        end_date = local_now().strftime("%Y-%m-%d")
 
     try:
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
@@ -1495,9 +1496,9 @@ def export_task_excel():
 
     # Parse dates
     if not start_date:
-        start_date = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
+        start_date = (local_now() - timedelta(days=30)).strftime("%Y-%m-%d")
     if not end_date:
-        end_date = datetime.utcnow().strftime("%Y-%m-%d")
+        end_date = local_now().strftime("%Y-%m-%d")
 
     try:
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
@@ -1646,9 +1647,9 @@ def unpaid_hours_report():
 
     # Parse dates
     if not start_date:
-        start_date = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
+        start_date = (local_now() - timedelta(days=30)).strftime("%Y-%m-%d")
     if not end_date:
-        end_date = datetime.utcnow().strftime("%Y-%m-%d")
+        end_date = local_now().strftime("%Y-%m-%d")
 
     try:
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
@@ -1742,9 +1743,9 @@ def export_unpaid_hours_excel():
 
     # Parse dates
     if not start_date:
-        start_date = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
+        start_date = (local_now() - timedelta(days=30)).strftime("%Y-%m-%d")
     if not end_date:
-        end_date = datetime.utcnow().strftime("%Y-%m-%d")
+        end_date = local_now().strftime("%Y-%m-%d")
 
     try:
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")

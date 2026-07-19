@@ -62,9 +62,10 @@ class TaskRepository(BaseRepository[Task]):
 
     def get_overdue(self, include_relations: bool = False) -> List[Task]:
         """Get overdue tasks"""
-        from datetime import date
+        # Business-calendar "today" — matches Task.is_overdue / Task.due_date (db.Date).
+        from app.models.time_entry import local_now
 
-        today = date.today()
+        today = local_now().date()
         query = self.model.query.filter(
             Task.due_date < today, Task.status.notin_([TaskStatus.DONE.value, TaskStatus.CANCELLED.value])
         )

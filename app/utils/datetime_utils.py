@@ -120,7 +120,9 @@ def get_date_range(
     Returns:
         tuple of (start_date, end_date)
     """
-    today = date.today()
+    from app.models.time_entry import local_now
+
+    today = local_now().date()
 
     if period == "today":
         return today, today
@@ -163,7 +165,9 @@ def get_previous_period(period: str = "month", reference_date: Optional[date] = 
     Returns:
         tuple of (start_date, end_date)
     """
-    ref = reference_date or date.today()
+    from app.models.time_entry import local_now
+
+    ref = reference_date or local_now().date()
 
     if period == "week":
         start = ref - timedelta(days=ref.weekday() + 7)

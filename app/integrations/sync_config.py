@@ -33,7 +33,24 @@ def should_sync_expenses(config: Optional[Dict[str, Any]], sync_type: str, appro
 
 
 def sync_window_start(config: Optional[Dict[str, Any]], days: int = 90) -> datetime:
-    """Return UTC datetime for incremental/full scan window."""
+    """Return UTC datetime for incremental/full scan window.
+
+    Use this to compare against UTC audit columns (e.g. Invoice.created_at).
+    """
     cfg = config or {}
     window_days = int(cfg.get("sync_window_days") or days)
     return datetime.utcnow() - timedelta(days=window_days)
+
+
+def sync_window_start_date(config: Optional[Dict[str, Any]], days: int = 90):
+    """Return the business-calendar date for the scan window.
+
+    Use this to compare against ``db.Date`` business-calendar columns
+    (e.g. Expense.expense_date), which are keyed to the app timezone rather
+    than UTC — otherwise the window is off by up to a day near midnight.
+    """
+    from app.models.time_entry import local_now
+
+    cfg = config or {}
+    window_days = int(cfg.get("sync_window_days") or days)
+    return local_now().date() - timedelta(days=window_days)

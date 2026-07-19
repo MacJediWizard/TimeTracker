@@ -74,7 +74,9 @@ class RecurringTask(db.Model):
     def calculate_next_run_date(self, from_date=None):
         """Calculate the next run date based on frequency and interval"""
         if from_date is None:
-            from_date = datetime.utcnow().date()
+            from app.models.time_entry import local_now
+
+            from_date = local_now().date()
 
         if self.frequency == "daily":
             return from_date + timedelta(days=self.interval)

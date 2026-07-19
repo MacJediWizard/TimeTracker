@@ -76,8 +76,10 @@ def calculate_engagement_metrics(user_id: Any) -> Dict[str, Any]:
         Dict of engagement properties
     """
     from app.models import TimeEntry
+    from app.models.time_entry import local_now
 
-    now = datetime.utcnow()
+    # TimeEntry.created_at is stamped on the app clock (local_now); window on the same clock.
+    now = local_now()
 
     # Entries in different time periods
     entries_last_24h = TimeEntry.query.filter(

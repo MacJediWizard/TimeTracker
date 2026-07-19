@@ -269,7 +269,11 @@ def send_overdue_invoice_notification(invoice, user):
     if not user.email or not user.email_notifications or not user.notification_overdue_invoices:
         return
 
-    days_overdue = (datetime.utcnow().date() - invoice.due_date).days
+    # Overdue is measured against the app business calendar (matches
+    # Invoice.is_overdue/days_overdue), not naive UTC.
+    from app.models.time_entry import local_now
+
+    days_overdue = (local_now().date() - invoice.due_date).days
 
     subject = f"Invoice {invoice.invoice_number} is {days_overdue} days overdue"
 

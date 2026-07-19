@@ -365,6 +365,23 @@ def parse_local_datetime_from_string(datetime_str):
         return None
 
 
+def parse_local_naive_from_string(datetime_str):
+    """Parse a datetime-local input string (YYYY-MM-DDTHH:MM[:SS]) to a NAIVE datetime
+    in the application timezone.
+
+    Use this for columns whose default is local_now (naive app-local) — e.g.
+    DealActivity.activity_date, LeadActivity.activity_date,
+    ContactCommunication.communication_date — so a user-entered value is stored on
+    the same clock as the column default. Mirrors the timer edit path
+    (utc_to_local(parse_local_datetime(...)).replace(tzinfo=None)).
+    Returns None if empty/invalid.
+    """
+    aware_utc = parse_local_datetime_from_string(datetime_str)
+    if aware_utc is None:
+        return None
+    return utc_to_local(aware_utc).replace(tzinfo=None)
+
+
 def parse_user_local_datetime(date_str, time_str, user=None):
     """Parse date and time strings as user's local time; return naive datetime in app timezone for storage.
 

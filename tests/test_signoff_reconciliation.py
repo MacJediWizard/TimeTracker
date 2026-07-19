@@ -3,6 +3,7 @@ function the 15-minute cron calls. We test the function directly so the
 scheduler is out of scope (the cron-trigger registration in
 ``app/utils/scheduled_tasks.py`` is just a thin wrapper)."""
 
+import hashlib
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -73,16 +74,22 @@ def test_reconcile_skips_fresh_rows(app, recon_setup):
         assert touched == 0
 
 
-def test_reconcile_skips_terminal_status(app, recon_setup):
-    """A SIGNED/DECLINED row should never be picked up — the query
-    filter excludes terminal statuses."""
+def test_reconcile_skips_complete_signed_row(app, recon_setup):
+    """A SIGNED row that already has its signed PDF + hash is fully terminal
+    and must never be picked up — neither the status re-fetch (SENT/VIEWED only)
+    nor the artefact-recovery pass (which targets only rows with NULL artefacts)."""
     with app.app_context():
-        _stuck_esig(
+        esig = _stuck_esig(
             recon_setup,
-            external_id="terminal",
+            external_id="complete",
             status=ESignatureStatus.SIGNED,
             age_minutes=120,  # way past the 5-min cutoff
         )
+        esig.signed_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=120)
+        esig.signed_document_path = "/data/uploads/esignatures/1/signed.pdf"
+        esig.document_hash = "a" * 64
+        db.session.commit()
+
         touched = TimesheetSignoffService.reconcile_stuck_requests()
         assert touched == 0
 
@@ -185,3 +192,100 @@ def test_reconcile_continues_after_per_row_exception(app, recon_setup):
         assert call_count["n"] == 2
         assert mock_apply.call_count == 1
         assert touched == 1
+
+
+# --- Signed-artefact recovery -------------------------------------------------
+# apply_webhook_event commits status=SIGNED even when _capture_signed_artefacts
+# swallows a transient download failure, leaving signed_document_path +
+# document_hash NULL. The status-based reconcile above only re-fetches
+# SENT/VIEWED, so without a dedicated recovery pass the signed PDF + sha256
+# (part of the e-signature audit trail) would be orphaned forever.
+
+
+def _signed_orphan_esig(integration_id: int, *, external_id: str, signed_minutes_ago: int) -> ESignatureRequest:
+    """A SIGNED row whose artefacts never landed (NULL path + hash)."""
+    signed_at = datetime.now(timezone.utc) - timedelta(minutes=signed_minutes_ago)
+    esig = ESignatureRequest(
+        integration_id=integration_id,
+        target_type="TimesheetSignoffRequest",
+        target_id="999",
+        external_id=external_id,
+        status=ESignatureStatus.SIGNED,
+        sent_at=signed_at.replace(tzinfo=None) - timedelta(minutes=5),
+        signed_at=signed_at.replace(tzinfo=None),
+    )
+    db.session.add(esig)
+    db.session.commit()
+    return esig
+
+
+def test_reconcile_recovers_signed_row_missing_artefacts(app, recon_setup, tmp_path):
+    """SIGNED row with NULL artefacts + a now-working connector → the signed
+    PDF is downloaded, stored, and hashed on the next reconcile."""
+    with app.app_context():
+        app.config["UPLOAD_FOLDER"] = str(tmp_path)
+        esig = _signed_orphan_esig(recon_setup, external_id="orphan", signed_minutes_ago=30)
+        esig_id = esig.id
+        pdf_bytes = b"%PDF-1.4 signed timesheet"
+
+        with patch.object(
+            TimesheetSignoffService,
+            "_connector_for_integration",
+            return_value=SimpleNamespace(
+                download_signed_document=lambda eid: pdf_bytes,
+                download_audit_certificate=lambda eid: None,
+            ),
+        ):
+            touched = TimesheetSignoffService.reconcile_stuck_requests()
+
+        assert touched == 1
+        refreshed = ESignatureRequest.query.get(esig_id)
+        assert refreshed.signed_document_path is not None
+        assert refreshed.document_hash == hashlib.sha256(pdf_bytes).hexdigest()
+
+
+def test_reconcile_recovery_download_failure_leaves_null_and_no_count(app, recon_setup, tmp_path):
+    """If the download fails again, artefacts stay NULL, the row is NOT counted,
+    and no exception escapes — so the next cron run will retry it."""
+    with app.app_context():
+        app.config["UPLOAD_FOLDER"] = str(tmp_path)
+        esig = _signed_orphan_esig(recon_setup, external_id="still-down", signed_minutes_ago=30)
+        esig_id = esig.id
+
+        def explode(eid):
+            raise RuntimeError("provider still down")
+
+        with patch.object(
+            TimesheetSignoffService,
+            "_connector_for_integration",
+            return_value=SimpleNamespace(
+                download_signed_document=explode,
+                download_audit_certificate=lambda eid: None,
+            ),
+        ):
+            touched = TimesheetSignoffService.reconcile_stuck_requests()
+
+        assert touched == 0
+        refreshed = ESignatureRequest.query.get(esig_id)
+        assert refreshed.signed_document_path is None
+        assert refreshed.document_hash is None
+
+
+def test_reconcile_skips_fresh_signed_orphan(app, recon_setup, tmp_path):
+    """A row signed <5 min ago is too fresh — a signed webhook may still be
+    mid-capture, so recovery must not race it."""
+    with app.app_context():
+        app.config["UPLOAD_FOLDER"] = str(tmp_path)
+        _signed_orphan_esig(recon_setup, external_id="fresh-signed", signed_minutes_ago=1)
+
+        with patch.object(
+            TimesheetSignoffService,
+            "_connector_for_integration",
+            return_value=SimpleNamespace(
+                download_signed_document=lambda eid: b"unused",
+                download_audit_certificate=lambda eid: None,
+            ),
+        ):
+            touched = TimesheetSignoffService.reconcile_stuck_requests()
+
+        assert touched == 0

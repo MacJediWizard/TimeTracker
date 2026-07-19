@@ -91,6 +91,32 @@ def test_provision_requires_client_and_project_names(app, user):
         assert exc.value.code == "validation_error"
 
 
+@pytest.mark.parametrize("bad_name", [123, {"nested": 1}, ["list"], True])
+def test_provision_non_string_names_raise_validation_error_not_500(app, user, bad_name):
+    """A hand-crafted / API plan whose name is a truthy non-string must fall on the
+    clean validation_error path, not AttributeError -> 500 (routes only catch
+    AIServiceError, so an AttributeError would escape as an unhandled 500)."""
+    with app.app_context():
+        with pytest.raises(AIServiceError) as exc:
+            SowProvisioningService().provision(
+                {"client": {"name": bad_name}, "project": {"name": "Valid"}}, created_by=user.id
+            )
+        assert exc.value.code == "validation_error"
+
+
+def test_provision_non_string_task_name_is_skipped_not_crash(app, user):
+    """A task whose name is a non-string is skipped (treated as nameless), not crashed on."""
+    with app.app_context():
+        plan = _plan()
+        plan["tasks"] = [
+            {"name": 999, "status": "todo", "priority": "low"},  # non-string -> skipped
+            {"name": "Real task", "status": "todo", "priority": "low"},
+        ]
+        result = SowProvisioningService().provision(plan, created_by=user.id)
+        assert result["task_count"] == 1
+        assert Task.query.filter_by(name="Real task").one()
+
+
 def test_provision_rolls_back_project_on_task_failure(app, user, monkeypatch):
     with app.app_context():
         from app.services.task_service import TaskService

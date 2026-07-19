@@ -27,6 +27,17 @@ from app.utils.db import safe_commit
 logger = logging.getLogger(__name__)
 
 
+def _clean_str(value: Any) -> str:
+    """Coerce an incoming plan field to a stripped string.
+
+    Plan JSON comes straight from the client (the review UI or an API caller), so
+    a field the schema expects to be a string may arrive as a number, list, or
+    dict. Returning "" for any non-string keeps a malformed plan on the clean
+    validation_error path instead of raising AttributeError -> 500.
+    """
+    return value.strip() if isinstance(value, str) else ""
+
+
 def _to_float(value: Any) -> Optional[float]:
     try:
         return float(value) if value not in (None, "") else None
@@ -59,14 +70,14 @@ class SowProvisioningService:
         project_data = plan.get("project") or {}
         tasks_data = plan.get("tasks") or []
 
-        client_name = (client_data.get("name") or "").strip()
-        project_name = (project_data.get("name") or "").strip()
+        client_name = _clean_str(client_data.get("name"))
+        project_name = _clean_str(project_data.get("name"))
         if not client_name:
             raise AIServiceError("SOW plan is missing a client name.", "validation_error", 400)
         if not project_name:
             raise AIServiceError("SOW plan is missing a project name.", "validation_error", 400)
 
-        client = self._find_or_create_client(client_data, created_by=created_by)
+        client = self._find_or_create_client(client_data, client_name, created_by=created_by)
 
         result = self.project_service.create_project(
             name=project_name,
@@ -103,8 +114,7 @@ class SowProvisioningService:
             "tasks": created_tasks,
         }
 
-    def _find_or_create_client(self, client_data: Dict[str, Any], *, created_by: int) -> Client:
-        name = client_data["name"].strip()
+    def _find_or_create_client(self, client_data: Dict[str, Any], name: str, *, created_by: int) -> Client:
         existing = self.client_repo.get_by_name(name)
         if existing:
             return existing
@@ -142,10 +152,10 @@ class SowProvisioningService:
         for item in tasks_data:
             if not isinstance(item, dict):
                 continue
-            name = (item.get("name") or "").strip()
+            name = _clean_str(item.get("name"))
             if not name:
                 continue
-            status = (item.get("status") or "todo").strip()
+            status = _clean_str(item.get("status")) or "todo"
             if valid_statuses and status not in valid_statuses:
                 status = "todo"
             result = self.task_service.create_task(

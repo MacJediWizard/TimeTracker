@@ -29,6 +29,7 @@ not retry. 4xx on signature failure means the provider WILL retry —
 that's the desired behaviour for transient HMAC misconfigurations."""
 
 import logging
+from datetime import timezone
 
 from flask import Blueprint, abort, request
 
@@ -47,6 +48,19 @@ _TERMINAL_STATUSES = {
     ESignatureStatus.CANCELLED,
     ESignatureStatus.FAILED,
 }
+
+
+def _as_utc(dt):
+    """Normalise a datetime to timezone-aware UTC for safe comparison.
+
+    Connector-parsed event timestamps are timezone-aware (see
+    ``docuseal._parse_iso8601``), while our persisted ``updated_at`` columns
+    are naive UTC (``datetime.utcnow`` default). Comparing the two directly
+    raises ``TypeError`` — normalise both sides here first.
+    """
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 @esignature_webhooks_bp.post("/webhooks/esignature/<int:integration_id>")
@@ -101,7 +115,7 @@ def esignature_webhook(integration_id: int):
     if esig_req.status in _TERMINAL_STATUSES and event.status == esig_req.status:
         return "", 200
 
-    if event.occurred_at and esig_req.updated_at and event.occurred_at < esig_req.updated_at:
+    if event.occurred_at and esig_req.updated_at and _as_utc(event.occurred_at) < _as_utc(esig_req.updated_at):
         _log.info(
             "Webhook event is older than local state (esig %s); skipping",
             esig_req.id,

@@ -8,6 +8,7 @@ Tests cover the security + idempotency paths the handler implements:
 - 200 + service call on the happy path
 """
 
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -155,3 +156,81 @@ def test_calls_service_on_happy_path(client, app, docuseal_integration):
         )
     assert resp.status_code == 200
     mock_apply.assert_called_once()
+
+
+def _event(external_id, status, occurred_at):
+    return SimpleNamespace(
+        external_id=external_id,
+        status=status,
+        occurred_at=occurred_at,
+        decline_reason=None,
+        signer_email=None,
+        raw_payload=None,
+    )
+
+
+def test_aware_occurred_at_does_not_500_against_naive_updated_at(client, app, docuseal_integration):
+    """Regression: real DocuSeal events carry a timezone-AWARE occurred_at,
+    while ESignatureRequest.updated_at is naive UTC. Comparing them directly
+    raised TypeError -> HTTP 500 on every live webhook. A newer aware event
+    must now proceed to the service and return 200."""
+    with app.app_context():
+        esig = ESignatureRequest(
+            integration_id=docuseal_integration,
+            target_type="TimesheetSignoffRequest",
+            target_id="1",
+            external_id="aware-1",
+            status=ESignatureStatus.SENT,
+        )
+        db.session.add(esig)
+        db.session.commit()
+
+    newer = datetime.now(timezone.utc) + timedelta(hours=1)
+    with (
+        patch("app.services.integration_service.IntegrationService.get_connector") as mock_get,
+        patch("app.services.timesheet_signoff_service.TimesheetSignoffService.apply_webhook_event") as mock_apply,
+    ):
+        mock_get.return_value = SimpleNamespace(
+            verify_webhook=lambda body, headers: True,
+            parse_webhook=lambda body: _event("aware-1", ESignatureStatus.SIGNED, newer),
+        )
+        resp = client.post(
+            f"/webhooks/esignature/{docuseal_integration}",
+            data=b"{}",
+            headers={"X-Docuseal-Signature": "fake"},
+        )
+    assert resp.status_code == 200
+    mock_apply.assert_called_once()
+
+
+def test_older_aware_event_is_skipped_without_error(client, app, docuseal_integration):
+    """An aware occurred_at that predates our naive updated_at is a stale
+    replay: skip it (200, service not called) — and do so without the
+    aware/naive TypeError."""
+    with app.app_context():
+        esig = ESignatureRequest(
+            integration_id=docuseal_integration,
+            target_type="TimesheetSignoffRequest",
+            target_id="1",
+            external_id="stale-1",
+            status=ESignatureStatus.SENT,
+        )
+        db.session.add(esig)
+        db.session.commit()
+
+    older = datetime.now(timezone.utc) - timedelta(days=1)
+    with (
+        patch("app.services.integration_service.IntegrationService.get_connector") as mock_get,
+        patch("app.services.timesheet_signoff_service.TimesheetSignoffService.apply_webhook_event") as mock_apply,
+    ):
+        mock_get.return_value = SimpleNamespace(
+            verify_webhook=lambda body, headers: True,
+            parse_webhook=lambda body: _event("stale-1", ESignatureStatus.SIGNED, older),
+        )
+        resp = client.post(
+            f"/webhooks/esignature/{docuseal_integration}",
+            data=b"{}",
+            headers={"X-Docuseal-Signature": "fake"},
+        )
+    assert resp.status_code == 200
+    mock_apply.assert_not_called()

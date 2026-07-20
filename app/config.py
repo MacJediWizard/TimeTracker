@@ -341,6 +341,8 @@ class Config:
     CLAUDE_EFFORT = os.getenv("CLAUDE_EFFORT", "").strip()
     CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "").strip()
     CLAUDE_TIMEOUT_SECONDS = max(5, int(os.getenv("CLAUDE_TIMEOUT_SECONDS", "120")))
+    # Transient-failure retries the Anthropic SDK performs (exponential backoff).
+    CLAUDE_MAX_RETRIES = max(0, min(10, int(os.getenv("CLAUDE_MAX_RETRIES", "2"))))
 
     # Password reset
     PASSWORD_RESET_TOKEN_MAX_AGE_SECONDS = max(300, int(os.getenv("PASSWORD_RESET_TOKEN_MAX_AGE_SECONDS", "3600")))

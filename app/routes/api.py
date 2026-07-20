@@ -22,6 +22,7 @@ from app.services.time_tracking_service import TimeTrackingService
 from app.utils.api_deprecation import deprecated_session_api
 from app.utils.db import safe_commit
 from app.utils.scope_filter import user_can_access_project
+from app.utils.sow_input import extract_sow_input
 from app.utils.timezone import convert_app_datetime_to_user, parse_local_datetime, utc_to_local
 
 api_bp = Blueprint("api", __name__)
@@ -128,45 +129,6 @@ def _can_provision_sow(user) -> bool:
     return bool(user.is_admin or user.has_permission("create_projects") or user.has_permission("manage_settings"))
 
 
-def _extract_sow_input(req):
-    """Pull SOW input from a request: multipart file (PDF/DOCX/TXT) or JSON sow_text.
-
-    Returns (sow_text, pdf_bytes). PDFs are sent to Claude natively; DOCX/TXT are
-    extracted to text server-side.
-    """
-    upload = req.files.get("file") if req.files else None
-    if upload and upload.filename:
-        filename = (upload.filename or "").lower()
-        data = upload.read()
-        content_type = (upload.mimetype or "").lower()
-        if filename.endswith(".pdf") or content_type == "application/pdf":
-            return None, data
-        if filename.endswith(".docx") or "officedocument.wordprocessingml" in content_type:
-            return _extract_docx_text(data), None
-        # Plain text / markdown / unknown — best-effort decode.
-        try:
-            return data.decode("utf-8", errors="replace"), None
-        except Exception as exc:  # pragma: no cover - decode guard
-            raise AIServiceError("Could not read the uploaded file.", "validation_error", 400) from exc
-
-    payload = req.get_json(silent=True) or {}
-    return (payload.get("sow_text") or payload.get("text") or ""), None
-
-
-def _extract_docx_text(data: bytes) -> str:
-    import io
-
-    try:
-        import docx  # python-docx
-    except ImportError as exc:
-        raise AIServiceError("DOCX support is unavailable on the server.", "docx_unavailable", 500) from exc
-    try:
-        document = docx.Document(io.BytesIO(data))
-    except Exception as exc:
-        raise AIServiceError("Could not read the DOCX file.", "validation_error", 400) from exc
-    return "\n".join(p.text for p in document.paragraphs if p.text)
-
-
 @api_bp.route("/api/ai/sow/test", methods=["POST"])
 @login_required
 def sow_test_connection():
@@ -183,9 +145,71 @@ def sow_test_connection():
             403,
         )
     try:
-        return jsonify(ClaudeService().test_connection())
+        return jsonify(ClaudeService().test_connection(user_id=current_user.id))
     except AIServiceError as exc:
         return _ai_error_response(exc)
+
+
+@api_bp.route("/api/ai/sow/usage", methods=["GET"])
+@login_required
+def sow_usage():
+    """Read-only Claude API usage / cost summary for admins."""
+    if not (current_user.is_admin or current_user.has_permission("manage_settings")):
+        return jsonify({"ok": False, "error": "Admin permission required", "error_code": "forbidden"}), 403
+
+    from sqlalchemy import func
+
+    from app import db
+    from app.models import ClaudeUsageLog, User
+
+    try:
+        limit = min(200, max(1, int(request.args.get("limit", 50))))
+    except (TypeError, ValueError):
+        limit = 50
+
+    totals = db.session.query(
+        func.count(ClaudeUsageLog.id),
+        func.coalesce(func.sum(ClaudeUsageLog.input_tokens), 0),
+        func.coalesce(func.sum(ClaudeUsageLog.output_tokens), 0),
+        func.coalesce(func.sum(ClaudeUsageLog.cost_usd), 0),
+    ).one()
+
+    per_user_rows = (
+        db.session.query(
+            ClaudeUsageLog.user_id,
+            User.username,
+            func.count(ClaudeUsageLog.id),
+            func.coalesce(func.sum(ClaudeUsageLog.cost_usd), 0),
+        )
+        .outerjoin(User, User.id == ClaudeUsageLog.user_id)
+        .group_by(ClaudeUsageLog.user_id, User.username)
+        .order_by(func.coalesce(func.sum(ClaudeUsageLog.cost_usd), 0).desc())
+        .all()
+    )
+
+    recent = ClaudeUsageLog.query.order_by(ClaudeUsageLog.created_at.desc()).limit(limit).all()
+
+    return jsonify(
+        {
+            "ok": True,
+            "totals": {
+                "calls": int(totals[0] or 0),
+                "input_tokens": int(totals[1] or 0),
+                "output_tokens": int(totals[2] or 0),
+                "cost_usd": float(totals[3] or 0),
+            },
+            "per_user": [
+                {
+                    "user_id": row[0],
+                    "username": row[1] or "(deleted)",
+                    "calls": int(row[2] or 0),
+                    "cost_usd": float(row[3] or 0),
+                }
+                for row in per_user_rows
+            ],
+            "recent": [row.to_dict() for row in recent],
+        }
+    )
 
 
 @api_bp.route("/api/ai/sow/parse", methods=["POST"])
@@ -195,8 +219,8 @@ def sow_parse():
     if not _can_provision_sow(current_user):
         return jsonify({"ok": False, "error": "Permission required", "error_code": "forbidden"}), 403
     try:
-        sow_text, pdf_bytes = _extract_sow_input(request)
-        result = ClaudeService().parse_sow(sow_text=sow_text, pdf_bytes=pdf_bytes)
+        sow_text, pdf_bytes = extract_sow_input(request)
+        result = ClaudeService().parse_sow(sow_text=sow_text, pdf_bytes=pdf_bytes, user_id=current_user.id)
         return jsonify({"ok": True, **result})
     except AIServiceError as exc:
         return _ai_error_response(exc)

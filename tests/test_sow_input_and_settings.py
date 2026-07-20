@@ -31,9 +31,10 @@ def _capture_parse(monkeypatch):
     """Patch ClaudeService.parse_sow to record how the route called it."""
     captured = {}
 
-    def fake_parse(self, *, sow_text=None, pdf_bytes=None):
+    def fake_parse(self, *, sow_text=None, pdf_bytes=None, user_id=None):
         captured["sow_text"] = sow_text
         captured["pdf_bytes"] = pdf_bytes
+        captured["user_id"] = user_id
         return {"plan": {"client": {"name": "C"}, "project": {"name": "P"}, "tasks": []}}
 
     monkeypatch.setattr(ClaudeService, "parse_sow", fake_parse)
@@ -116,7 +117,7 @@ def test_sow_test_connection_admin_ok(app, client, admin_user, monkeypatch):
     monkeypatch.setattr(
         ClaudeService,
         "test_connection",
-        lambda self: {"ok": True, "model": "claude-opus-4-8"},
+        lambda self, *, user_id=None: {"ok": True, "model": "claude-opus-4-8"},
     )
     _login(client, admin_user)
     resp = client.post("/api/ai/sow/test")
@@ -127,6 +128,45 @@ def test_sow_test_connection_admin_ok(app, client, admin_user, monkeypatch):
 def test_sow_test_connection_forbidden_for_regular_user(app, client, user):
     _login(client, user)
     resp = client.post("/api/ai/sow/test")
+    assert resp.status_code == 403
+
+
+# --- Usage / cost summary endpoint --------------------------------------------
+
+
+def test_sow_usage_admin_summary(app, client, admin_user):
+    from app import db
+    from app.models import ClaudeUsageLog
+
+    uid = admin_user.id
+    with app.app_context():
+        db.session.add(
+            ClaudeUsageLog(
+                user_id=uid,
+                operation="parse_sow",
+                model="claude-opus-4-8",
+                input_tokens=1000,
+                output_tokens=500,
+                cost_usd=0.0175,
+            )
+        )
+        db.session.commit()
+
+    _login(client, admin_user)
+    resp = client.get("/api/ai/sow/usage")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["ok"] is True
+    assert body["totals"]["calls"] >= 1
+    assert body["totals"]["input_tokens"] >= 1000
+    assert body["totals"]["cost_usd"] >= 0.0175
+    assert any(row["user_id"] == uid for row in body["per_user"])
+    assert len(body["recent"]) >= 1
+
+
+def test_sow_usage_forbidden_for_regular_user(app, client, user):
+    _login(client, user)
+    resp = client.get("/api/ai/sow/usage")
     assert resp.status_code == 403
 
 

@@ -179,7 +179,7 @@ def test_parse_route_allows_admin_with_mocked_claude(app, client, admin_user, mo
     # service class itself — the route references the same class object by identity.
     from app.services.claude_service import ClaudeService
 
-    def fake_parse(self, *, sow_text=None, pdf_bytes=None):
+    def fake_parse(self, *, sow_text=None, pdf_bytes=None, user_id=None):
         return {"plan": _plan(), "provider": {"model": "claude-opus-4-8"}}
 
     monkeypatch.setattr(ClaudeService, "parse_sow", fake_parse)
@@ -199,6 +199,16 @@ def test_provision_sow_page_renders(app, client, admin_user):
     html = resp.get_data(as_text=True)
     assert "parseSowBtn" in html
     assert "provisionBtn" in html
+
+
+def test_provision_sow_page_exposes_task_description_and_tags(app, client, admin_user):
+    """Parsed task description + tags must be visible/editable before provisioning."""
+    _login(client, admin_user)
+    resp = client.get("/projects/provision-sow")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert 'data-task="description"' in html
+    assert 'data-task="tags"' in html
 
 
 def test_provision_sow_page_forbidden_for_regular_user(app, client, user):

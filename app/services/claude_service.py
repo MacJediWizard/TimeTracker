@@ -41,6 +41,29 @@ EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 # xhigh / max are Opus-tier only; the rest are shared by Opus + Sonnet 4.6.
 OPUS_ONLY_EFFORT = ("xhigh", "max")
 
+# USD per 1M tokens (input, output). Used only for cost *estimation* in the usage
+# log; the authoritative bill is Anthropic's. Unknown models fall back to Opus.
+MODEL_PRICING = {
+    "claude-opus-4-8": (5.0, 25.0),
+    "claude-opus-4-7": (5.0, 25.0),
+    "claude-opus-4-6": (5.0, 25.0),
+    "claude-sonnet-4-6": (3.0, 15.0),
+    "claude-haiku-4-5": (1.0, 5.0),
+}
+
+# How many times the Anthropic SDK retries transient failures (429 / 408 / 5xx /
+# connection errors) with exponential backoff before giving up.
+DEFAULT_CLAUDE_MAX_RETRIES = 2
+
+
+def estimate_cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
+    """Best-effort USD cost for a call from token counts. Never raises."""
+    in_price, out_price = MODEL_PRICING.get(normalize_model(model), MODEL_PRICING[DEFAULT_CLAUDE_MODEL])
+    try:
+        return round((int(input_tokens) / 1_000_000) * in_price + (int(output_tokens) / 1_000_000) * out_price, 6)
+    except (TypeError, ValueError):
+        return 0.0
+
 
 def is_opus(model: str) -> bool:
     return (model or "").startswith("claude-opus")
@@ -168,6 +191,7 @@ class ClaudeConfig:
     api_key: str
     api_key_set: bool
     timeout_seconds: int
+    max_retries: int = DEFAULT_CLAUDE_MAX_RETRIES
 
     @classmethod
     def from_settings(cls) -> "ClaudeConfig":
@@ -208,7 +232,12 @@ class ClaudeService:
             import anthropic
         except ImportError as exc:  # pragma: no cover - dependency guard
             raise AIServiceError("The anthropic package is not installed.", "claude_sdk_missing", 500) from exc
-        return anthropic.Anthropic(api_key=self.config.api_key, timeout=self.config.timeout_seconds)
+        return anthropic.Anthropic(
+            api_key=self.config.api_key,
+            timeout=self.config.timeout_seconds,
+            # SDK does exponential backoff with jitter on 408/409/429/5xx.
+            max_retries=getattr(self.config, "max_retries", DEFAULT_CLAUDE_MAX_RETRIES),
+        )
 
     def _request_kwargs(self, *, max_tokens: int, output_format: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         model = normalize_model(self.config.model)
@@ -225,7 +254,7 @@ class ClaudeService:
             kwargs["output_config"] = output_config
         return kwargs
 
-    def _call(self, *, system, messages, max_tokens, output_format=None) -> str:
+    def _call(self, *, system, messages, max_tokens, output_format=None, operation=None, user_id=None) -> str:
         import anthropic
 
         client = self._client()
@@ -247,6 +276,9 @@ class ClaudeService:
             status = getattr(exc, "status_code", 502) or 502
             raise AIServiceError("Claude rejected the request.", "claude_provider_error", status) from exc
 
+        if operation:
+            self._log_usage(operation=operation, user_id=user_id, response=response)
+
         if getattr(response, "stop_reason", None) == "refusal":
             raise AIServiceError("Claude declined to process this document.", "claude_refusal", 422)
         return next(
@@ -254,9 +286,39 @@ class ClaudeService:
             "",
         )
 
+    def _log_usage(self, *, operation: str, user_id: Optional[int], response: Any) -> None:
+        """Record a per-user usage/cost row. Never lets a logging failure break the call."""
+        try:
+            from app import db
+            from app.models import ClaudeUsageLog
+
+            usage = getattr(response, "usage", None)
+            input_tokens = int(getattr(usage, "input_tokens", 0) or 0)
+            output_tokens = int(getattr(usage, "output_tokens", 0) or 0)
+            model = normalize_model(self.config.model)
+            db.session.add(
+                ClaudeUsageLog(
+                    user_id=user_id,
+                    operation=operation[:30],
+                    model=model,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    cost_usd=estimate_cost_usd(model, input_tokens, output_tokens),
+                )
+            )
+            db.session.commit()
+        except Exception:  # pragma: no cover - metering must never break the request
+            logger.warning("Failed to record Claude usage log", exc_info=True)
+            try:
+                from app import db
+
+                db.session.rollback()
+            except Exception:
+                pass
+
     # -- public API -------------------------------------------------------------
 
-    def test_connection(self) -> Dict[str, Any]:
+    def test_connection(self, *, user_id: Optional[int] = None) -> Dict[str, Any]:
         self.ensure_enabled()
         reply = self._call(
             system="Reply with a short confirmation only.",
@@ -267,6 +329,8 @@ class ClaudeService:
                 }
             ],
             max_tokens=40,
+            operation="test_connection",
+            user_id=user_id,
         )
         return {
             "ok": True,
@@ -274,7 +338,13 @@ class ClaudeService:
             "provider": self.config.public_dict(),
         }
 
-    def parse_sow(self, *, sow_text: Optional[str] = None, pdf_bytes: Optional[bytes] = None) -> Dict[str, Any]:
+    def parse_sow(
+        self,
+        *,
+        sow_text: Optional[str] = None,
+        pdf_bytes: Optional[bytes] = None,
+        user_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
         """Parse an SOW into a structured plan. Accepts pasted text and/or a PDF.
 
         Returns the validated plan dict (client/project/tasks). Does NOT write to
@@ -296,6 +366,8 @@ class ClaudeService:
             messages=[{"role": "user", "content": content}],
             max_tokens=16000,
             output_format={"type": "json_schema", "schema": SOW_PLAN_SCHEMA},
+            operation="parse_sow",
+            user_id=user_id,
         )
         try:
             plan = json.loads(raw)

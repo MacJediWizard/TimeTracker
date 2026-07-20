@@ -517,6 +517,11 @@ class Settings(db.Model):
         except (TypeError, ValueError):
             timeout = 120
 
+        try:
+            max_retries = max(0, min(10, int(cfg("CLAUDE_MAX_RETRIES", 2))))
+        except (TypeError, ValueError):
+            max_retries = 2
+
         return {
             "enabled": bool(enabled),
             "model": model,
@@ -524,6 +529,7 @@ class Settings(db.Model):
             "api_key": api_key if include_secrets else "",
             "api_key_set": bool(api_key_raw),
             "timeout_seconds": timeout,
+            "max_retries": max_retries,
         }
 
     def get_integration_credentials(self, provider: str, *, include_secrets: bool = True) -> dict:

@@ -15,6 +15,7 @@ from .branding_asset import BrandingAsset
 from .budget_alert import BudgetAlert
 from .calendar_event import CalendarEvent
 from .calendar_integration import CalendarIntegration, CalendarSyncEvent
+from .claude_usage import ClaudeUsageLog
 from .client import Client
 from .client_attachment import ClientAttachment
 from .client_note import ClientNote
@@ -123,6 +124,7 @@ __all__ = [
     "Invoice",
     "InvoiceItem",
     "Client",
+    "ClaudeUsageLog",
     "TaskActivity",
     "TaskChecklistItem",
     "Comment",

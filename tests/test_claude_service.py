@@ -198,3 +198,138 @@ def test_get_claude_config_falls_back_to_app_config(app):
         assert cfg["model"] == "claude-sonnet-4-6"
         assert cfg["effort"] == "medium"
         assert cfg["timeout_seconds"] == 222
+
+
+# --- cost estimation (pure) ----------------------------------------------------
+
+
+def test_estimate_cost_usd_per_tier():
+    from app.services.claude_service import estimate_cost_usd
+
+    # Opus: $5/1M in + $25/1M out
+    assert estimate_cost_usd("claude-opus-4-8", 1_000_000, 1_000_000) == 30.0
+    assert estimate_cost_usd("claude-sonnet-4-6", 1_000_000, 0) == 3.0
+    assert estimate_cost_usd("claude-haiku-4-5", 0, 1_000_000) == 5.0
+
+
+def test_estimate_cost_usd_unknown_model_falls_back_to_opus():
+    from app.services.claude_service import estimate_cost_usd
+
+    assert estimate_cost_usd("mystery-model", 1_000_000, 0) == 5.0
+
+
+def test_estimate_cost_usd_bad_tokens_returns_zero():
+    from app.services.claude_service import estimate_cost_usd
+
+    assert estimate_cost_usd("claude-opus-4-8", None, None) == 0.0
+
+
+# --- retry / max_retries config -----------------------------------------------
+
+
+def test_claude_config_defaults_max_retries():
+    from app.services.claude_service import DEFAULT_CLAUDE_MAX_RETRIES
+
+    # _config() does not pass max_retries -> dataclass default applies.
+    assert _config().max_retries == DEFAULT_CLAUDE_MAX_RETRIES
+
+
+def test_get_claude_config_reads_and_clamps_max_retries(app):
+    from app.models.settings import Settings
+
+    with app.app_context():
+        s = Settings()
+        s.claude_enabled = None
+        s.claude_model = None
+        s.claude_effort = None
+        s.claude_timeout_seconds = None
+        s.claude_api_key = None
+
+        app.config["CLAUDE_MAX_RETRIES"] = 5
+        assert s.get_claude_config()["max_retries"] == 5
+        # clamp to [0, 10]
+        app.config["CLAUDE_MAX_RETRIES"] = 99
+        assert s.get_claude_config()["max_retries"] == 10
+        app.config["CLAUDE_MAX_RETRIES"] = -3
+        assert s.get_claude_config()["max_retries"] == 0
+        # non-numeric -> default 2
+        app.config["CLAUDE_MAX_RETRIES"] = "nope"
+        assert s.get_claude_config()["max_retries"] == 2
+
+
+def test_client_passes_max_retries_and_timeout(monkeypatch):
+    import anthropic
+
+    captured = {}
+
+    def fake_anthropic(**kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(anthropic, "Anthropic", fake_anthropic)
+    svc = ClaudeService(config=_config(max_retries=7, timeout_seconds=99))
+    svc._client()
+    assert captured["max_retries"] == 7
+    assert captured["timeout"] == 99
+    assert captured["api_key"] == "sk-test"
+
+
+# --- usage logging -------------------------------------------------------------
+
+
+class _FakeUsage:
+    def __init__(self, i, o):
+        self.input_tokens = i
+        self.output_tokens = o
+
+
+class _FakeResponse:
+    def __init__(self, i, o, *, stop_reason="end_turn", text="hi"):
+        self.usage = _FakeUsage(i, o)
+        self.stop_reason = stop_reason
+        self.content = [type("B", (), {"type": "text", "text": text})()]
+
+
+def test_log_usage_writes_row(app):
+    from app.models import ClaudeUsageLog
+    from app.services.claude_service import estimate_cost_usd
+
+    with app.app_context():
+        svc = ClaudeService(config=_config(model="claude-opus-4-8"))
+        before = ClaudeUsageLog.query.count()
+        svc._log_usage(operation="parse_sow", user_id=None, response=_FakeResponse(100, 50))
+        rows = ClaudeUsageLog.query.order_by(ClaudeUsageLog.id.desc()).all()
+        assert len(rows) == before + 1
+        row = rows[0]
+        assert row.operation == "parse_sow"
+        assert row.model == "claude-opus-4-8"
+        assert row.input_tokens == 100
+        assert row.output_tokens == 50
+        assert float(row.cost_usd) == estimate_cost_usd("claude-opus-4-8", 100, 50)
+
+
+def test_log_usage_never_raises_on_bad_response(app):
+    with app.app_context():
+        svc = ClaudeService(config=_config())
+        # response=None has no .usage -> counts default to 0, must not raise.
+        svc._log_usage(operation="parse_sow", user_id=None, response=None)
+
+
+def test_call_logs_usage_and_returns_text(app, monkeypatch):
+    from app.models import ClaudeUsageLog
+
+    class _FakeMessages:
+        def create(self, **kwargs):
+            return _FakeResponse(12, 3, text="pong")
+
+    class _FakeClient:
+        messages = _FakeMessages()
+
+    with app.app_context():
+        svc = ClaudeService(config=_config())
+        monkeypatch.setattr(svc, "_client", lambda: _FakeClient())
+        before = ClaudeUsageLog.query.count()
+        out = svc._call(system="x", messages=[], max_tokens=10, operation="test_connection", user_id=None)
+        assert out == "pong"
+        assert ClaudeUsageLog.query.count() == before + 1
+        assert ClaudeUsageLog.query.order_by(ClaudeUsageLog.id.desc()).first().operation == "test_connection"

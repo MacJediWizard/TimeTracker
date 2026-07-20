@@ -6,6 +6,7 @@ from app.services.claude_service import ClaudeService
 from app.services.llm_service import AIServiceError, LLMService
 from app.services.sow_service import SowProvisioningService
 from app.utils.api_auth import require_api_token
+from app.utils.sow_input import extract_sow_input
 
 api_v1_ai_bp = Blueprint("api_v1_ai", __name__, url_prefix="/api/v1")
 
@@ -103,12 +104,13 @@ def ai_confirm_action():
 @api_v1_ai_bp.route("/ai/sow/parse", methods=["POST"])
 @require_api_token("write:ai")
 def sow_parse():
-    """Parse an SOW (text body) into a structured plan. No DB writes."""
+    """Parse an SOW into a structured plan. Accepts a JSON text body or an
+    uploaded PDF/DOCX/TXT file (multipart). No DB writes."""
     if not _can_provision_sow(g.api_user):
         return _forbidden_response()
-    data = request.get_json(silent=True) or {}
     try:
-        result = ClaudeService().parse_sow(sow_text=data.get("sow_text") or data.get("text") or "")
+        sow_text, pdf_bytes = extract_sow_input(request)
+        result = ClaudeService().parse_sow(sow_text=sow_text, pdf_bytes=pdf_bytes, user_id=g.api_user.id)
         return jsonify({"success": True, **result})
     except AIServiceError as exc:
         return _ai_error_response(exc)

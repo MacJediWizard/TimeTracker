@@ -532,6 +532,11 @@ jobs:
     steps:
       - name: Generate test summary
         uses: actions/github-script@v7
+        # Posting the summary comment must never fail the check. When a PR is
+        # merged quickly this step runs after the PR is closed and the token
+        # can no longer comment; the tally itself already reflects the real
+        # job results, so a failed comment call is cosmetic only.
+        continue-on-error: true
         with:
           script: |
             const jobs = [

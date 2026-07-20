@@ -329,6 +329,10 @@ jobs:
     steps:
       - name: Comment migration status on PR
         uses: actions/github-script@v7
+        # Posting the status comment must never fail the check. When a PR is
+        # merged quickly this step runs after the PR is closed and the token
+        # can no longer comment; that is cosmetic, not a validation failure.
+        continue-on-error: true
         with:
           script: |
             const success = '${{ needs.validate-migrations.result }}' === 'success';

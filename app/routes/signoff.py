@@ -55,6 +55,24 @@ def _can_act_on_period(period: TimesheetPeriod) -> bool:
     return False
 
 
+def _can_act_on_signoff(signoff: TimesheetSignoffRequest) -> bool:
+    """Authorize action on a signoff request.
+
+    ``timesheet_period_id`` is nullable with ondelete=SET NULL, so the parent
+    period may be gone. Never default-allow on a missing period: fall back to the
+    signoff's own engineer ownership (engineer_user_id is set to period.user_id
+    when the signoff is created). Admins may always act.
+    """
+    if current_user.is_admin:
+        return True
+    if signoff.engineer_user_id == current_user.id:
+        return True
+    period = TimesheetPeriod.query.get(signoff.timesheet_period_id) if signoff.timesheet_period_id else None
+    if period is not None and _can_act_on_period(period):
+        return True
+    return False
+
+
 @signoff_bp.post("/workforce/periods/<int:period_id>/signoff/send")
 @login_required
 def send_signoff(period_id: int):
@@ -152,8 +170,7 @@ def send_signoff(period_id: int):
 @login_required
 def cancel_signoff(request_id: int):
     signoff = TimesheetSignoffRequest.query.get_or_404(request_id)
-    period = TimesheetPeriod.query.get(signoff.timesheet_period_id)
-    if period and not _can_act_on_period(period):
+    if not _can_act_on_signoff(signoff):
         abort(403)
     if signoff.cancelled_at is not None:
         flash(_("Already cancelled"), "info")
@@ -173,8 +190,7 @@ def cancel_signoff(request_id: int):
 @login_required
 def download_signed_pdf(request_id: int):
     signoff = TimesheetSignoffRequest.query.get_or_404(request_id)
-    period = TimesheetPeriod.query.get(signoff.timesheet_period_id)
-    if period and not _can_act_on_period(period):
+    if not _can_act_on_signoff(signoff):
         abort(403)
 
     esig = ESignatureRequest.query.get(signoff.esignature_request_id) if signoff.esignature_request_id else None
@@ -195,8 +211,7 @@ def download_signed_pdf(request_id: int):
 @login_required
 def download_coc(request_id: int):
     signoff = TimesheetSignoffRequest.query.get_or_404(request_id)
-    period = TimesheetPeriod.query.get(signoff.timesheet_period_id)
-    if period and not _can_act_on_period(period):
+    if not _can_act_on_signoff(signoff):
         abort(403)
 
     esig = ESignatureRequest.query.get(signoff.esignature_request_id) if signoff.esignature_request_id else None

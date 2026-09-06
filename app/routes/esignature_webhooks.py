@@ -33,6 +33,7 @@ from datetime import timezone
 
 from flask import Blueprint, abort, request
 
+from app import csrf
 from app.integrations.esignature.base import ESignatureError
 from app.models.esignature_request import ESignatureRequest, ESignatureStatus
 from app.models.integration import Integration
@@ -64,6 +65,7 @@ def _as_utc(dt):
 
 
 @esignature_webhooks_bp.post("/webhooks/esignature/<int:integration_id>")
+@csrf.exempt
 def esignature_webhook(integration_id: int):
     from app.services.integration_service import IntegrationService
     from app.services.timesheet_signoff_service import TimesheetSignoffService

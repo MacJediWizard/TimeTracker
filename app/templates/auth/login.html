@@ -25,6 +25,10 @@
     </script>
 </head>
 <body class="font-sans antialiased bg-background-light dark:bg-background-dark text-text-light dark:text-text-dark">
+    {# Skip link as the first focusable element, mirroring base.html. The login
+       page is a standalone template that does not extend base.html, so it needs
+       its own skip link for keyboard users (and the a11y suite's skip-to-content check). #}
+    <a href="#mainContentAnchor" class="sr-only focus:not-sr-only focus-ring absolute left-2 top-2 z-[1000] px-3 py-2 bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark rounded">{{ _('Skip to content') }}</a>
     <div class="min-h-screen flex items-center justify-center px-4">
         <div class="w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 gap-0 bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark rounded-xl shadow-lg overflow-hidden">
             <div class="hidden md:flex items-center justify-center p-10 bg-gradient-to-br from-primary/10 to-secondary/10 dark:from-primary/20 dark:to-secondary/20">
@@ -42,7 +46,7 @@
                     </div>
                 </div>
             </div>
-            <div class="p-6 sm:p-8">
+            <div id="mainContentAnchor" class="p-6 sm:p-8">
                 <div class="flex items-center gap-3 mb-4 md:hidden">
                     <img src="{{ url_for('static', filename='images/timetracker-logo.svg') }}" alt="TimeTracker Logo" class="w-10 h-10">
                     <span class="text-xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">TimeTracker</span>

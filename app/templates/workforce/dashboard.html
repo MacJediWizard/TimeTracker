@@ -369,7 +369,7 @@
     </form>
   </div>
 </div>
-<script>
+<script nonce="{{ csp_nonce() }}">
 function openSignoffModal(periodId, periodStart, periodEnd) {
   const modal = document.getElementById('signoff-modal');
   const form = document.getElementById('signoff-modal-form');
@@ -403,7 +403,7 @@ document.addEventListener('DOMContentLoaded', () => {
 {% endif %}
 
 {% block scripts_extra %}
-<script>
+<script nonce="{{ csp_nonce() }}">
 (function() {
     var form = document.getElementById('time-off-request-form');
     if (!form) return;

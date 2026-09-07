@@ -7,6 +7,342 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.13.4] - 2026-09-04
+
+### Fixed
+
+- **Alembic multiple heads** — Parallel migrations `183_add_device_token_push_subscription` and `183_add_idle_needs_review` both branched from `182_add_project_last_used_at`, so `flask db upgrade` failed with multiple heads. No-op merge migration `184_merge_183_heads` rejoins them into a single head.
+
+### Changed
+
+- **Client versions** — Synced Electron (`desktop/package.json`), Flutter (`mobile/pubspec.yaml`), and Chromium extension (`browser-extension/manifest.json` / `package.json`) to **5.13.4** with the webapp (`setup.py`).
+
+### Documentation
+
+- **Version** — Bumped `setup.py` to **5.13.4** (single source of truth for the application version).
+
+## [5.13.3] - 2026-09-02
+
+### Added
+
+- **Tracked hours on tasks (#745)** — Task list replaces the redundant Actions column with Tracked hours; task detail surfaces totals; CSV export includes Tracked Hours via a bulk aggregate.
+- **Idle needs-review flow** — When a running timer's idle grace expires while no TimeTracker window can answer (tab closed, machine asleep), the time entry is now flagged **needs review** instead of silently lost. A review banner in the web app, a push notification via the service worker, and scheduled-task detection surface these entries so they can be confirmed or corrected; the behavior is configurable in Admin → Settings. The desktop app and browser extension report the same situation, and the v1 API exposes flag/resolve endpoints. Includes migration `183_add_idle_needs_review`.
+
+### Changed
+
+- **Client versions** — Synced Electron (`desktop/package.json`), Flutter (`mobile/pubspec.yaml`), and Chromium extension (`browser-extension/manifest.json` / `package.json`) to **5.13.3** with the webapp (`setup.py`).
+
+### Fixed
+
+- **Idle timeout / Still working? across clients (#722)** — Extension heartbeats no longer defeat the server safety net when `chrome.idle` is unreliable; backgrounded mobile gets FCM wake-up; the idle scheduler is hardened so forgotten timers cannot run for hours.
+- **"Service temporarily unavailable" after leaving the dashboard open (#746)** — When the backend went down (or a background tab resumed with stale sockets) while a page stayed open, the service worker answered `/api/*` with a plain-text `Offline` body, so `.json()` parsing threw `SyntaxError`; the chat widget re-polled every 30 seconds forever; and identical error toasts stacked up and evicted the ones carrying Retry/Refresh. Synthetic offline responses are now JSON, remaining background polls (chat, activity feed, kanban) back off after failure and pause in hidden tabs, error toasts dedupe with theme-aware actions, a resume health sweep clears leftover connectivity toasts, and the offline indicator bar is removed as soon as connectivity is restored.
+- **Onboarding tour could not be dismissed** — The tour could auto-start twice, stacking a second overlay above its own skip-confirmation dialog, and `!important` z-indexes plus step-transition timers re-raised the tooltip over the "Are you sure you want to skip the tour?" prompt. A double-init guard, non-forced layering, and a pending-skip guard keep the confirmation readable and the tour dismissible.
+- **Datetime fields ignore the chosen time format** — Native `datetime-local` inputs (the "Forgot to end your workday?" workday modals, workday history corrections, contact/deal/lead activity forms) render in the browser locale — e.g. 12h AM/PM on en-US — no matter what time format the user or system settings chose. They are now initialized as Flatpickr datetime pickers that display in the user's preferred date + time format (24h by default) while still submitting the same wire format; min/max bounds move to the picker. A regression test enforces that every `datetime-local` input stays prefs-aware. The recurring-tasks "last run" cell and the admin version-update published timestamp also now honor the preference instead of the browser locale.
+
+### Documentation
+
+- **Version** — Bumped `setup.py` to **5.13.3** (single source of truth for the application version).
+
+## [5.13.2] - 2026-08-27
+
+### Added
+
+- **Linear setup wizard** — Guided API-key wizard for Linear so integration setup matches the other providers; the connector registry is re-exported from the integrations package init.
+
+### Changed
+
+- **Mobile start timer flow** — Client, project, and task selection in the start timer sheet now use one consistent searchable picker; picking a client filters the project list to that client and picking a project filters tasks accordingly. Projects can also be picked directly without choosing a client first, which then auto-fills the client. Typing an unknown name offers inline "Create …" for clients, projects, and tasks via the existing v1 endpoints. The projects screen is sorted by most recently used (`last_used_at`) so recent work can be restarted with one tap.
+- **Client versions** — Synced Electron (`desktop/package.json`), Flutter (`mobile/pubspec.yaml`), and Chromium extension (`browser-extension/manifest.json` / `package.json`) to **5.13.2** with the webapp (`setup.py`).
+
+### Fixed
+
+- **Web manual entry cascade & inline create (#728)** — Manual time logging and the dashboard start-timer modal now follow the mobile start-timer flow: pick a client first (the project picker unlocks only then), then one of that client's projects, then a task of that project. The client field stays a real searchable dropdown even when only one client exists, so another client can be picked or created inline; a newly created client is selected automatically. Inline project creation attaches automatically to the selected client — the client dropdown is replaced by a read-only display with an editable hourly rate pre-filled from the client default — instead of asking for a client again. Inline task creation creates the task immediately from the combobox "Create …" row (no confirmation modal) for the preselected project.
+- **Searchable combobox dark mode & typing (#728)** — Combobox dropdowns build their DOM in JS with utility classes Tailwind purged from the stylesheet, leaving white-on-white rows in dark mode; the dropdown now uses always-emitted component classes (`tt-searchable-*`) with proper dark hover/selected states. Focusing a combobox selects its text so typing replaces the committed label instead of appending to it. Source-controlled assets (`searchable-select.js`, `inline-create.js`, `dist/output.css`) are served with mtime-based version queries via a new `static_url()` helper so edits bust the browser cache without a release bump.
+- **Mobile start timer crash** — Two `FloatingActionButton`s with the default Hero tag coexisted in the home screen's `IndexedStack`, turning the screen red whenever a route was pushed on top (e.g. the start timer sheet); the Entries tab FAB now has a unique `heroTag`.
+- **Mobile inline creation selection** — The v1 create endpoints wrap the payload (`{"message": …, "<entity>": {…}}`); unwrapping it ensures a newly created client/project/task is selected immediately in the start timer sheet.
+- **Mobile stop/pause flicker** — Background timer polling no longer toggles `isLoading`, which disabled the Stop and Pause buttons for the duration of each 5-second sync; the flag is now reserved for user-initiated actions.
+- **Android release signing** — CI signs release APKs with a stable keystore so updates install over previous builds.
+
+### Documentation
+
+- **Version** — Bumped `setup.py` to **5.13.2** (single source of truth for the application version).
+
+## [5.13.1] - 2026-08-26
+
+### Changed
+
+- **Projects sorted by last used (#738)** — Timers and manual entries stamp `last_used_at` on projects so pickers and API lists surface recent work ahead of alphabetical order (migration **182**).
+- **Client versions** — Synced Electron (`desktop/package.json`), Flutter (`mobile/pubspec.yaml`), and Chromium extension (`browser-extension/manifest.json` / `package.json`) to **5.13.1** with the webapp (`setup.py`).
+- **Chrome extension release zip** — GitHub Releases now attach a ready-to-install Chromium extension zip alongside desktop and mobile artifacts.
+
+### Fixed
+
+- **Idle timeout duration & prompts (#722)** — Auto-stop credits `last_active + idle_timeout` instead of recording 0 minutes; web and extension surface “Still working?” notifications, and mobile polls `idle_notified` while backgrounded.
+- **Searchable picker blur & Create project (#728)** — Comboboxes reset to the committed selection on blur so typed-but-unselected text cannot look like a form change; Create project stays hidden until a client is chosen; no auto-selected project; Create labels are translated.
+- **Extension Create project guard** — Re-applied the client-required guard on the project picker after the last-used sort change so create-without-client stays blocked.
+
+### Documentation
+
+- **Version** — Bumped `setup.py` to **5.13.1** (single source of truth for the application version).
+
+## [5.13.0] - 2026-08-23
+
+### Added
+
+- **Dashboard daily progress widget** — Compact strip showing today's tracked hours vs target with a quick-start timer button directly on the dashboard.
+- **Dashboard quick-log & tasks due today** — One-click time log form and a "Tasks due today" widget surface the most time-sensitive work without leaving the home screen.
+- **Backend dashboard alerts & productivity breakdown** — Server-side alert rules for overdue timers, approaching daily targets, and idle sessions; new productivity breakdown API for the dashboard.
+- **Timer long-run warning** — Active timers exceeding a configurable threshold display an in-page warning and show workday progress against the daily goal.
+
+### Changed
+
+- **Dashboard & list UX polish** — Consolidated dashboard alert banners, list-view sort/filter controls, and empty-state illustrations unified across all entity lists.
+- **Navigation declutter** — Sidebar collapsed-mode tooltips and mobile "More" drawer reorganised; key destinations (Reports, CRM, Finance) promoted to top-level slots.
+- **Recurring tasks list** — Added status filter chips, column-level toggles (pause/resume/run now), and an inline "Run now" action without leaving the list.
+- **Floating timer bar & idle-stop** — Redesigned compact bar with project/task labels, elapsed counter, and a smoother idle-boundary stop flow.
+- **Client versions** — Synced Electron (`desktop/package.json`), Flutter (`mobile/pubspec.yaml`), and Chromium extension (`browser-extension/manifest.json` / `package.json`) to **5.13.0** with the webapp (`setup.py`).
+
+### Fixed
+
+- **Productivity heatmap** — Corrected heatmap data aggregation and resolved `empty_state` template render error.
+- **Invoice tax rate & currency** — Tax rate and currency now resolve correctly from the linked project and client settings when generating an invoice.
+- **Swallowed errors (#736)** — Previously silent exceptions now log at the appropriate level; actionable failures surface feedback toasts to the user.
+- **Timer heartbeats (#736)** — Heartbeat pings stay alive through network interruptions and the timer stops cleanly at the idle boundary.
+- **Client portal admin template** — Added the missing customisation admin template that caused a 500 on the portal settings page.
+- **Recurring tasks CRUD** — Completed create/edit/delete flow and restored sidebar navigation link for recurring tasks.
+
+### Documentation
+
+- **Version** — Bumped `setup.py` to **5.13.0** (single source of truth for the application version).
+
+## [5.12.0] - 2026-08-20
+
+### Added
+
+- **Task dependencies** — Model blockers between tasks so work cannot start out of order; dependency arrows appear on the Gantt chart (migration **179**).
+- **Project milestones** — Named due-date checkpoints with task grouping and a timeline on the project page (migration **180**).
+- **Billable utilization report** — Report and dashboard widget for billable vs total hours by user or project.
+- **Expense approval queue** — Dedicated manager review flow with reject, bulk-approve, and a pending badge in the UI.
+- **Quote digital signatures** — Clients can sign and accept quotes in the portal; the captured signature embeds on the quote PDF (migration **181**).
+- **Resource scheduling** — Weekly swimlane view of planned tasks and capacity per person to spot over-allocation early.
+- **Project health dashboard** — Aggregate budget burn, task completion, milestones, and overdue work into one status view (and API).
+
+### Fixed
+
+- **Dashboard Start Timer modal (#734)** — Restored click handlers after the picker refactor so the dashboard button, FAB, and shortcut callers open the modal again.
+- **Approvals PostgreSQL enum case** — Recreate the `approvalstatus` type with lowercase labels so `/approvals` no longer 500s when querying `status='pending'`.
+
+### Changed
+
+- **Client versions** — Synced Electron (`desktop/package.json`), Flutter (`mobile/pubspec.yaml`), and Chromium extension (`browser-extension/manifest.json` / `package.json`) to **5.12.0** with the webapp (`setup.py`).
+
+### Documentation
+
+- **Version** — Bumped `setup.py` to **5.12.0** (single source of truth for the application version).
+
+## [5.11.5] - 2026-08-15
+
+### Added
+
+- **API client-only timer start (#728)** — `POST /api/v1/timer/start` accepts `client_id` without `project_id` (parity with the web timer), rejects `task_id` on client-only starts, and documents the request body in OpenAPI / REST docs.
+- **Native client-only timers (#728)** — Extension, mobile, and desktop can start timers against a client without a project; cascading client→project pickers and corrected running-timer labels for client-only sessions.
+- **Global time rounding policy (#725)** — Admin Settings can set interval, method, and minimum billable duration for the whole installation, with an **Enforce for all users** toggle that locks personal overrides so everyone tracks time the same way.
+
+### Changed
+
+- **Searchable timer pickers on remaining pages (#728)** — Timer page, bulk entry, and kiosk timer forms use the shared searchable client/project/task combobox stack; scripts load from `base.html` / kiosk base so pages need not re-include them.
+- When enforcement is off, unset per-user method and minimum now inherit the admin defaults (interval already did).
+- **Client versions** — Synced Electron (`desktop/package.json`), Flutter (`mobile/pubspec.yaml`), and Chromium extension (`browser-extension/manifest.json` / `package.json`) to **5.11.5** with the webapp (`setup.py`).
+
+### Fixed
+
+- **Inline create CSRF header mismatch (#728)** — Client and project inline creates send `X-CSRFToken` (same as task create and the rest of the app).
+- **Searchable combobox a11y (#728)** — Combobox inputs expose `aria-autocomplete`, stable option ids, `aria-activedescendant`, and `aria-selected` while navigating the list.
+- **Boundary rounding skipped on duration overrides (#725)** — Paths that pass `duration_seconds` (model init, manual-entry service/repo, CSV/Toggl/Harvest imports) now adjust start/end via `round_entry_boundaries` when the method is `boundary`, instead of leaving raw timestamps with a separately stored duration.
+- **Email absolute links / APP_BASE_URL admin setting (#730 follow-up)** — Notification emails build links via `safe_external_url_for` and prefer pre-built URL context vars; admins can set the public app base URL in Settings so background email buttons stay absolute.
+- **Kiosk stop left duration NULL** — Stopping a timer from the kiosk now goes through `TimeTrackingService.stop_timer`, so `duration_seconds` is computed and rounded like every other stop path (entries no longer vanish from reports and invoices).
+- **Quote approval emails raised ImportError** — Implemented `send_quote_approval_request_notification`, `send_quote_approved_notification`, and `send_quote_approval_rejected_notification` so request/approve/reject no longer 500 after a successful commit.
+- **Client portal quote accept/reject emails never sent** — Switched the broken `send_email(to=..., template=...)` calls to `send_template_email`, so admins are notified when a client accepts or rejects a quote.
+- **Client notification email buttons were relative** — Outbound client portal emails now absolutize `link_url` with `APP_BASE_URL`; overdue invoice checks also create client portal notifications.
+- **Dead Jinja blocks (analytics/kanban/tasks)** — Added `extra_head` to `base.html` and renamed `head_extra` overrides so i18n bootstrap and cache-control meta tags actually render; un-nested mis-placed `extra_css` blocks.
+- **Desktop React manual entry posted invalid payload** — New time entry dialog now sends `start_time`/`end_time` (API schema) instead of `duration_minutes`/`date`.
+- **Extension ignored server idle_notified** — Status poll now enters the same “Still working?” grace window when the server has already marked the timer idle.
+- **Android Timer crash under R8 (#731)** — Keep Gson TypeToken signatures for `flutter_local_notifications` in release builds, disable R8 full mode, and make idle notification show/cancel non-fatal so a plugin failure cannot blank the Timer screen.
+
+### Documentation
+
+- **Version** — Bumped `setup.py` to **5.11.5** (single source of truth for the application version).
+- **Time rounding** — Documented admin global policy and **Enforce for all users** in `docs/TIME_ROUNDING_PREFERENCES.md`.
+
+## [5.11.4] - 2026-08-13
+
+### Added
+
+- **Boundary rounding & minimum billable duration (#725)** — Users can round start down / end up to interval boundaries, and set a per-user minimum billable duration. When a user has not customized their interval, the admin `Settings.rounding_minutes` fallback applies.
+- **Searchable client/project combobox with inline create (#728)** — Timer and edit forms use a filterable combobox with Create rows; shared modals create clients and projects without leaving the page. Client-only entries no longer force-select the first project.
+- **Server-side idle heartbeats (#722)** — Timers track `last_heartbeat_at`; a scheduled job auto-stops forgotten timers when clients go offline. “Still working?” prompts are wired across web, extension, mobile, and desktop, including Socket.IO broadcast beyond web push.
+
+### Fixed
+
+- **Per-user rounding gaps (#725)** — Pomodoro, manual-entry service overrides, CSV/Toggl/Harvest imports, and ActivityWatch no longer store raw `duration_seconds` and skip rounding.
+- **Attendance Approve button dropped on submit (#709)** — Disabling the clicked Approve/Reject button during loading no longer strips its `name` from the form, so the decision reaches the server.
+- **Chrome extension task/project picker races (#700)** — Stale task loads are discarded with a generation counter; tasks and paginated projects are deduped by id.
+- **Idle-tab 503 toasts (#703)** — Dashboard and notification polls are quieted and skipped while the document is hidden so resume no longer sticks on unavailable toasts.
+- **Client detail API joinedload (#716)** — `GET /api/v1/clients/<id>` no longer eager-loads the dynamic `Client.projects` relationship (regression coverage added).
+
+### Changed
+
+- **Client versions** — Synced Electron (`desktop/package.json`) and Flutter (`mobile/pubspec.yaml`) to **5.11.4** with the webapp (`setup.py`).
+
+### Documentation
+
+- **Version** — Bumped `setup.py` to **5.11.4** (single source of truth for the application version).
+- **Time rounding** — Documented boundary method, minimum billable duration, and admin interval fallback in `docs/TIME_ROUNDING_PREFERENCES.md`.
+
+## [5.11.3] - 2026-08-11
+
+### Fixed
+
+- **Manual-entry rounding uses deprecated query API (#725)** — Replaced `User.query.get` with `db.session.get` when resolving the target user for duration rounding on the manual entry form, silencing the SQLAlchemy 2.x deprecation warning and aligning with the recommended session API.
+
+### Changed
+
+- **Client versions** — Synced Electron (`desktop/package.json`) and Flutter (`mobile/pubspec.yaml`) to **5.11.3** with the webapp (`setup.py`).
+
+### Tests
+
+- Added integration tests for the start-timer 409 conflict payload (#700), transient `calculate_duration` rounding (#725), and explicit manual-entry duration rounding to catch double-apply and override-ignored regressions.
+
+### Documentation
+
+- **Version** — Bumped `setup.py` to **5.11.3** (single source of truth for the application version).
+
+## [5.11.2] - 2026-08-09
+
+### Fixed
+
+- **Attendance correction Approve silently rejected (#709)** — Review forms treated a missing `action` field as Reject, so incomplete POSTs (e.g. pressing Enter in the comment box without a successful submit button) rejected corrections and left history unchanged. Approve/Reject now use distinct button names, a missing decision returns an error instead of rejecting, and applying an approval checks the DB commit and rolls back on failure so history times update reliably.
+- **Chrome extension task picker empty for custom Kanban statuses (#700)** — The extension and `status=open` / `status=active` API aliases used a fixed allowlist of statuses, so tasks in custom columns (e.g. `blocked`) never appeared. Open now means “not `done` or `cancelled`” (aligned with `Task.is_active`). The extension requests `status=open`, shows non-todo status next to the task name, reloads tasks when the project filter changes the selection, and still surfaces load errors visibly.
+- **Chrome extension task picker missing on-hold tasks (#700)** — Tasks with status `on_hold` are active (`Task.is_active`) and appear in the web UI, but the extension (and the `status=open` / `status=active` API aliases) only included `todo`, `in_progress`, and `review`. On-hold tasks are now included, and the extension surfaces a visible error when the task list fails to load (e.g. missing `read:tasks` scope) instead of showing an empty dropdown.
+- **Idle “Still working?” prompt never stopped the timer** — After the idle timeout prompt, dismissing or ignoring it left timers running indefinitely. Web and the browser extension now enforce a 5-minute grace window and auto-stop; the v1 timer API exposes `idle_timeout_minutes` and accepts `stop_time` for accurate stop timestamps.
+
+### Changed
+
+- **Client versions** — Synced Electron (`desktop/package.json`) and Flutter (`mobile/pubspec.yaml`) to **5.11.2** with the webapp (`setup.py`).
+
+### Documentation
+
+- **Version** — Bumped `setup.py` to **5.11.2** (single source of truth for the application version).
+
+## [5.11.1] - 2026-08-06
+
+### Changed
+
+- **Client versions** — Synced Electron (`desktop/package.json`) and Flutter (`mobile/pubspec.yaml`) to **5.11.1** with the webapp (`setup.py`).
+
+### Documentation
+
+- **Version** — Bumped `setup.py` to **5.11.1** (single source of truth for the application version).
+
+## [5.11.0] - 2026-08-06
+
+### Added
+
+- **Auto-deduct break on clock-out** — Admins can opt in to automatically inserting a meal break when a workday exceeds a configurable threshold and insufficient break time was logged, reducing manual corrections for regulated break rules. Enabled via Admin → Settings (new `AUTO_BREAK_DURATION_MINUTES` / `AUTO_BREAK_THRESHOLD_MINUTES` settings; migration `173_add_auto_break_settings`).
+- **Smart auto-break fill** — When a partial manual break already exists, only the remaining deficit minutes are inserted on clock-out. Auto-inserted breaks are flagged with `is_auto_break` so they can be distinguished from manual entries.
+- **Mobile timer notification (#714)** — Android keeps a foreground-service notification and iOS shows a local notification with project/task name and elapsed time while a timer is running, so users notice forgotten timers.
+
+### Fixed
+
+- **Time correction causes exception (#709)** — Fixed Flask-SocketIO room handlers that called nonexistent `socketio.join_room` / `socketio.leave_room` (use module-level `join_room` / `leave_room` instead). Attendance correction requests now appear on `/workday/history` (requester's own list), on `/approvals` for admins and requesters, and under a new sidebar link **Attendance Corrections**. The "Correct period" form now pre-fills and parses times in the user's timezone.
+- **Overnight totals clipped (#706 follow-up)** — Sessions crossing midnight no longer inflate "At work today". Totals are clipped to the requested day, and auto-closed shifts show a dashboard prompt so users can confirm or correct their leave time before starting a new day.
+- **Chrome extension task picker empty (#700)** — The popup requested tasks with `status=active`, which is not a valid task status, so existing tasks never appeared in the dropdown. The extension now loads open tasks (`todo`, `in_progress`, `review`) without that filter, and `GET /api/v1/tasks` accepts `status=active` / `open` aliases plus comma-separated status values for older extension builds.
+- **Client projects joinedload error (#716)** — `GET /api/v1/clients/<id>` raised `InvalidRequestError` because `joinedload` cannot be applied to a `lazy='dynamic'` relationship.
+- **OpenAPI spec missing Tasks and Clients endpoints** — The `/api/openapi.json` document was missing all paths for the Tasks and Clients groups despite the endpoints being fully functional. Added 5 Tasks paths (`/tasks`, `/tasks/{task_id}`) and 14 Clients paths (`/clients`, `/clients/{client_id}`, `/clients/{client_id}/contacts`, `/contacts/{contact_id}`, `/clients/{client_id}/notes`, `/client-notes/{note_id}`, `/clients/{client_id}/invoice-unbilled`). Fixed `Task.priority` schema type from `integer` to `string` enum; expanded `Client` schema from 4 to 16 properties; added `Contact` and `ClientNote` schemas.
+
+### Documentation
+
+- **Version** — Bumped `setup.py` to **5.11.0** (single source of truth for the application version).
+
+## [5.10.1] - 2026-07-25
+
+### Added
+
+- **Forgot overnight clock-out (#706)** — If a workday stays open past midnight, the dashboard and Timer page prompt for the actual leave time so yesterday can be corrected before starting a new day. Smart notifications also warn when an overnight session is still open. `POST /workday/end` and `POST /api/v1/workday/end` accept optional `end_time`.
+
+### Fixed
+
+- **Chrome extension connect did nothing (#700)** — `browser-extension/lib/api.js` was never shipped because root `.gitignore` ignored `lib/`. Connect/Options/background module imports failed silently. The client is now tracked, and Options connect handlers surface unexpected errors.
+- **Time entry typing and edit date format (#704 follow-ups)** — Typing `1234` into a time field now becomes `12:34` (not `12:04`). Edit/bulk/calendar date inputs use the user's preferred date format (e.g. DD.MM.YYYY), and edit-page timestamps use `|user_datetime`.
+- **Dashboard “At work today” double-count** — Live workday updater no longer adds full session elapsed on top of server hours that already include the active period.
+
+### Changed
+
+- **Client versions** — Synced Electron (`desktop/package.json`) and Flutter (`mobile/pubspec.yaml`) to **5.10.1** with the webapp (`setup.py`).
+
+### Documentation
+
+- **Version** — Documented release **5.10.1** to match `setup.py` (single source of truth for the application version).
+
+## [5.10.0] - 2026-07-23
+
+### Added
+
+- **Admin book time for others (#701)** — Admins can create manual and bulk time entries (and API v1 creates) on behalf of another active user.
+- **Chromium timer extension (#700)** — New `browser-extension/` Manifest V3 package connects to `/api/v1` (same tokens as desktop/mobile), starts/stops timers from the toolbar, shows elapsed time on a red badge/icon, and supports quick-create project/task. Load unpacked from the folder; see `browser-extension/README.md`.
+- **Self-hosted frontend assets** — All 17 third-party browser libraries (Font Awesome, Chart.js, flatpickr, Socket.IO, Toast UI Editor, Pickr, Konva, SortableJS, FullCalendar, frappe-gantt, anime.js, cmdk, and the Inter webfont) are now vendored into `app/static/vendor/` from npm instead of being fetched from cdnjs, jsDelivr, uicdn.toast.com and fonts.bunny.net at runtime. The app renders fully with no outbound network access, which makes air-gapped installs work and stops leaking every user's IP address to three CDNs.
+- **JavaScript build pipeline** — New esbuild-based build (`scripts/build-js.mjs`) minifies and bundles the previously unbundled scripts into content-hashed files resolved through a new `asset_url()` Jinja helper (`app/utils/assets.py`). The dashboard drops from **32 JS requests / ~550 KB to 12 requests / ~284 KB**.
+- **First-run module presets** — The setup wizard asks what you will use TimeTracker for and switches off modules you are unlikely to need. Previously every one of the 41 modules was enabled by default, presenting 80+ navigation destinations on a fresh install. The "Just me" preset enables 12 modules; "A team or agency" 28; "Compliance" 35; "Show me everything" keeps the old behaviour. Existing installs are unaffected, and Admin → Modules still controls everything afterwards.
+- **Strict CSP (report-only)** — A nonce-based Content-Security-Policy is now emitted as `Content-Security-Policy-Report-Only` alongside the enforced policy, so violations are observable before `'unsafe-inline'` is dropped. All 196 inline `<script>` blocks carry a per-request nonce.
+- **End-to-end, CSP and accessibility CI** — New Playwright suite (`tests/e2e/`) runs against the real Docker image, asserting zero CSP violations, that the app renders with every external host blocked, an axe-core accessibility baseline, and a JavaScript page-weight budget. CI previously had eight jobs and none of them opened a browser.
+- **Regression guards** — `tests/test_no_external_assets.py` fails the build if a CDN reference, remote font `@import`, duplicate Font Awesome load, or un-nonced inline script reappears. `scripts/check_translation_coverage.py` and `scripts/check_silent_excepts.py` add ratchets that may improve but never regress.
+
+### Fixed
+
+- **Desktop and browser lost connection after idle (#702, #703)** — Closing the desktop app with X (tray hide) or leaving a browser tab idle could leave a sticky "connection lost" / "Service temporarily unavailable" state. Session and health probes now recover on success, re-check when the UI becomes visible again, and health checks no longer toast via the service worker's synthetic 503.
+- **24h time format preference ignored (#704)** — Native time inputs followed the browser locale (AM/PM). Flatpickr now respects the user's time format preference, and client-side displays use `formatUserTime` / `formatUserDateTime`.
+- **Sidebar expand clipped when collapsed (#699)** — Hide the Commands shortcut in the collapsed rail so the expand control stays visible; clarified the onboarding tip (including Ctrl/Cmd+B).
+- **Sidebar expand, theme icons, and Ctrl+K** — Collapse control stays reachable when the rail is narrow; theme switcher shows the current mode icon; command palette loads after its markup so Ctrl+K registers.
+- **Socket.IO / Flask session crash** — Bumped Flask-SocketIO for Flask 3.1 compatibility; supporter-key verify logging no longer leaks codes; budget alert jobs push a real app context.
+- **Multi-key keyboard shortcuts never worked** — `g d`, `g p`, `g t`, `g r` and `g i` were registered but could never fire: the live handler only ever matched a single key combo, and the sequence-buffering logic existed solely in two script files that no template loaded. Added sequence handling to `keyboard-shortcuts-advanced.js`.
+- **Font Awesome loaded twice** — Both the CSS build (6.4.0) and the conflicting SVG-with-JS build (6.4.2) were loaded on every page, roughly doubling the icon payload. Four templates loaded *only* the JS build via a `<script>` tag pointing at a stylesheet, which is a no-op.
+- **Command palette broke without internet** — `command-palette.js` imported its scoring helper from jsDelivr at runtime, so Ctrl+K silently failed in offline and air-gapped deployments.
+- **Contacts navigation was a dead end** — The CRM menu showed "Contacts (via Clients)" as unclickable grey text. It now links to Clients, with a tooltip explaining that contacts are scoped per client.
+- **Silenced dashboard errors** — Donation-metric failures on the dashboard were swallowed entirely, so a genuine database fault appeared only as a slow page. Now logged.
+- **Inter webfont fetched from a third party** — `input.css` `@import`-ed the font from `fonts.bunny.net` on every page load. Now self-hosted, shipping only the four latin weights actually declared (8 files instead of the package's 126).
+- **Tailwind's `hidden` had no effect on icons** — Font Awesome's `.fa-solid { display: inline-block }` and Tailwind's `.hidden { display: none }` have identical specificity, and Font Awesome was loaded last, so it won. Every element combining `hidden` with an `fa-*` class stayed permanently visible — 27 of them, including the theme switcher, which rendered its light, dark *and* system icons at once. Font Awesome now loads before the compiled Tailwind CSS in all eight templates that load both, and a regression test enforces the order.
+- **Rich-text editor failed to load** — Toast UI Editor threw `Cannot read properties of undefined (reading 'PluginKey')` on all ten screens that use it. The npm package's UMD build declares the eight `prosemirror-*` packages as webpack *externals* and `require()`s them at runtime, so they were undefined in the browser; the CDN file it replaced was the "all" build with those dependencies bundled in, which npm does not publish. A genuinely self-contained bundle is now produced from the package's ESM entry by `scripts/build-js.mjs`.
+- **CSP Report-Only was inert and drowned the console** — It had no `report-uri`, so browsers had nowhere to send violations ("will not block and cannot report violations"), and because `script-src-attr` was undeclared it fell back to `script-src`, making all ~547 inline event handlers violate on every page load. The policy now declares `script-src-attr 'unsafe-inline'` so it reports only what nonces actually fix, and posts violations to a new rate-limited `/csp-report` endpoint.
+
+### Changed
+
+- **nginx** — `Connection` on the `/socket.io/` proxy is now set conditionally via a `map` instead of being hardcoded to `upgrade`, which is the documented pattern for mixing WebSocket and HTTP long-polling. (This was investigated as the cause of `/socket.io/` handshakes returning HTTP 400; an A/B test returned 200 with both the old and new header, so that report remains open.) Added `gzip` for text assets, which matters now that vendored libraries are served exactly as their packages ship them (the Toast UI bundle compresses 580 KB → 209 KB).
+- **`base.html` split into partials** — Reduced from 2,614 to ~1,267 lines by extracting `partials/_head.html`, `_sidebar.html` and `_topbar.html`, and relocating 309 lines of inline CSS into `app/static/src/input.css`.
+- **Removed ~4,800 lines of dead frontend code** — Ten static assets and one duplicate macro library that no template referenced: `commands.js`, `global-fab.js`, `keyboard-shortcuts.js`, `keyboard-shortcuts-enhanced.js`, `quick-actions.js`, `reports-enhanced.js`, `kiosk-mode.css`, `ui-enhancements.css`, `css/brand-colors.css`, `css/rtl-support.css`, `templates/_components.html`, plus eight unused `pdf_editor/*.mjs` re-export stubs.
+- **CSP no longer allowlists any third party** — Removed six CDN origins plus stale `code.jquery.com` and `cdn.datatables.net` entries, and added `object-src 'none'`, `base-uri 'self'` and `form-action 'self'`.
+- **Client versions** — Synced Electron (`desktop/package.json`) and Flutter (`mobile/pubspec.yaml`) to **5.10.0** with the webapp (`setup.py`).
+
+### Documentation
+
+- **Version** — Documented release **5.10.0** to match `setup.py` (single source of truth for the application version).
+
+## [5.9.4] - 2026-07-23
+
+### Added
+
+- **Desktop app catch-up** — Timer pause/resume (incl. tray), Reports summary view, workday/attendance controls matching mobile, Kanban board, CRM (leads/deals/contacts/notes), and finance depth (payments, mileage, quotes, recurring invoices, credit notes). See [DESKTOP_WEBAPP_GAP.md](docs/mobile-desktop-apps/DESKTOP_WEBAPP_GAP.md).
+- **Mobile app catch-up** — Calendar, Kanban, CRM hub, clients, issues, mileage, per diem, Belgium report, and deeper project/task flows aligned with the webapp.
+- **Issues API (v1)** — Exposed issues endpoints on the REST API for mobile and desktop clients.
+
+### Changed
+
+- **Desktop docs** — Auth docs now describe username/password login and the React+Vite renderer.
+- **Client versions** — Synced Electron (`desktop/package.json`) and Flutter (`mobile/pubspec.yaml`) to **5.9.4** with the webapp (`setup.py`).
+
+### Documentation
+
+- **Version** — Documented release **5.9.4** to match `setup.py` (single source of truth for the application version).
+
 ## [5.9.3] - 2026-07-16
 
 ### Added

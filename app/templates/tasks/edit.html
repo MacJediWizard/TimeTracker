@@ -4,9 +4,9 @@
 {% block title %}{{ _('Edit Task') }} - {{ task.name }} - Time Tracker{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="https://uicdn.toast.com/editor/latest/toastui-editor.min.css">
-<link rel="stylesheet" href="https://uicdn.toast.com/editor/latest/theme/toastui-editor-dark.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@simonwep/pickr/dist/themes/classic.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/toastui/toastui-editor.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/toastui/theme/toastui-editor-dark.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/pickr/themes/classic.min.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -118,6 +118,17 @@
                             </select>
                             <p class="text-xs text-text-muted-light dark:text-text-muted-dark mt-1">{{ _('Optional: Assign this task to a team member') }}</p>
                         </div>
+                        {% if milestones %}
+                        <div class="mb-4">
+                            <label for="milestone_id" class="form-label">{{ _('Milestone') }}</label>
+                            <select id="milestone_id" name="milestone_id" class="form-input">
+                                <option value="">{{ _('None') }}</option>
+                                {% for milestone in milestones %}
+                                <option value="{{ milestone.id }}" {% if task.milestone_id == milestone.id %}selected{% endif %}>{{ milestone.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        {% endif %}
 
                         <!-- Tags -->
                         <div class="mb-4">
@@ -485,9 +496,9 @@
 </style>
 
 <!-- Toast UI Editor -->
-<script src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js"></script>
+<script src="{{ url_for('static', filename='vendor/toastui/toastui-editor.js') }}"></script>
 
-<script>
+<script nonce="{{ csp_nonce() }}">
 // Form validation and enhancement
 document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('editTaskForm');
@@ -670,6 +681,6 @@ document.addEventListener('DOMContentLoaded', function() {
 {% endblock %}
 
 {% block scripts_extra %}
-<script src="https://cdn.jsdelivr.net/npm/@simonwep/pickr/dist/pickr.min.js"></script>
+<script src="{{ url_for('static', filename='vendor/pickr/pickr.min.js') }}"></script>
 <script src="{{ url_for('static', filename='js/gantt-color-picker.js') }}"></script>
 {% endblock %}

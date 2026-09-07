@@ -29,13 +29,29 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 # Load environment variables
 load_dotenv()
 
+
+class PathExemptCSRFProtect(CSRFProtect):
+    """CSRFProtect that skips validation for the token API under /api/v1.
+
+    Bearer/API-key clients do not send CSRF tokens. Exempting by path (not by
+    individual blueprints) keeps coverage when /api/v1 routes are split or added.
+    Do not broaden this to all of /api/ — kiosk and import stay cookie/CSRF protected.
+    """
+
+    def protect(self):
+        path = request.path or ""
+        if path == "/api/v1" or path.startswith("/api/v1/"):
+            return
+        return super().protect()
+
+
 # Initialize extensions
 db = SQLAlchemy()
 migrate = Migrate()
 login_manager = LoginManager()
 socketio = SocketIO()
 babel = Babel()
-csrf = CSRFProtect()
+csrf = PathExemptCSRFProtect()
 limiter = Limiter(key_func=get_remote_address, default_limits=[])
 oauth = OAuth()
 
@@ -257,6 +273,14 @@ def create_app(config=None):
     login_manager.init_app(app)
     socketio.init_app(app, cors_allowed_origins="*")
     oauth.init_app(app)
+
+    # Optional Firebase Admin for FCM mobile idle wake-up (Issue #722). No-op when unset.
+    try:
+        from app.utils.firebase_push import init_firebase_admin
+
+        init_firebase_admin(app)
+    except Exception as e:
+        logger.debug("Firebase Admin init skipped: %s", e)
 
     # Fast-path for migration/bootstrap runs:
     # we only need config + db/migrate + models loaded. Avoid registering routes,
@@ -499,6 +523,34 @@ def create_app(config=None):
         return redirect(url_for(login_manager.login_view, next=request.url))
 
     # Internationalization selector handled via babel.init_app(locale_selector=...)
+
+    # Per-request CSP nonce. Inline <script> blocks render nonce="{{ csp_nonce() }}"
+    # so the strict, nonce-based Content-Security-Policy-Report-Only header emitted in
+    # apply_security_headers() can validate them. See app/utils/assets.py for the
+    # companion asset_url() helper used by bundled (external) scripts.
+    @app.before_request
+    def _generate_csp_nonce():
+        import secrets
+
+        g.csp_nonce = secrets.token_urlsafe(16)
+
+    # Remember the public base URL from real requests so background jobs can build
+    # absolute links without SERVER_NAME (see app.utils.urls).
+    @app.before_request
+    def _remember_app_base_url():
+        try:
+            from app.utils.urls import remember_request_base_url
+
+            remember_request_base_url()
+        except Exception:
+            pass
+
+    # Registered as a Jinja *global*, not a context processor: macro files such as
+    # components/multi_select.html contain inline <script> blocks and are imported with
+    # `{% from "..." import ... %}` (i.e. without context), which does not receive
+    # context-processor values. A global is visible everywhere and still resolves the
+    # nonce per request, because `g` is read at call time.
+    app.jinja_env.globals["csp_nonce"] = lambda: getattr(g, "csp_nonce", "")
 
     # Ensure compatibility with tests and different Flask-Login versions:
     # Some test suites set session['_user_id'] while Flask-Login (or vice versa)
@@ -827,18 +879,58 @@ def create_app(config=None):
                 # do not overwrite existing header if already present
                 if not response.headers.get(k):
                     response.headers[k] = v
-            # Minimal CSP allowing our own resources and common CDNs used in templates
+            # CSP. All third-party libraries are now vendored under app/static/vendor
+            # (see scripts/copy-vendor.mjs), so no CDN origin needs to be allowlisted:
+            # the app must render with no outbound network access.
+            #
+            # 'unsafe-inline' for script-src is still required by ~196 inline <script>
+            # blocks across the templates. Those blocks carry a nonce, and the strict
+            # nonce-based policy is emitted alongside as Report-Only so violations are
+            # observable in the wild without breaking pages. Once the end-to-end suite
+            # confirms zero script-src violations, the Report-Only policy becomes the
+            # enforced one and 'unsafe-inline' is dropped.
             if not response.headers.get("Content-Security-Policy"):
-                csp = (
+                response.headers["Content-Security-Policy"] = (
                     "default-src 'self'; "
-                    "img-src 'self' data: https:; "
-                    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com https://cdn.datatables.net https://uicdn.toast.com; "
-                    "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:; "
-                    "script-src 'self' 'unsafe-inline' https://code.jquery.com https://cdn.datatables.net https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://uicdn.toast.com; "
-                    "connect-src 'self' ws: wss: https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+                    "img-src 'self' data: blob:; "
+                    "style-src 'self' 'unsafe-inline'; "
+                    "font-src 'self' data:; "
+                    "script-src 'self' 'unsafe-inline'; "
+                    "connect-src 'self' ws: wss:; "
+                    "object-src 'none'; "
+                    "base-uri 'self'; "
+                    "form-action 'self'; "
                     "frame-ancestors 'none'"
                 )
-                response.headers["Content-Security-Policy"] = csp
+            if not response.headers.get("Content-Security-Policy-Report-Only"):
+                nonce = getattr(g, "csp_nonce", None)
+                if nonce:
+                    # script-src-attr is declared explicitly and permissively. Without
+                    # it, script-src-attr falls back to script-src, and all ~547 inline
+                    # event handlers in the templates (onclick x447, onchange x58,
+                    # onsubmit x40, oninput x2) violate the policy on every page load.
+                    # That noise buries the signal this policy exists to produce:
+                    # <script> blocks that are missing a nonce. Removing those handlers
+                    # via event delegation is the prerequisite for tightening this to
+                    # 'none' and then enforcing the policy.
+                    #
+                    # report-uri gives the browser somewhere to send violations. Without
+                    # it Firefox reports the policy as inert ("will not block and cannot
+                    # report violations") and findings never leave the user's console.
+                    response.headers["Content-Security-Policy-Report-Only"] = (
+                        "default-src 'self'; "
+                        "img-src 'self' data: blob:; "
+                        "style-src 'self' 'unsafe-inline'; "
+                        "font-src 'self' data:; "
+                        f"script-src 'self' 'nonce-{nonce}'; "
+                        "script-src-attr 'unsafe-inline'; "
+                        "connect-src 'self' ws: wss:; "
+                        "object-src 'none'; "
+                        "base-uri 'self'; "
+                        "form-action 'self'; "
+                        "frame-ancestors 'none'; "
+                        "report-uri /csp-report"
+                    )
             # Additional privacy headers
             if not response.headers.get("Referrer-Policy"):
                 response.headers["Referrer-Policy"] = "no-referrer"
@@ -1103,15 +1195,14 @@ def create_app(config=None):
     except Exception as e:
         logger.warning(f"Could not register integration connectors: {e}")
 
-    # Exempt API blueprints from CSRF protection (requires api_bp, api_v1_bp, api_docs_bp)
+    # Exempt legacy session JSON API and docs from CSRF.
+    # /api/v1 is skipped by PathExemptCSRFProtect (path prefix), so split
+    # api_v1_* blueprints do not need individual csrf.exempt() calls.
     from app.routes.api import api_bp
     from app.routes.api_docs import api_docs_bp
-    from app.routes.api_v1 import api_v1_bp
 
-    # Only if CSRF is enabled (JSON API uses token authentication, not CSRF tokens)
     if app.config.get("WTF_CSRF_ENABLED"):
         csrf.exempt(api_bp)
-        csrf.exempt(api_v1_bp)
         csrf.exempt(api_docs_bp)
 
     # Initialize OIDC IP cache
@@ -1334,6 +1425,11 @@ def create_app(config=None):
     from app.utils.template_filters import register_template_filters
 
     register_template_filters(app)
+
+    # Expose asset_url() for content-hashed JS bundles (see scripts/build-js.mjs)
+    from app.utils.assets import register_asset_helpers
+
+    register_asset_helpers(app)
 
     # Initialize module registry and helpers
     from app.utils.module_helpers import init_module_helpers

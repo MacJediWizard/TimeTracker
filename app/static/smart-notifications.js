@@ -19,7 +19,6 @@ class SmartNotificationManager {
         this.checkPermissionStatus();
         this.startBackgroundTasks();
         this.setupServiceWorkerMessaging();
-        this.checkIdleTime();
         this.checkDeadlines();
         this.startServerSmartNotificationsPolling();
     }
@@ -193,57 +192,10 @@ class SmartNotificationManager {
     }
 
     /**
-     * Smart notifications based on user activity
+     * Smart notifications based on user activity.
+     * Idle timeout / "Still working?" auto-stop lives in idle.js — do not
+     * duplicate a hardcoded idle loop here.
      */
-
-    // Check idle time and remind to log time
-    checkIdleTime() {
-        try {
-            let idleTime = 0;
-            let lastActivity = Date.now();
-            let notificationSent = false;
-
-            const resetTimer = () => {
-                lastActivity = Date.now();
-                idleTime = 0;
-                notificationSent = false; // Reset notification flag on activity
-            };
-
-            // Use passive event listeners for better performance
-            const resetTimerPassive = () => resetTimer();
-            
-            document.addEventListener('mousemove', resetTimerPassive, { passive: true });
-            document.addEventListener('keydown', resetTimerPassive, { passive: true });
-            document.addEventListener('click', resetTimerPassive, { passive: true });
-            document.addEventListener('scroll', resetTimerPassive, { passive: true });
-
-            setInterval(() => {
-                try {
-                    idleTime = Date.now() - lastActivity;
-                    
-                    // If idle for 30 minutes and haven't sent notification yet
-                    if (idleTime > 30 * 60 * 1000 && !notificationSent) {
-                        this.show({
-                            title: 'Still working?',
-                            message: 'You\'ve been idle for 30 minutes. Don\'t forget to log your time!',
-                            type: 'info',
-                            priority: 'normal',
-                            actions: [
-                                { id: 'log-time', label: 'Log Time' },
-                                { id: 'dismiss', label: 'Dismiss' }
-                            ]
-                        });
-                        
-                        notificationSent = true; // Mark as sent to avoid spam
-                    }
-                } catch (error) {
-                    console.error('[SmartNotifications] Error in idle time check:', error);
-                }
-            }, 5 * 60 * 1000); // Check every 5 minutes
-        } catch (error) {
-            console.error('[SmartNotifications] Error initializing idle time check:', error);
-        }
-    }
 
     // Check upcoming deadlines
     checkDeadlines() {
@@ -369,6 +321,9 @@ class SmartNotificationManager {
 
     async pollServerSmartNotifications() {
         try {
+            if (typeof document !== 'undefined' && document.hidden) {
+                return;
+            }
             if (typeof navigator !== 'undefined' && navigator.onLine === false) {
                 return;
             }
@@ -378,7 +333,8 @@ class SmartNotificationManager {
             const res = await fetch('/api/notifications', {
                 method: 'GET',
                 credentials: 'same-origin',
-                headers: { Accept: 'application/json' }
+                headers: { Accept: 'application/json' },
+                __ttQuiet: true
             });
             if (!res.ok) {
                 return;

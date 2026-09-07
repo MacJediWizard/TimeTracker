@@ -16,10 +16,23 @@ from flask import (
 )
 from flask_babel import gettext as _
 from flask_login import current_user, login_required
-from sqlalchemy import text
+from sqlalchemy import or_, text
+from sqlalchemy.orm import joinedload
 
-from app import db, track_event, track_page_view
-from app.models import Activity, Client, Project, Settings, TimeEntry, TimeEntryTemplate, User, WeeklyTimeGoal
+from app import csrf, db, limiter, track_event, track_page_view
+from app.models import (
+    Activity,
+    Client,
+    Invoice,
+    Milestone,
+    Project,
+    Settings,
+    Task,
+    TimeEntry,
+    TimeEntryTemplate,
+    User,
+    WeeklyTimeGoal,
+)
 from app.models.time_entry import local_now
 from app.utils.license_utils import is_license_activated
 from app.utils.posthog_segmentation import update_user_segments_if_needed
@@ -86,17 +99,19 @@ def dashboard():
             try:
                 cache.set(dashboard_stats_key, stats, ttl=90)
             except Exception:
-                pass
+                # Cache is best-effort; a miss just means recomputing next request.
+                current_app.logger.debug("Could not cache dashboard stats", exc_info=True)
         if chart_data is None:
             chart_data = analytics_service.get_time_by_project_chart(current_user.id, days=7, limit=10)
             try:
                 cache.set(dashboard_chart_key, chart_data, ttl=90)
             except Exception:
-                pass
+                current_app.logger.debug("Could not cache dashboard chart data", exc_info=True)
 
     today_hours = stats["time_tracking"]["today_hours"]
     week_hours = stats["time_tracking"]["week_hours"]
     month_hours = stats["time_tracking"]["month_hours"]
+    utilization = stats.get("utilization") or {"rate": 0.0, "billable_hours": 0.0, "total_hours": 0.0}
     workday_today_hours = stats.get("workday_hours", {}).get("today", 0.0)
     workday_week_hours = stats.get("workday_hours", {}).get("week", 0.0)
     workday_month_hours = stats.get("workday_hours", {}).get("month", 0.0)
@@ -105,9 +120,29 @@ def dashboard():
     from app.services.workday_session_service import WorkdaySessionService
     from app.services.working_time_limit_service import WorkingTimeLimitService
 
-    active_workday_session = WorkdaySessionService().get_active_session(current_user.id)
+    workday_svc = WorkdaySessionService()
+    active_workday_session = workday_svc.get_active_session(current_user.id)
     attendance_status = AttendanceComplianceService().get_status(current_user.id)
     attendance_break_active = attendance_status.get("break_active", False)
+    overnight_open_workday = workday_svc.is_overnight_open_session(active_workday_session)
+    suggested_leave_time = (
+        workday_svc.suggested_leave_datetime_local(active_workday_session, current_user)
+        if overnight_open_workday and active_workday_session
+        else None
+    )
+    auto_closed_workday_session = (
+        None if overnight_open_workday else workday_svc.get_unconfirmed_auto_closed_session(current_user.id)
+    )
+    auto_closed_suggested_leave_time = (
+        workday_svc.suggested_leave_datetime_local(auto_closed_workday_session, current_user)
+        if auto_closed_workday_session
+        else None
+    )
+    auto_closed_max_leave_time = (
+        auto_closed_workday_session.end_time.strftime("%Y-%m-%dT%H:%M")
+        if auto_closed_workday_session and auto_closed_workday_session.end_time
+        else None
+    )
     pending_violations = WorkingTimeLimitService().get_violations_needing_justification(current_user.id)
 
     # Overtime for dashboard cards (today and week)
@@ -197,6 +232,151 @@ def dashboard():
             "client_name": last_entry.client.name if last_entry.client else None,
         }
 
+    # Recent project+task combos for quick-start strip (last 5 unique pairs)
+    recent_combos = []
+    combo_seen = set()
+    combo_entries = (
+        TimeEntry.query.options(joinedload(TimeEntry.project), joinedload(TimeEntry.task))
+        .filter(
+            TimeEntry.user_id == current_user.id,
+            TimeEntry.end_time.isnot(None),
+            TimeEntry.project_id.isnot(None),
+        )
+        .order_by(TimeEntry.end_time.desc())
+        .limit(50)
+        .all()
+    )
+    for combo_entry in combo_entries:
+        combo_key = (combo_entry.project_id, combo_entry.task_id)
+        if combo_key in combo_seen:
+            continue
+        combo_seen.add(combo_key)
+        recent_combos.append(
+            {
+                "project_id": combo_entry.project_id,
+                "task_id": combo_entry.task_id,
+                "project_name": combo_entry.project.name if combo_entry.project else None,
+                "task_name": combo_entry.task.name if combo_entry.task else None,
+            }
+        )
+        if len(recent_combos) >= 5:
+            break
+
+    today_seconds = int(round(today_hours * 3600))
+    daily_target_seconds = int(round(standard_hours_per_day * 3600))
+
+    from app.services.utilization_service import UtilizationService
+
+    week_utilization = UtilizationService.for_user_period(
+        current_user.id,
+        datetime.combine(week_start_dt, datetime.min.time()),
+        datetime.combine(today_dt, datetime.max.time()),
+    )
+    is_past_midday = local_now().hour >= 12
+
+    # Tasks due today or overdue (assigned to or created by current user)
+    today_date = local_now().date()
+    tasks_due_query = (
+        Task.query.options(joinedload(Task.project))
+        .filter(
+            Task.due_date.isnot(None),
+            Task.due_date <= today_date,
+            Task.status.notin_(["done", "cancelled"]),
+        )
+        .order_by(Task.due_date.asc(), Task.priority.desc())
+    )
+    if not current_user.is_admin:
+        tasks_due_query = tasks_due_query.filter(
+            or_(Task.assigned_to == current_user.id, Task.created_by == current_user.id)
+        )
+    tasks_due_today = tasks_due_query.limit(5).all()
+
+    # Tasks and milestones due in the next 7 days (excluding today/overdue)
+    upcoming_deadline_end = today_date + timedelta(days=7)
+    upcoming_tasks_query = (
+        Task.query.options(joinedload(Task.project))
+        .filter(
+            Task.due_date.isnot(None),
+            Task.due_date > today_date,
+            Task.due_date <= upcoming_deadline_end,
+            Task.status.notin_(["done", "cancelled"]),
+        )
+        .order_by(Task.due_date.asc(), Task.priority.desc())
+    )
+    if not current_user.is_admin:
+        upcoming_tasks_query = upcoming_tasks_query.filter(
+            or_(Task.assigned_to == current_user.id, Task.created_by == current_user.id)
+        )
+    upcoming_tasks = upcoming_tasks_query.limit(8).all()
+
+    from app.utils.scope_filter import get_allowed_project_ids
+
+    scope_project_ids = get_allowed_project_ids(current_user)
+    upcoming_milestones_query = (
+        Milestone.query.options(joinedload(Milestone.project))
+        .filter(
+            Milestone.due_date.isnot(None),
+            Milestone.due_date > today_date,
+            Milestone.due_date <= upcoming_deadline_end,
+            Milestone.status != "completed",
+        )
+        .order_by(Milestone.due_date.asc())
+    )
+    if scope_project_ids is not None:
+        upcoming_milestones_query = upcoming_milestones_query.filter(Milestone.project_id.in_(scope_project_ids))
+    upcoming_milestones = upcoming_milestones_query.limit(8).all()
+
+    upcoming_deadlines = []
+    for task in upcoming_tasks:
+        upcoming_deadlines.append(
+            {
+                "kind": "task",
+                "name": task.name,
+                "due_date": task.due_date,
+                "project_name": task.project.name if task.project else None,
+                "url": url_for("tasks.view_task", task_id=task.id),
+            }
+        )
+    for milestone in upcoming_milestones:
+        upcoming_deadlines.append(
+            {
+                "kind": "milestone",
+                "name": milestone.name,
+                "due_date": milestone.due_date,
+                "project_name": milestone.project.name if milestone.project else None,
+                "url": url_for("projects.view_project", project_id=milestone.project_id),
+            }
+        )
+    upcoming_deadlines.sort(key=lambda item: item["due_date"])
+    upcoming_deadlines = upcoming_deadlines[:10]
+
+    # Overdue invoice summary for billing users
+    overdue_invoices_summary = None
+    from app.utils.module_helpers import is_module_enabled
+
+    if is_module_enabled("invoices") and (current_user.is_admin or current_user.has_permission("create_invoices")):
+        overdue_rows = (
+            Invoice.query.filter(
+                Invoice.status.in_(["sent", "overdue", "partially_paid"]),
+                Invoice.due_date < today_date,
+            )
+            .order_by(Invoice.due_date.asc())
+            .all()
+        )
+        overdue_total = 0.0
+        overdue_count = 0
+        for inv in overdue_rows:
+            outstanding = float(inv.outstanding_amount or 0)
+            if outstanding > 0:
+                overdue_count += 1
+                overdue_total += outstanding
+        if overdue_count:
+            overdue_invoices_summary = {
+                "count": overdue_count,
+                "total": round(overdue_total, 2),
+                "url": url_for("invoices.list_invoices", status="overdue"),
+            }
+
     # Post-timer toast data (show "Logged Xh on Project" + link to time entries)
     timer_stopped_toast = session.pop("timer_stopped_toast", None)
     if timer_stopped_toast:
@@ -210,7 +390,9 @@ def dashboard():
         user_stats = DonationInteraction.get_user_engagement_metrics(current_user.id)
         support_banner_suppressed_dashboard = DonationInteraction.has_recent_donation_click(current_user.id, days=30)
     except Exception:
-        # Fallback if table doesn't exist yet
+        # Fallback if table doesn't exist yet. Log it: any *other* database fault lands
+        # here too, and silently degrading made a real error look like a slow dashboard.
+        current_app.logger.warning("Donation engagement metrics unavailable; using fallback stats", exc_info=True)
         days_since_signup = (datetime.utcnow() - current_user.created_at).days if current_user.created_at else 0
         time_entries_count = TimeEntry.query.filter_by(user_id=current_user.id).count()
         total_hours = current_user.total_hours if hasattr(current_user, "total_hours") else 0.0
@@ -240,22 +422,44 @@ def dashboard():
         today_hours=float(today_hours or 0),
     )
     if support_dashboard_prompt:
-        SupportPromptService.mark_prompt_shown(session, support_dashboard_prompt["variant"])
         v = support_dashboard_prompt.get("variant")
+        if v == SupportPromptService.VARIANT_HOURS_MILESTONE:
+            SupportPromptService.mark_hours_milestone_shown(
+                session, int(support_dashboard_prompt.get("milestone") or 0)
+            )
+        else:
+            SupportPromptService.mark_prompt_shown(session, v)
         if v == SupportPromptService.VARIANT_SEVEN_DAY:
             support_dashboard_prompt = {
                 **support_dashboard_prompt,
                 "message": _(
-                    "You have been using TimeTracker for a week or more. If it fits your workflow, "
-                    "consider supporting continued development."
+                    "A week in — glad you're here. TimeTracker is built by one person, "
+                    "and every bit of support helps."
+                ),
+            }
+        elif v == SupportPromptService.VARIANT_ANNIVERSARY_30D:
+            support_dashboard_prompt = {
+                **support_dashboard_prompt,
+                "message": _(
+                    "You've been using TimeTracker for a month — thank you for being part of the community. "
+                    "If the app helps your work, consider supporting its development."
+                ),
+            }
+        elif v == SupportPromptService.VARIANT_HOURS_MILESTONE:
+            milestone = int(support_dashboard_prompt.get("milestone") or 0)
+            support_dashboard_prompt = {
+                **support_dashboard_prompt,
+                "message": _(
+                    "You've tracked %(hours)s hours with TimeTracker. That's reliable data for your clients "
+                    "and your business — consider supporting continued development.",
+                    hours=milestone,
                 ),
             }
         elif v == SupportPromptService.VARIANT_ACTIVE_TODAY:
             support_dashboard_prompt = {
                 **support_dashboard_prompt,
                 "message": _(
-                    "You have tracked a solid amount of time today. If TimeTracker makes your day easier, "
-                    "you can support the project in a click."
+                    "You've been tracking for a while today. TimeTracker is free because of supporters like you."
                 ),
             }
 
@@ -264,6 +468,11 @@ def dashboard():
         "active_timer": active_timer,
         "active_workday_session": active_workday_session,
         "attendance_break_active": attendance_break_active,
+        "overnight_open_workday": overnight_open_workday,
+        "suggested_leave_time": suggested_leave_time,
+        "auto_closed_workday_session": auto_closed_workday_session,
+        "auto_closed_suggested_leave_time": auto_closed_suggested_leave_time,
+        "auto_closed_max_leave_time": auto_closed_max_leave_time,
         "workday_today_hours": workday_today_hours,
         "workday_week_hours": workday_week_hours,
         "workday_month_hours": workday_month_hours,
@@ -276,6 +485,7 @@ def dashboard():
         "today_hours": today_hours,
         "week_hours": week_hours,
         "month_hours": month_hours,
+        "utilization": utilization,
         "standard_hours_per_day": standard_hours_per_day,
         "today_regular_hours": today_overtime["regular_hours"],
         "today_overtime_hours": today_overtime["overtime_hours"],
@@ -291,7 +501,16 @@ def dashboard():
         "templates": templates,
         "recent_activities": recent_activities,
         "last_timer_context": last_timer_context,
+        "recent_combos": recent_combos,
+        "today_seconds": today_seconds,
+        "daily_target_seconds": daily_target_seconds,
+        "week_utilization": week_utilization,
+        "is_past_midday": is_past_midday,
         "recent_tags": recent_tags,
+        "tasks_due_today": tasks_due_today,
+        "upcoming_deadlines": upcoming_deadlines,
+        "overdue_invoices_summary": overdue_invoices_summary,
+        "today_date": today_date,
         "user_stats": user_stats,  # For smart banner
         "time_entries_count": time_entries_count,  # For donation widget
         "total_hours": total_hours,  # For donation widget
@@ -314,6 +533,7 @@ def productivity_dashboard():
 
     summary = ProductivityService.get_summary(current_user)
     daily_breakdown = ProductivityService.get_daily_breakdown(current_user, days=14)
+    daily_project_breakdown = ProductivityService.get_daily_project_breakdown(current_user, days=14)
     streak = ProductivityService.get_streak(current_user)
     focus = ProductivityService.get_focus_stats(current_user, days=30)
     projects = ProductivityService.get_project_breakdown(current_user, days=30)
@@ -326,6 +546,7 @@ def productivity_dashboard():
         "main/productivity_dashboard.html",
         summary=summary,
         daily_breakdown=daily_breakdown,
+        daily_project_breakdown=daily_project_breakdown,
         streak=streak,
         focus=focus,
         projects=projects,
@@ -390,8 +611,8 @@ def donate():
             },
         )
     except Exception:
-        # Don't fail if tracking fails (e.g., table doesn't exist yet)
-        pass
+        # Don't fail the page if tracking fails (e.g. table doesn't exist yet).
+        current_app.logger.debug("Could not record donate page view", exc_info=True)
 
     return render_template(
         "main/donate.html",
@@ -549,7 +770,7 @@ def track_support_event():
             variant=variant,
         )
     except Exception:
-        pass
+        current_app.logger.debug("Could not record donation interaction", exc_info=True)
 
     return jsonify({"success": True})
 
@@ -631,7 +852,8 @@ def set_language():
         try:
             db.session.rollback()
         except Exception:
-            pass
+            # A rollback that itself fails leaves the session unusable — surface it.
+            current_app.logger.error("Rollback failed after settings save error", exc_info=True)
 
     # Redirect back if referer exists, add timestamp to force reload
     next_url = request.headers.get("Referer") or url_for("main.dashboard")
@@ -692,3 +914,35 @@ def offline_page():
 def service_worker():
     """Site-scoped service worker; implementation lives in app/static/js/sw.js."""
     return send_from_directory(current_app.static_folder, "js/sw.js", mimetype="application/javascript")
+
+
+@main_bp.route("/csp-report", methods=["POST"])
+@csrf.exempt
+@limiter.limit("60 per hour")
+def csp_report():
+    """
+    Collection point for Content-Security-Policy violation reports.
+
+    The strict, nonce-based policy ships as Content-Security-Policy-Report-Only (see
+    apply_security_headers in app/__init__.py) so violations can be observed before the
+    policy is enforced. Without a report-uri the browser has nowhere to send them —
+    Firefox warns that such a policy "will not block and cannot report violations" — so
+    the reports only reached each user's own console, where nobody sees them.
+
+    Unauthenticated and CSRF-exempt by necessity: the browser posts these itself, with
+    no session or token. Rate-limited because the endpoint is world-writable and a
+    misconfigured or hostile client could otherwise flood the log.
+    """
+    payload = request.get_json(force=True, silent=True) or {}
+    report = payload.get("csp-report", payload)
+
+    if not isinstance(report, dict):
+        return "", 204
+
+    current_app.logger.warning(
+        "CSP violation: directive=%s blocked=%s document=%s",
+        report.get("violated-directive") or report.get("effective-directive") or "?",
+        report.get("blocked-uri") or "?",
+        report.get("document-uri") or "?",
+    )
+    return "", 204

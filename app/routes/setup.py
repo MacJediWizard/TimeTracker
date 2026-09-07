@@ -11,6 +11,7 @@ from app import db, log_event
 from app.models import Settings
 from app.utils.db import safe_commit
 from app.utils.installation import get_installation_config
+from app.utils.module_registry import ModulePreset, ModuleRegistry
 from app.utils.timezone import get_available_timezones
 
 setup_bp = Blueprint("setup", __name__)
@@ -87,9 +88,25 @@ def initial_setup():
             settings, "company_website", ""
         )
 
+        # Module preset: switch off whole areas the user says they will not use.
+        # Only applied on first run; Admin -> Modules remains the way to change it later.
+        preset = (request.form.get("module_preset") or ModulePreset.EVERYTHING.value).strip()
+        if hasattr(settings, "disabled_module_ids"):
+            settings.disabled_module_ids = ModuleRegistry.get_disabled_ids_for_preset(preset)
+
         # System
         settings.allow_self_register = request.form.get("allow_self_register") == "on"
         settings.rounding_minutes = rounding
+        rounding_method = request.form.get("rounding_method", "nearest")
+        if rounding_method in ("nearest", "up", "down", "boundary"):
+            settings.rounding_method = rounding_method
+        try:
+            rounding_minimum = int(request.form.get("rounding_minimum_minutes", 0))
+        except (TypeError, ValueError):
+            rounding_minimum = 0
+        if rounding_minimum in (0, 5, 10, 15, 30, 60):
+            settings.rounding_minimum_minutes = rounding_minimum
+        settings.rounding_enforce_global = request.form.get("rounding_enforce_global") == "on"
         settings.single_active_timer = request.form.get("single_active_timer") == "on"
         settings.idle_timeout_minutes = idle_timeout
 
@@ -135,10 +152,57 @@ def initial_setup():
     return _render_setup(Settings.get_settings(), get_available_timezones())
 
 
+def _module_preset_choices():
+    """
+    Presets offered by the wizard, with the module count each one enables.
+
+    Counts are derived from ModuleRegistry so they stay accurate as modules are added.
+    """
+    total = len(ModuleRegistry.get_all())
+    choices = [
+        (
+            ModulePreset.SOLO.value,
+            _("Just me"),
+            _("Track time, organise it by project and client, and bill it. The leanest setup."),
+        ),
+        (
+            ModulePreset.TEAM.value,
+            _("A team or agency"),
+            _("Adds planning, collaboration and approvals: calendar, Kanban, Gantt, chat and quotes."),
+        ),
+        (
+            ModulePreset.COMPLIANCE.value,
+            _("We have compliance or audit needs"),
+            _("Adds approval chains, scheduled and custom reports, mileage, per diem and workflows."),
+        ),
+        (
+            ModulePreset.EVERYTHING.value,
+            _("Show me everything"),
+            _("Enable every module, including CRM, inventory and kiosk. You can switch things off later."),
+        ),
+    ]
+    return [
+        {
+            "value": value,
+            "label": label,
+            "description": description,
+            "enabled_count": total - len(ModuleRegistry.get_disabled_ids_for_preset(value)),
+            "total_count": total,
+        }
+        for value, label, description in choices
+    ]
+
+
 def _render_setup(settings, timezones):
     """Render the setup template with settings and timezones."""
+    from app.utils.time_rounding import get_available_minimum_durations, get_available_rounding_methods
+
     return render_template(
         "setup/initial_setup.html",
         settings=settings,
         timezones=timezones,
+        module_presets=_module_preset_choices(),
+        default_module_preset=ModulePreset.TEAM.value,
+        rounding_methods=get_available_rounding_methods(),
+        rounding_minimums=get_available_minimum_durations(),
     )

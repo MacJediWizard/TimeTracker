@@ -122,7 +122,7 @@
     </div>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce() }}">
 // Chat widget state
 let chatWidgetState = {
     isOpen: false,
@@ -221,16 +221,29 @@ function saveChatWidgetState() {
     }
 }
 
-// Load channels and direct messages
+// Load channels and direct messages.
+// On failure, back off instead of retrying every 30s — a long-idled tab against a
+// temporarily-down backend would otherwise spam failing requests and error toasts.
+let chatWidgetChannelPollFailed = false;
 function loadChatWidgetChannels() {
+    if (document.hidden) return;
     fetch('/api/chat/channels', {
+        // Background channel poll: mark quiet so the global error handler does not
+        // surface a connectivity toast when this best-effort refresh fails.
+        __ttQuiet: true,
         method: 'GET',
         headers: {
             'X-Requested-With': 'XMLHttpRequest'
         }
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('HTTP ' + response.status);
+        }
+        return response.json();
+    })
     .then(data => {
+        chatWidgetChannelPollFailed = false;
         if (data.channels) {
             chatWidgetState.channels = data.channels.filter(c => c.channel_type !== 'direct');
             chatWidgetState.directMessages = data.channels.filter(c => c.channel_type === 'direct');
@@ -238,7 +251,10 @@ function loadChatWidgetChannels() {
         }
     })
     .catch(error => {
-        console.error('Error loading channels:', error);
+        if (!chatWidgetChannelPollFailed) {
+            console.warn('Channel loading failed, will retry with backoff:', error);
+        }
+        chatWidgetChannelPollFailed = true;
     });
 }
 
@@ -320,7 +336,12 @@ function loadChatWidgetMessages(channelId) {
             'X-Requested-With': 'XMLHttpRequest'
         }
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('HTTP ' + response.status);
+        }
+        return response.json();
+    })
     .then(data => {
         if (data.messages) {
             renderChatWidgetMessages(data.messages);
@@ -343,7 +364,9 @@ function renderChatWidgetMessages(messages) {
     }
 
     container.innerHTML = messages.map(msg => {
-        const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const time = window.formatUserTime
+            ? window.formatUserTime(new Date(msg.created_at))
+            : new Date(msg.created_at).toLocaleTimeString([], window.getUserTimeLocaleOptions ? window.getUserTimeLocaleOptions() : { hour: '2-digit', minute: '2-digit' });
         return `
             <div class="flex items-start gap-2">
                 <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
@@ -425,8 +448,15 @@ if (document.readyState === 'loading') {
     initChatWidget();
 }
 
-// Reload channels periodically
-setInterval(loadChatWidgetChannels, 30000); // Every 30 seconds
+// Reload channels periodically; back off to 2 minutes after a failure
+// (e.g. backend briefly down while the tab stayed open).
+function scheduleChatWidgetChannelPoll() {
+    setTimeout(function() {
+        loadChatWidgetChannels();
+        scheduleChatWidgetChannelPoll();
+    }, chatWidgetChannelPollFailed ? 120000 : 30000);
+}
+scheduleChatWidgetChannelPoll();
 
 // Reload channels when page becomes visible (user switches back to tab)
 document.addEventListener('visibilitychange', function() {

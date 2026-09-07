@@ -51,6 +51,26 @@
         <input type="hidden" name="worked_time_mode" id="worked_time_mode" value="{{ prefill_worked_time_mode or '' }}">
 
         <div class="space-y-8">
+            {% if current_user.is_admin and users %}
+            {# Section: User (admin only — book time for another person) #}
+            <section class="pb-6 border-b border-border-light dark:border-border-dark">
+                <h2 class="form-section-title">
+                    <i class="fas fa-user text-primary"></i>{{ _('User') }}
+                </h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label for="user_id" class="block text-sm font-medium text-text-light dark:text-text-dark">{{ _('Log time for') }}</label>
+                        <select name="user_id" id="user_id" class="form-input">
+                            {% for user in users %}
+                            <option value="{{ user.id }}" {% if selected_user_id is not none and (selected_user_id|string) == (user.id|string) %}selected{% elif selected_user_id is none and user.id == current_user.id %}selected{% endif %}>{{ user.display_name }}</option>
+                            {% endfor %}
+                        </select>
+                        <p class="text-xs text-text-muted-light dark:text-text-muted-dark mt-1">{{ _('As admin, you can create entries for other users') }}</p>
+                    </div>
+                </div>
+            </section>
+            {% endif %}
+
             {# Section: Project & task #}
             <section class="pb-6 border-b border-border-light dark:border-border-dark">
                 <div class="flex items-center justify-between gap-3 flex-wrap">
@@ -85,28 +105,43 @@
                 <div class="space-y-6">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                            <label for="project_id" class="block text-sm font-medium text-text-light dark:text-text-dark">{{ _('Project') }}</label>
-                            <select name="project_id" id="project_id" class="form-input">
-                                <option value="">{{ _('Select a project (optional)') }}</option>
-                                {% for project in projects %}
-                                <option value="{{ project.id }}" {% if selected_project_id == project.id %}selected{% endif %}>{{ project.name }}</option>
-                                {% endfor %}
-                            </select>
+                            <label for="client_id" class="block text-sm font-medium text-text-light dark:text-text-dark">{{ _('Client') }}</label>
+                            {# Issue #467: when exactly one client exists, lock it (disabled+readonly)
+                               rather than forcing a selectable dropdown. Keep upstream's searchable
+                               + create affordances for the 0/2+ client cases (the macro's else branch). #}
+                            {{ client_select('client_id', clients, selected_id=selected_client_id, required=False, only_one_client=false, single_client=none, searchable=True, can_create=can_create_clients|default(false)) }}
+                            <p class="text-xs text-text-muted-light dark:text-text-muted-dark mt-1">{{ _('Select a client first, then optionally a project. Type to search or create.') }}</p>
                         </div>
                         <div>
-                            <label for="client_id" class="block text-sm font-medium text-text-light dark:text-text-dark">{{ _('Client') }}</label>
-                            {# Single client: show as normal dropdown, pre-select only when client_id is in URL (parameter) #}
-                            {{ client_select('client_id', clients, selected_id=selected_client_id, required=False, only_one_client=false, single_client=none) }}
-                            <p class="text-xs text-text-muted-light dark:text-text-muted-dark mt-1">{{ _('Select either a project or a client') }}</p>
+                            <label for="project_id" class="block text-sm font-medium text-text-light dark:text-text-dark">{{ _('Project') }}</label>
+                            <select name="project_id" id="project_id" class="form-input" data-inline-project-select
+                                    data-searchable-select="project"
+                                    data-filter-by="client_id"
+                                    {% if can_create_projects|default(false) %}data-can-create="1"{% endif %}
+                                    data-search-placeholder="{{ _('Type to search projects…') }}"
+                                    {% if not selected_client_id %}disabled{% endif %}>
+                                <option value="">{{ _('Select a project (optional)') }}</option>
+                                {% for project in projects %}
+                                <option value="{{ project.id }}" data-client-id="{{ project.client_id }}" data-parent-id="{{ project.client_id }}" {% if selected_project_id == project.id %}selected{% endif %}>{{ project.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <p class="text-xs text-text-muted-light dark:text-text-muted-dark mt-1">{{ _('Pick a client first, then choose one of their projects. Leave empty for a client-only entry.') }}</p>
                         </div>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
                             <label for="task_id" class="block text-sm font-medium text-text-light dark:text-text-dark">{% if getattr(settings, 'time_entry_require_task', false) %}{{ _('Task') }} *{% else %}{{ _('Task (optional)') }}{% endif %}</label>
-                            <select name="task_id" id="task_id" class="form-input" data-selected-task-id="{{ selected_task_id or '' }}" {% if not selected_project_id %}disabled{% endif %}>
+                            <select name="task_id" id="task_id" class="form-input"
+                                    data-selected-task-id="{{ selected_task_id or '' }}"
+                                    data-searchable-select="task"
+                                    data-inline-task-select
+                                    data-filter-by="project_id"
+                                    data-can-create="1"
+                                    data-search-placeholder="{{ _('Type to search tasks…') }}"
+                                    {% if not selected_project_id %}disabled{% endif %}>
                                 <option value="">{{ _('No task') }}</option>
                             </select>
-                            <p class="text-xs text-text-muted-light dark:text-text-muted-dark mt-1">{{ _('Tasks load after selecting a project') }}</p>
+                            <p class="text-xs text-text-muted-light dark:text-text-muted-dark mt-1">{{ _('Select a project first. Type to search or create.') }}</p>
                         </div>
                     </div>
                 </div>
@@ -131,11 +166,11 @@
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
                             <label for="start_time" class="block text-sm font-medium text-text-light dark:text-text-dark">{{ _('Start Time') }}</label>
-                            <input type="time" name="start_time" id="start_time" class="form-input" value="{{ prefill_start_time or '' }}">
+                            <input type="time" name="start_time" id="start_time" class="form-input user-time-input" value="{{ prefill_start_time or '' }}">
                         </div>
                         <div>
                             <label for="end_time" class="block text-sm font-medium text-text-light dark:text-text-dark">{{ _('End Time') }}</label>
-                            <input type="time" name="end_time" id="end_time" class="form-input" value="{{ prefill_end_time or '' }}">
+                            <input type="time" name="end_time" id="end_time" class="form-input user-time-input" value="{{ prefill_end_time or '' }}">
                         </div>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -189,7 +224,8 @@
         </div>
     </form>
 </div>
-<script>
+{% include 'components/inline_create_modals.html' %}
+<script nonce="{{ csp_nonce() }}">
 (function() {
     // Issue #557: avoid loading Toast UI Editor on mobile to prevent browser freeze
     window.isMobileView = window.matchMedia('(max-width: 767px)').matches;
@@ -205,7 +241,7 @@
     }
 })();
 </script>
-<script>
+<script nonce="{{ csp_nonce() }}">
 document.addEventListener('DOMContentLoaded', async function(){
     // Default values for date/time to now (use local date, not UTC, for timezones ahead of UTC)
     const now = new Date();
@@ -375,23 +411,44 @@ document.addEventListener('DOMContentLoaded', async function(){
     const failedToLoadTasksText = {{ _('Failed to load tasks')|tojson }};
     const scriptRoot = {{ request.script_root|default('')|tojson }};
 
-    // Task loading: when project is selected, clear client (mutual exclusivity) and load tasks
+    // Hierarchy: project auto-fills client; client clears mismatched project
     if (projectSelect && taskSelect) {
         projectSelect.addEventListener('change', function() {
             const projectId = this.value;
-            if (clientSelect) clientSelect.value = '';
+            if (projectId && clientSelect && clientSelect.tagName === 'SELECT') {
+                const opt = this.options[this.selectedIndex];
+                const cid = opt ? (opt.getAttribute('data-client-id') || '') : '';
+                if (cid && clientSelect.value !== cid) {
+                    clientSelect.value = cid;
+                }
+            }
             loadTasks(projectId);
         });
     }
 
-    // Client/project mutual exclusivity (when client select exists)
-    if (clientSelect) {
+    if (clientSelect && clientSelect.tagName === 'SELECT') {
+        // Pick a client first: the project picker unlocks once a client is chosen
+        if (projectSelect) {
+            const clientVal = clientSelect ? String(clientSelect.value || '') : '';
+            projectSelect.disabled = !clientVal;
+        }
         clientSelect.addEventListener('change', function() {
-            if (this.value) {
-                if (projectSelect) projectSelect.value = '';
-                if (taskSelect) {
-                    taskSelect.innerHTML = '<option value="">' + noTaskText + '</option>';
-                    taskSelect.disabled = true;
+            const cid = this.value;
+            if (projectSelect) {
+                if (!cid) {
+                    projectSelect.value = '';
+                    projectSelect.disabled = true;
+                    try { projectSelect.dispatchEvent(new Event('change', { bubbles: true })); } catch (_) {}
+                } else if (projectSelect.disabled) {
+                    projectSelect.disabled = false;
+                }
+                if (projectSelect.value) {
+                    const opt = projectSelect.options[projectSelect.selectedIndex];
+                    const projectClientId = opt ? (opt.getAttribute('data-client-id') || '') : '';
+                    if (cid && projectClientId && projectClientId !== cid) {
+                        projectSelect.value = '';
+                        try { projectSelect.dispatchEvent(new Event('change', { bubbles: true })); } catch (_) {}
+                    }
                 }
             }
         });
@@ -408,6 +465,7 @@ document.addEventListener('DOMContentLoaded', async function(){
         if (!projectId){
             taskSelect.innerHTML = '<option value="">' + noTaskText + '</option>';
             taskSelect.disabled = true;
+            if (window.ttEnhanceSearchableSelects) window.ttEnhanceSearchableSelects();
             return;
         }
         const url = buildTasksUrl(projectId);
@@ -430,6 +488,7 @@ document.addEventListener('DOMContentLoaded', async function(){
                 }
                 taskSelect.innerHTML = '<option value="">' + noTaskText + '</option>';
                 taskSelect.disabled = true;
+                if (window.ttEnhanceSearchableSelects) window.ttEnhanceSearchableSelects();
                 return;
             }
             if (!resp.ok) {
@@ -442,6 +501,7 @@ document.addEventListener('DOMContentLoaded', async function(){
                     }
                     taskSelect.innerHTML = '<option value="">' + noTaskText + '</option>';
                     taskSelect.disabled = true;
+                    if (window.ttEnhanceSearchableSelects) window.ttEnhanceSearchableSelects();
                     return;
                 }
                 throw new Error(failedToLoadTasksText + ' (HTTP ' + resp.status + ')');
@@ -453,6 +513,7 @@ document.addEventListener('DOMContentLoaded', async function(){
                 const opt = document.createElement('option');
                 opt.value = String(t.id);
                 opt.textContent = t.name;
+                opt.setAttribute('data-parent-id', String(projectId));
                 taskSelect.appendChild(opt);
             });
             const pre = taskSelect.getAttribute('data-selected-task-id');
@@ -462,9 +523,11 @@ document.addEventListener('DOMContentLoaded', async function(){
                 taskSelect.setAttribute('data-selected-task-id','');
             }
             taskSelect.disabled = false;
+            if (window.ttEnhanceSearchableSelects) window.ttEnhanceSearchableSelects();
         }catch(e){
             taskSelect.innerHTML = '<option value="">' + noTaskText + '</option>';
             taskSelect.disabled = true;
+            if (window.ttEnhanceSearchableSelects) window.ttEnhanceSearchableSelects();
             try {
                 const msg = e && e.message ? e.message : (failedToLoadTasksText || 'Failed to load tasks');
                 if (window.toastManager && typeof window.toastManager.error === 'function') {
@@ -713,12 +776,12 @@ document.addEventListener('DOMContentLoaded', async function(){
                 // Preselect project and task
                 if (tpl.project_id && projectSelect) {
                     projectSelect.value = String(tpl.project_id);
-                    if (clientSelect) clientSelect.value = '';
                     // Preselect task after load
                     if (taskSelect) {
                         taskSelect.setAttribute('data-selected-task-id', tpl.task_id ? String(tpl.task_id) : '');
                     }
                     await loadTasks(projectSelect.value);
+                    try { projectSelect.dispatchEvent(new Event('change', { bubbles: true })); } catch (_) {}
                 }
 
             // Notes, tags, billable
@@ -774,7 +837,7 @@ document.addEventListener('DOMContentLoaded', async function(){
 </script>
 
 <!-- Toast UI Editor: load only on desktop to avoid mobile freeze (Issue #557) -->
-<script>
+<script nonce="{{ csp_nonce() }}">
 document.addEventListener('DOMContentLoaded', function() {
     if (window.isMobileView) {
         window.mdEditor = null;
@@ -782,14 +845,14 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     var link1 = document.createElement('link');
     link1.rel = 'stylesheet';
-    link1.href = 'https://uicdn.toast.com/editor/latest/toastui-editor.min.css';
+    link1.href = '{{ url_for('static', filename='vendor/toastui/toastui-editor.css') }}';
     document.head.appendChild(link1);
     var link2 = document.createElement('link');
     link2.rel = 'stylesheet';
-    link2.href = 'https://uicdn.toast.com/editor/latest/theme/toastui-editor-dark.css';
+    link2.href = '{{ url_for('static', filename='vendor/toastui/theme/toastui-editor-dark.css') }}';
     document.head.appendChild(link2);
     var scriptEl = document.createElement('script');
-    scriptEl.src = 'https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js';
+    scriptEl.src = '{{ url_for('static', filename='vendor/toastui/toastui-editor.js') }}';
     scriptEl.onload = function initToastEditorManualEntry() {
     const notesInput = document.getElementById('notes');
     let mdEditor = null;
@@ -1133,7 +1196,7 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 
 {% if ai_enabled %}
-<script>
+<script nonce="{{ csp_nonce() }}">
 (function() {
     const container = document.getElementById('aiAutofillContainer');
     const button = document.getElementById('aiAutofillBtn');
@@ -1335,4 +1398,5 @@ document.addEventListener('DOMContentLoaded', function() {
 })();
 </script>
 {% endif %}
+<script src="{{ url_for('static', filename='notes-autocomplete.js') }}" defer></script>
 {% endblock %}

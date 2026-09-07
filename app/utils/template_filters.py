@@ -1,4 +1,7 @@
+from datetime import datetime
+
 from app.utils.timezone import (
+    convert_app_datetime_to_user,
     format_local_datetime,
     format_user_datetime,
     get_user_date_format,
@@ -139,11 +142,26 @@ def register_template_filters(app):
         """Format datetime using the authenticated user's timezone and format preferences.
 
         When *format_str* is omitted the user's date_format + time_format
-        preferences are applied automatically.
+        preferences are applied automatically. Accepts datetime objects or ISO strings.
         """
         if dt is None:
             return ""
+        if isinstance(dt, str):
+            try:
+                from datetime import datetime as dt_type
+
+                dt = dt_type.fromisoformat(dt)
+            except ValueError:
+                return dt
         return format_user_datetime(dt, format_str=format_str)
+
+    @app.template_filter("user_datetime_local")
+    def user_datetime_local_filter(dt):
+        """Format datetime for HTML datetime-local inputs (YYYY-MM-DDTHH:MM) in user timezone."""
+        if dt is None:
+            return ""
+        localized = convert_app_datetime_to_user(dt)
+        return localized.strftime("%Y-%m-%dT%H:%M")
 
     @app.template_filter("user_date")
     def user_date_filter(dt, format_str=None):
@@ -447,6 +465,38 @@ def register_template_filters(app):
         }
         symbol = currency_symbols.get((currency_code or "").upper(), currency_code or "EUR")
         return f"{symbol} {num_str}"
+
+    @app.template_filter("days_until")
+    def days_until_filter(d):
+        """Return signed day count from today to date d (negative = overdue)."""
+        if d is None:
+            return None
+        from datetime import date
+
+        if hasattr(d, "date"):
+            d = d.date()
+        return (d - date.today()).days
+
+    @app.template_filter("relative_due_label")
+    def relative_due_label_filter(d):
+        """Human-friendly due date label: Today, Tomorrow, In 3 days, Overdue."""
+        if d is None:
+            return ""
+        from datetime import date
+
+        if hasattr(d, "date"):
+            d = d.date()
+        delta = (d - date.today()).days
+        if delta < 0:
+            days = abs(delta)
+            return f"Overdue ({days} day{'s' if days != 1 else ''})"
+        if delta == 0:
+            return "Today"
+        if delta == 1:
+            return "Tomorrow"
+        if delta <= 7:
+            return f"In {delta} days"
+        return d.strftime("%Y-%m-%d")
 
     @app.template_filter("timeago")
     def timeago_filter(dt):

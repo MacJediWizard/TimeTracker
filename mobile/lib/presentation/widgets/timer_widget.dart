@@ -26,7 +26,8 @@ class _TimerWidgetState extends ConsumerState<TimerWidget> {
     super.initState();
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      if (ref.read(timerProvider).isActive) {
+      final state = ref.read(timerProvider);
+      if (state.isActive && !state.isPaused) {
         setState(() {});
       }
     });
@@ -48,17 +49,20 @@ class _TimerWidgetState extends ConsumerState<TimerWidget> {
     Project? project;
     Task? task;
     if (timerState.timer != null) {
-      try {
-        project = projectsState.projects.firstWhere(
-          (p) => p.id == timerState.timer!.projectId,
-        );
-      } catch (e) {
-        project = null;
+      final t = timerState.timer!;
+      if (t.projectId != null) {
+        try {
+          project = projectsState.projects.firstWhere(
+            (p) => p.id == t.projectId,
+          );
+        } catch (e) {
+          project = null;
+        }
       }
-      if (timerState.timer!.taskId != null) {
+      if (t.taskId != null) {
         try {
           task = tasksState.tasks.firstWhere(
-            (t) => t.id == timerState.timer!.taskId,
+            (tk) => tk.id == t.taskId,
           );
         } catch (e) {
           task = null;
@@ -71,7 +75,12 @@ class _TimerWidgetState extends ConsumerState<TimerWidget> {
 
     final isActive = timerState.isActive && timerState.timer != null;
     final elapsedText = isActive ? timerState.timer!.formattedElapsed : '00:00:00';
-    final projectName = project?.name ?? 'Unknown project';
+    final label = isActive
+        ? (project?.name ?? timerState.timer!.displayLabel)
+        : 'Unknown project';
+    final showClientChip = isActive &&
+        project == null &&
+        timerState.timer!.clientId != null;
 
     return Card(
       child: Padding(
@@ -115,13 +124,21 @@ class _TimerWidgetState extends ConsumerState<TimerWidget> {
                           runSpacing: AppSpacing.xs,
                           children: [
                             Chip(
-                              avatar: const Icon(Icons.folder_outlined, size: 18),
-                              label: Text(projectName),
+                              avatar: Icon(
+                                showClientChip ? Icons.business_outlined : Icons.folder_outlined,
+                                size: 18,
+                              ),
+                              label: Text(label),
                             ),
                             if (task != null)
                               Chip(
                                 avatar: const Icon(Icons.task_outlined, size: 18),
                                 label: Text(task.name),
+                              ),
+                            if (timerState.isPaused)
+                              Chip(
+                                avatar: Icon(Icons.pause_circle_outline, size: 18, color: cs.tertiary),
+                                label: const Text('Paused'),
                               ),
                           ],
                         ),
@@ -134,14 +151,38 @@ class _TimerWidgetState extends ConsumerState<TimerWidget> {
                           ),
                         ],
                         const SizedBox(height: AppSpacing.lg),
-                        FilledButton.icon(
-                          onPressed: timerState.isLoading ? null : () => ref.read(timerProvider.notifier).stopTimer(),
-                          icon: const Icon(Icons.stop),
-                          label: const Text('Stop'),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: cs.error,
-                            foregroundColor: cs.onError,
-                          ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: timerState.isLoading
+                                    ? null
+                                    : () {
+                                        if (timerState.isPaused) {
+                                          ref.read(timerProvider.notifier).resumeTimer();
+                                        } else {
+                                          ref.read(timerProvider.notifier).pauseTimer();
+                                        }
+                                      },
+                                icon: Icon(timerState.isPaused ? Icons.play_arrow : Icons.pause),
+                                label: Text(timerState.isPaused ? 'Resume' : 'Pause'),
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.sm),
+                            Expanded(
+                              child: FilledButton.icon(
+                                onPressed: timerState.isLoading
+                                    ? null
+                                    : () => ref.read(timerProvider.notifier).stopTimer(),
+                                icon: const Icon(Icons.stop),
+                                label: const Text('Stop'),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: cs.error,
+                                  foregroundColor: cs.onError,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     )

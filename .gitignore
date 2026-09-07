@@ -16,6 +16,10 @@ eggs/
 .eggs/
 lib/
 !mobile/lib/
+!browser-extension/lib/
+!browser-extension/lib/**
+!browser-extension/build/
+!browser-extension/build/**
 lib64/
 parts/
 sdist/
@@ -197,6 +201,11 @@ desktop/*.p12
 desktop/*.spc
 desktop/*.pvk
 
+# Android release signing (never commit)
+mobile/android/key.properties
+mobile/android/*.jks
+mobile/android/*.keystore
+
 # Docker Compose overrides (do not ignore auto files, only manually generated)
 # docker-compose.https.yml is now tracked
 
@@ -211,6 +220,12 @@ package-lock.json
 
 # Tailwind CSS build output (keep source in git)
 app/static/dist/
+
+# Vendored third-party browser libraries, produced by `npm run copy:vendor`
+# from node_modules (see scripts/copy-vendor.mjs). Build output, not source.
+app/static/vendor/
+# ...except grapesjs, which is committed rather than pulled from npm.
+!app/static/vendor/grapesjs/
 /logs
 logs/app.jsonl
 

@@ -46,7 +46,10 @@ class AttendanceNotifier extends StateNotifier<AttendanceState> {
     state = state.copyWith(loading: true, error: null);
     try {
       final client = await ref.read(apiClientProvider.future);
-      if (client == null) throw StateError('Not authenticated');
+      if (client == null) {
+        state = state.copyWith(loading: false, error: 'Not authenticated');
+        return;
+      }
       final data = await client.getAttendanceStatus();
       state = AttendanceState(
         workActive: data['work_active'] == true,
@@ -66,7 +69,10 @@ class AttendanceNotifier extends StateNotifier<AttendanceState> {
   Future<bool> startWorkday() async {
     try {
       final client = await ref.read(apiClientProvider.future);
-      if (client == null) throw StateError('Not authenticated');
+      if (client == null) {
+        state = state.copyWith(error: 'Not authenticated');
+        return false;
+      }
       await client.startWorkday();
       await refresh();
       return true;
@@ -79,7 +85,10 @@ class AttendanceNotifier extends StateNotifier<AttendanceState> {
   Future<bool> endWorkday() async {
     try {
       final client = await ref.read(apiClientProvider.future);
-      if (client == null) throw StateError('Not authenticated');
+      if (client == null) {
+        state = state.copyWith(error: 'Not authenticated');
+        return false;
+      }
       await client.endWorkday();
       await refresh();
       return true;
@@ -92,7 +101,10 @@ class AttendanceNotifier extends StateNotifier<AttendanceState> {
   Future<bool> startBreak() async {
     try {
       final client = await ref.read(apiClientProvider.future);
-      if (client == null) throw StateError('Not authenticated');
+      if (client == null) {
+        state = state.copyWith(error: 'Not authenticated');
+        return false;
+      }
       await client.startAttendanceBreak();
       await refresh();
       return true;
@@ -105,9 +117,51 @@ class AttendanceNotifier extends StateNotifier<AttendanceState> {
   Future<bool> endBreak() async {
     try {
       final client = await ref.read(apiClientProvider.future);
-      if (client == null) throw StateError('Not authenticated');
+      if (client == null) {
+        state = state.copyWith(error: 'Not authenticated');
+        return false;
+      }
       await client.endAttendanceBreak();
       await refresh();
+      return true;
+    } catch (e) {
+      state = state.copyWith(error: e.toString());
+      return false;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> loadHistory({int days = 30}) async {
+    final client = await ref.read(apiClientProvider.future);
+    if (client == null) return const [];
+    final data = await client.getAttendanceHistory(days: days);
+    final raw = data['records'] ?? data['history'] ?? data['days'] ?? data['items'] ?? const [];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  Future<bool> requestCorrection({
+    required int attendanceDayId,
+    required String reason,
+    String entityType = 'AddWorkPeriod',
+    int entityId = 0,
+    Map<String, dynamic>? correctedValues,
+  }) async {
+    try {
+      final client = await ref.read(apiClientProvider.future);
+      if (client == null) {
+        state = state.copyWith(error: 'Not authenticated');
+        return false;
+      }
+      await client.requestAttendanceCorrection(
+        attendanceDayId: attendanceDayId,
+        entityType: entityType,
+        entityId: entityId,
+        reason: reason,
+        correctedValues: correctedValues,
+      );
       return true;
     } catch (e) {
       state = state.copyWith(error: e.toString());

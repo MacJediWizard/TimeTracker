@@ -1,9 +1,11 @@
-const { app, BrowserWindow, ipcMain, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, globalShortcut, powerMonitor } = require('electron');
 const { createWindow } = require('./window');
 const { createTray, destroyTray } = require('./tray');
+const { createIdleMonitor } = require('./idle');
 const Store = require('electron-store');
 
 let store = null;
+let idleMonitor = null;
 
 // Parse command line arguments for server URL
 function parseCommandLineArgs(args = process.argv.slice(1)) {
@@ -108,9 +110,17 @@ function attachTray(win) {
     : null;
 }
 
+function notifyAppResume(reason = 'show') {
+  sendToMainWindow('app:resume', { reason, at: Date.now() });
+}
+
 function createMainWindow(options = {}) {
   mainWindow = createWindow(options);
   attachTray(mainWindow);
+
+  mainWindow.on('show', () => {
+    notifyAppResume('show');
+  });
 
   mainWindow.on('close', (event) => {
     const minimizeToTray = store ? store.get('minimize_to_tray', true) : true;
@@ -164,27 +174,51 @@ app.whenReady().then(() => {
   parseCommandLineArgs();
   createMainWindow({ showSplash: true });
   registerGlobalShortcuts();
+
+  idleMonitor = createIdleMonitor({
+    store,
+    sendToMainWindow,
+    focusMainWindow,
+  });
+  idleMonitor.start();
+
+  try {
+    powerMonitor.on('resume', () => {
+      notifyAppResume('power-resume');
+      if (idleMonitor) idleMonitor.confirmStillWorking();
+    });
+  } catch (e) {
+    console.warn('TimeTracker: could not register powerMonitor resume:', e.message);
+  }
   
   // Listen for timer status updates from renderer (via IPC)
   ipcMain.on('timer:status-update', (event, data) => {
+    if (idleMonitor) idleMonitor.onTimerStatusUpdate(data);
     const active = Boolean(data && data.active);
+    const paused = Boolean(data && data.paused);
     if (global.updateTrayMenu) {
-      global.updateTrayMenu(active);
+      global.updateTrayMenu(active, paused);
     }
     if (global.updateTrayTitle) {
-      global.updateTrayTitle(active ? (data.elapsedLabel || '') : '');
+      const title = active
+        ? `${paused ? '⏸ ' : ''}${data.elapsedLabel || ''}`
+        : '';
+      global.updateTrayTitle(title);
     }
-    if (updateTrayTooltip && active && data.timer) {
-      const startTime = new Date(data.timer.start_time);
-      const elapsed = Math.floor((new Date() - startTime) / 1000);
-      const hours = Math.floor(elapsed / 3600);
-      const minutes = Math.floor((elapsed % 3600) / 60);
-      const seconds = elapsed % 60;
-      const timeStr = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m ${seconds}s`;
-      updateTrayTooltip(`Timer: ${timeStr}`);
+    if (updateTrayTooltip && active) {
+      const label = data.elapsedLabel || 'running';
+      updateTrayTooltip(paused ? `Paused: ${label}` : `Timer: ${label}`);
     } else if (updateTrayTooltip) {
       updateTrayTooltip('TimeTracker');
     }
+  });
+
+  ipcMain.on('idle:still-working', () => {
+    if (idleMonitor) idleMonitor.confirmStillWorking();
+  });
+
+  ipcMain.on('idle:stop', () => {
+    if (idleMonitor) idleMonitor.confirmStop();
   });
   
   app.on('activate', () => {
@@ -206,6 +240,7 @@ app.on('second-instance', (event, argv) => {
 app.on('before-quit', () => {
   app.isQuitting = true;
   unregisterGlobalShortcuts();
+  if (idleMonitor) idleMonitor.stop();
 });
 
 app.on('window-all-closed', () => {

@@ -9,14 +9,71 @@
   }
 
   const CHECK_INTERVAL_MS = 60 * 1000; // 1 minute
-  const SNOOZE_MS = 5 * 60 * 1000; // 5 minutes
+  const GRACE_MS = 5 * 60 * 1000; // 5 minutes to answer "Still working?"
 
   let lastActivity = Date.now();
   let promptShown = false;
+  let graceTimerId = null;
+  let countdownIntervalId = null;
+  let lastHeartbeatSent = 0;
+  let hasActiveTimer = false;
+  let notificationPermissionRequested = false;
+  let pushEnsureAttempted = false;
+  let activeIdleNotification = null;
+  const HEARTBEAT_THROTTLE_MS = 60 * 1000;
+
+  function sendHeartbeat(){
+    if (!hasActiveTimer) return;
+    const now = Date.now();
+    if (now - lastHeartbeatSent < HEARTBEAT_THROTTLE_MS) return;
+    lastHeartbeatSent = now;
+    try {
+      fetch('/api/timer/heartbeat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+        __ttQuiet: true,
+      }).catch(function(){});
+    } catch(e) {}
+  }
+
+  /** Ask for Notification permission once a timer is running so idle alerts
+   *  can surface when the TimeTracker tab is not focused (Issue #722). */
+  function requestNotificationPermission(){
+    if (notificationPermissionRequested) return;
+    if (typeof Notification === 'undefined') return;
+    if (Notification.permission !== 'default') {
+      notificationPermissionRequested = true;
+      return;
+    }
+    notificationPermissionRequested = true;
+    try {
+      Notification.requestPermission().then(function(permission){
+        if (permission === 'granted' && window.__ttEnsurePushSubscription) {
+          try { window.__ttEnsurePushSubscription(); } catch(e) {}
+        }
+      }).catch(function(){});
+    } catch(e) {}
+  }
+
+  function closeIdleNotification(){
+    try {
+      if (activeIdleNotification) {
+        activeIdleNotification.close();
+        activeIdleNotification = null;
+      }
+    } catch(e) {
+      activeIdleNotification = null;
+    }
+  }
 
   function markActive(){
+    // While the "Still working?" grace prompt is open, only Yes/No (or the
+    // 5-minute auto-stop) may clear it — incidental mouse/keyboard activity
+    // must not silently dismiss or re-arm the timer.
+    if (promptShown) return;
     lastActivity = Date.now();
-    promptShown = false;
+    sendHeartbeat();
   }
 
   ['mousemove','keydown','scroll','click','touchstart','visibilitychange'].forEach(evt =>
@@ -25,17 +82,61 @@
 
   async function getTimer(){
     try {
-      const r = await fetch('/api/timer/status');
+      const r = await fetch('/api/timer/status', { __ttQuiet: true });
       if (!r.ok) return null; const j = await r.json();
       return j && j.active ? j.timer : null;
     } catch(e){ return null; }
   }
 
   function formatTime(d){
-    return window.formatUserTime ? window.formatUserTime(d) : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (window.formatUserTime) return window.formatUserTime(d);
+    var hour12 = window.userPrefs && window.userPrefs.timeFormat === '12h';
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: hour12 });
+  }
+
+  function formatCountdown(ms){
+    const totalSec = Math.max(0, Math.ceil(ms / 1000));
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return m + ':' + String(s).padStart(2, '0');
+  }
+
+  function clearGraceTimers(){
+    if (graceTimerId) { clearTimeout(graceTimerId); graceTimerId = null; }
+    if (countdownIntervalId) { clearInterval(countdownIntervalId); countdownIntervalId = null; }
+  }
+
+  async function refreshTimerUiAfterStop(){
+    try {
+      if (window.floatingTimerBar && typeof window.floatingTimerBar.fetchStatus === 'function') {
+        await window.floatingTimerBar.fetchStatus();
+      }
+      document.dispatchEvent(new CustomEvent('tt:timer-status-changed'));
+    } catch(e) {}
+  }
+
+  async function stopNow(){
+    clearGraceTimers();
+    closeIdleNotification();
+    promptShown = false;
+    try {
+      const r = await fetch('/api/timer/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, __ttQuiet: true });
+      if (r.ok){
+        const msg = window.i18n?.messages?.timerStopped || 'Timer stopped';
+        if (window.toastManager && window.toastManager.success) {
+          window.toastManager.success(msg, '', 5000);
+        } else if (window.toastManager && window.toastManager.show) {
+          window.toastManager.show({ message: msg, type: 'success', duration: 5000 });
+        }
+        await refreshTimerUiAfterStop();
+      }
+    } catch(e) {}
   }
 
   async function stopAt(ts){
+    clearGraceTimers();
+    closeIdleNotification();
+    promptShown = false;
     try {
       const r = await fetch('/api/timer/stop_at', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stop_time: new Date(ts).toISOString() }) });
       if (r.ok){
@@ -47,57 +148,251 @@
         } else {
           alert(msg);
         }
-        location.reload();
+        await refreshTimerUiAfterStop();
       }
+    } catch(e) {}
+  }
+
+  function snoozeIdlePrompt(toastEl){
+    clearGraceTimers();
+    closeIdleNotification();
+    lastActivity = Date.now();
+    promptShown = false;
+    lastHeartbeatSent = 0; // force immediate heartbeat so server clears idle_notified_at
+    sendHeartbeat();
+    try { if (toastEl) toastEl.remove(); } catch(e) {}
+  }
+
+  // ---------------------------------------------------------------------------
+  // Needs-review banner: idle grace expired unanswered. The timer keeps running
+  // on the server (idle_flagged_at); the user resolves it explicitly.
+  // ---------------------------------------------------------------------------
+  let reviewShownForTimerId = null;
+  let reviewBannerOpen = false;
+
+  async function resolveIdleReview(action){
+    try {
+      const r = await fetch('/api/timer/review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: action }),
+        __ttQuiet: true,
+      });
+      if (r.ok){
+        const j = await r.json().catch(function(){ return {}; });
+        const msg = j && j.stopped
+          ? (window.i18n?.messages?.timerStopped || 'Timer stopped')
+          : (window.i18n?.messages?.stillWorkingYes || 'Great — timer continues');
+        if (window.toastManager && window.toastManager.success) window.toastManager.success(msg, '', 5000);
+        await refreshTimerUiAfterStop();
+      }
+    } catch(e) {}
+  }
+
+  function showNeedsReviewBanner(){
+    if (reviewBannerOpen || promptShown) return;
+    reviewBannerOpen = true;
+    const trimLabel = window.i18n?.messages?.stillWorkingTrim || 'Trim idle time';
+    const stopLabel = window.i18n?.messages?.timerStopped || 'Stop timer now';
+    const contLabel = window.i18n?.messages?.stillWorkingYes || 'I am still working';
+    const msg = escapeHtml(
+      window.i18n?.messages?.idleNeedsReview ||
+      'We could not reach you while you were idle. Your timer kept running — trim it back to your last activity, stop it now, or keep working.'
+    );
+    buildReminderToast('blue', msg, [
+      { label: trimLabel, style: 'primary', onClick: function(){ resolveIdleReview('trim'); } },
+      { label: stopLabel, style: 'secondary', onClick: function(){ resolveIdleReview('keep'); } },
+      { label: contLabel, style: 'link', onClick: function(){ resolveIdleReview('continue'); } }
+    ], 0, function(){ reviewBannerOpen = false; });
+  }
+
+  function showNativeIdleNotification(stopTs, onStillWorking){
+    if (typeof Notification === 'undefined') return;
+    if (Notification.permission !== 'granted') return;
+    closeIdleNotification();
+    try {
+      const title = window.i18n?.messages?.stillWorkingTitle || 'Still working?';
+      const body = window.i18n?.messages?.stillWorkingPrompt ||
+        ('You seem inactive since ' + formatTime(new Date(stopTs)) +
+         '. Click to confirm you are still working, or the timer will be flagged for review.');
+      const n = new Notification(title, {
+        body: body,
+        tag: 'tt-still-working',
+        requireInteraction: true,
+        renotify: true,
+      });
+      activeIdleNotification = n;
+      n.onclick = function(ev){
+        try { if (ev && ev.preventDefault) ev.preventDefault(); } catch(e) {}
+        try { window.focus(); } catch(e) {}
+        closeIdleNotification();
+        if (typeof onStillWorking === 'function') onStillWorking();
+      };
+      n.onclose = function(){
+        if (activeIdleNotification === n) activeIdleNotification = null;
+      };
     } catch(e) {}
   }
 
   function showIdlePrompt(stopTs){
     if (promptShown) return; promptShown = true;
-    const msg = 'You seem inactive since ' + formatTime(new Date(stopTs)) + '. Stop the timer at that time?';
-    const stopLabel = window.i18n?.messages?.stop || 'Stop';
-    const snoozeLabel = window.i18n?.messages?.snooze || 'Snooze 5 min';
-    const dismissLabel = window.i18n?.messages?.dismiss || 'Dismiss';
+    clearGraceTimers();
+
+    const yesLabel = window.i18n?.messages?.stillWorkingYes || 'Yes, still working';
+    const noLabel = window.i18n?.messages?.stillWorkingNo || 'No, stop timer';
+    const trimLabel = window.i18n?.messages?.stillWorkingTrim || 'Keep until idle';
+    const baseMsg = window.i18n?.messages?.stillWorkingPrompt ||
+      ('Still working? You seem inactive since ' + formatTime(new Date(stopTs)) +
+       '. If you do not answer, the timer keeps running and is flagged for review.');
+
+    const deadline = Date.now() + GRACE_MS;
+
+    function buildMessage(){
+      return baseMsg + ' (' + formatCountdown(deadline - Date.now()) + ')';
+    }
+
+    function attachHandlers(toastEl, countdownEl){
+      const yesBtn = toastEl.querySelector('[data-act="yes"]');
+      const noBtn = toastEl.querySelector('[data-act="no"]');
+      const trimBtn = toastEl.querySelector('[data-act="trim"]');
+      if (yesBtn) yesBtn.addEventListener('click', function(){ snoozeIdlePrompt(toastEl); });
+      if (noBtn) noBtn.addEventListener('click', function(){ try { toastEl.remove(); } catch(e){}; stopNow(); });
+      if (trimBtn) trimBtn.addEventListener('click', function(){ try { toastEl.remove(); } catch(e){}; stopAt(stopTs); });
+
+      countdownIntervalId = setInterval(function(){
+        if (countdownEl) countdownEl.textContent = buildMessage();
+      }, 1000);
+
+      graceTimerId = setTimeout(function(){
+        // Unanswered prompt: the timer KEEPS RUNNING and is flagged for review
+        // (server sets idle_flagged_at). Never silently truncate recorded time.
+        clearGraceTimers();
+        closeIdleNotification();
+        promptShown = false;
+        try { toastEl.remove(); } catch(e){}
+        showNeedsReviewBanner(null);
+      }, GRACE_MS);
+    }
+
+    // Native OS notification so the prompt is visible from other tabs (#722)
+    showNativeIdleNotification(stopTs, function(){
+      const toastEl = document.querySelector('[data-tt-idle-prompt]');
+      snoozeIdlePrompt(toastEl);
+    });
 
     if (window.toastManager) {
       const toastEl = document.createElement('div');
+      toastEl.setAttribute('data-tt-idle-prompt', '1');
       toastEl.className = 'flex items-center gap-3 p-4 bg-amber-100 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded-lg shadow-lg pointer-events-auto';
-      toastEl.innerHTML = '<div class="flex-1 text-sm text-amber-900 dark:text-amber-100">' + msg + '</div>' +
-        '<div class="flex gap-2"><button class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-sm font-medium" data-act="stop">' + stopLabel + '</button>' +
-        '<button class="px-3 py-1.5 bg-amber-200 dark:bg-amber-800 hover:bg-amber-300 dark:hover:bg-amber-700 text-amber-900 dark:text-amber-100 rounded text-sm font-medium" data-act="snooze">' + snoozeLabel + '</button>' +
-        '<button class="px-3 py-1.5 text-amber-700 dark:text-amber-300 hover:underline text-sm" data-act="dismiss">' + dismissLabel + '</button></div>';
-      toastEl.querySelector('[data-act="stop"]').addEventListener('click', function(){ toastEl.remove(); stopAt(stopTs); });
-      toastEl.querySelector('[data-act="snooze"]').addEventListener('click', function(){ lastActivity = Date.now(); promptShown = false; toastEl.remove(); });
-      toastEl.querySelector('[data-act="dismiss"]').addEventListener('click', function(){ toastEl.remove(); });
+      toastEl.innerHTML =
+        '<div class="flex-1 text-sm text-amber-900 dark:text-amber-100" data-countdown>' + buildMessage() + '</div>' +
+        '<div class="flex gap-2 flex-wrap justify-end">' +
+          '<button class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-sm font-medium" data-act="yes">' + yesLabel + '</button>' +
+          '<button class="px-3 py-1.5 bg-amber-200 dark:bg-amber-800 hover:bg-amber-300 dark:hover:bg-amber-700 text-amber-900 dark:text-amber-100 rounded text-sm font-medium" data-act="trim">' + trimLabel + '</button>' +
+          '<button class="px-3 py-1.5 bg-amber-200 dark:bg-amber-800 hover:bg-amber-300 dark:hover:bg-amber-700 text-amber-900 dark:text-amber-100 rounded text-sm font-medium" data-act="no">' + noLabel + '</button>' +
+        '</div>';
       const container = document.getElementById('toast-notification-container') || document.getElementById('flash-messages-container') || document.body;
       container.appendChild(toastEl);
-      setTimeout(function(){ try { toastEl.remove(); } catch(e){}; promptShown = false; }, 60000);
+      attachHandlers(toastEl, toastEl.querySelector('[data-countdown]'));
       return;
     }
 
     const t = document.createElement('div');
+    t.setAttribute('data-tt-idle-prompt', '1');
     t.className = 'toast align-items-center text-white bg-warning border-0 fade show';
-    t.innerHTML = '<div class="d-flex"><div class="toast-body">' + msg + '</div><div class="d-flex gap-2 align-items-center me-2"><button class="btn btn-sm btn-light" data-act="stop">' + stopLabel + '</button><button class="btn btn-sm btn-outline-light" data-act="snooze">' + snoozeLabel + '</button><button class="btn btn-sm btn-outline-light" data-act="dismiss">' + dismissLabel + '</button></div></div>';
+    t.innerHTML =
+      '<div class="d-flex">' +
+        '<div class="toast-body" data-countdown>' + buildMessage() + '</div>' +
+        '<div class="d-flex gap-2 align-items-center me-2">' +
+          '<button class="btn btn-sm btn-light" data-act="yes">' + yesLabel + '</button>' +
+          '<button class="btn btn-sm btn-outline-light" data-act="trim">' + trimLabel + '</button>' +
+          '<button class="btn btn-sm btn-outline-light" data-act="no">' + noLabel + '</button>' +
+        '</div>' +
+      '</div>';
     const container = document.getElementById('toast-container') || document.body;
     container.appendChild(t);
-    t.querySelector('[data-act="stop"]').addEventListener('click', () => { t.remove(); stopAt(stopTs); });
-    t.querySelector('[data-act="snooze"]').addEventListener('click', () => { lastActivity = Date.now(); promptShown = false; t.remove(); });
-    t.querySelector('[data-act="dismiss"]').addEventListener('click', () => { t.remove(); });
-    setTimeout(() => { try { t.remove(); } catch(e){}; promptShown = false; }, 60000);
+    attachHandlers(t, t.querySelector('[data-countdown]'));
+  }
+
+  let longEntryNudgeShown = false;
+  let lastLongEntryTimerId = null;
+
+  function getLongEntryThresholdMs(){
+    const meta = document.querySelector('meta[name="long-entry-threshold-hours"]');
+    const hours = meta ? parseFloat(meta.getAttribute('content'), 10) : 8;
+    return (isNaN(hours) || hours < 1 ? 8 : Math.min(24, hours)) * 60 * 60 * 1000;
+  }
+
+  async function checkLongRunningTimer(active){
+    if (!active || !active.start_time) return;
+    if (active.id !== lastLongEntryTimerId) {
+      lastLongEntryTimerId = active.id;
+      longEntryNudgeShown = false;
+    }
+    if (longEntryNudgeShown || activeReminderToast) return;
+    const started = new Date(active.start_time).getTime();
+    if (isNaN(started)) return;
+    const runningMs = Date.now() - started;
+    if (runningMs < getLongEntryThresholdMs()) return;
+    longEntryNudgeShown = true;
+    const hours = (runningMs / (60 * 60 * 1000)).toFixed(1);
+    const msg = 'Your timer has been running for ' + hours + ' hours. Did you forget to stop it?';
+    buildReminderToast(
+      'amber',
+      escapeHtml(msg),
+      [
+        {
+          label: (window.i18n?.messages?.timerStopped || 'Stop timer'),
+          style: 'primary',
+          onClick: function(){ window.floatingTimerBar && window.floatingTimerBar.stopTimer(); }
+        },
+        {
+          label: (window.i18n?.messages?.dismiss || 'Dismiss'),
+          style: 'link',
+          onClick: function(){ longEntryNudgeShown = true; }
+        }
+      ],
+      0
+    );
   }
 
   async function tick(){
     const active = await getTimer();
+    hasActiveTimer = !!active;
     if (!active) return;
+    requestNotificationPermission();
+    // Make sure a Web Push subscription exists while a timer runs so the server
+    // can reach us with "Still working?" even when this tab is closed/hidden.
+    if (!pushEnsureAttempted && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      pushEnsureAttempted = true;
+      if (typeof window.__ttEnsurePushSubscription === 'function') {
+        try { window.__ttEnsurePushSubscription(); } catch(e) {}
+      }
+    }
+    // Send periodic heartbeat while tab is open (throttled to HEARTBEAT_THROTTLE_MS)
+    if (!promptShown) sendHeartbeat();
+    // Server flagged this timer for review (idle grace expired elsewhere): show banner.
+    if (active.needs_review){
+      if (reviewShownForTimerId !== active.id){
+        reviewShownForTimerId = active.id;
+        showNeedsReviewBanner();
+      }
+    } else if (reviewShownForTimerId === active.id) {
+      reviewShownForTimerId = null;
+    }
     const threshold = getIdleThresholdMs();
     const idleFor = Date.now() - lastActivity;
     if (idleFor >= threshold){
       const stopTs = Date.now() - idleFor;
       showIdlePrompt(stopTs);
     }
+    try { await checkLongRunningTimer(active); } catch(e) {}
     // Break reminder follows the active timer state; check on every tick.
     try { checkBreakNudge(active); } catch(e) {}
   }
+
+  // Prime active-timer flag soon after load so early activity can heartbeat.
+  setTimeout(function(){ tick(); }, 2000);
 
   setInterval(tick, CHECK_INTERVAL_MS);
 
@@ -138,7 +433,10 @@
       return lastNotificationsFetch.payload;
     }
     try {
-      const r = await fetch('/api/notifications', { headers: { 'Accept': 'application/json' } });
+      const r = await fetch('/api/notifications', {
+        headers: { 'Accept': 'application/json' },
+        __ttQuiet: true,
+      });
       if (!r.ok) return null;
       const j = await r.json();
       lastNotificationsFetch = { at: now, payload: j };
@@ -297,8 +595,10 @@
           label: (window.i18n?.messages?.pauseTimer || 'Pause timer'),
           style: 'primary',
           onClick: async function(){
-            try { await fetch('/timer/pause', { method: 'POST' }); } catch(e){}
-            location.reload();
+            try {
+              await fetch('/timer/pause', { method: 'POST', redirect: 'manual', credentials: 'same-origin' });
+              await refreshTimerUiAfterStop();
+            } catch(e){}
           }
         },
         {
@@ -319,6 +619,14 @@
 
   setInterval(checkNoTimerAndEndOfDayNudges, REMINDER_POLL_MS);
   setTimeout(checkNoTimerAndEndOfDayNudges, 5000);
+
+  // Allow Socket.IO / other modules to trigger the same prompt (Issue #722)
+  window.__ttShowIdlePrompt = function(stopTs){
+    showIdlePrompt(stopTs || (Date.now() - getIdleThresholdMs()));
+  };
+  window.__ttShowNeedsReview = function(){
+    showNeedsReviewBanner();
+  };
 })();
 
 

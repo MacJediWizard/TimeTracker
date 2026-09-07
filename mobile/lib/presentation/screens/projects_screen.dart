@@ -7,6 +7,7 @@ import '../providers/timer_provider.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/start_timer_sheet.dart';
+import 'project_tasks_screen.dart';
 
 class ProjectsScreen extends ConsumerStatefulWidget {
   const ProjectsScreen({super.key});
@@ -33,11 +34,28 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
   }
 
   List<Project> _filterProjects(List<Project> projects, String query) {
-    if (query.isEmpty) return projects;
-    return projects.where((project) {
+    if (query.isEmpty) {
+      return _sortByRecent(projects);
+    }
+    return _sortByRecent(projects.where((project) {
       return project.name.toLowerCase().contains(query.toLowerCase()) ||
           (project.client ?? '').toLowerCase().contains(query.toLowerCase());
-    }).toList();
+    }).toList());
+  }
+
+  // Most recently booked projects first so the last project worked on is at
+  // the top and can be restarted with a single tap.
+  List<Project> _sortByRecent(List<Project> projects) {
+    final sorted = [...projects];
+    sorted.sort((a, b) {
+      final aDate = a.lastUsedAt;
+      final bDate = b.lastUsedAt;
+      if (aDate == null && bDate == null) return a.name.compareTo(b.name);
+      if (aDate == null) return 1;
+      if (bDate == null) return -1;
+      return bDate.compareTo(aDate);
+    });
+    return sorted;
   }
 
   Future<void> _startTimerForProject(Project project) async {
@@ -155,7 +173,18 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
                                       icon: const Icon(Icons.play_arrow),
                                       tooltip: 'Start timer',
                                     ),
-                                    onTap: () => _startTimerForProject(project),
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => ProjectTasksScreen(
+                                            projectId: project.id,
+                                            projectName: project.name,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    onLongPress: () => _startTimerForProject(project),
                                   ),
                                 );
                               },

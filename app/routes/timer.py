@@ -34,6 +34,28 @@ def _parse_optional_int(value):
         return None
 
 
+def _active_users_for_admin():
+    """Active users for admin booking dropdown; empty for non-admins."""
+    if not current_user.is_admin:
+        return []
+    from app.repositories import UserRepository
+
+    return UserRepository().get_active_users()
+
+
+def _resolve_admin_booking_user_id(requested_user_id):
+    """Resolve user_id for creating time entries. Admins may book for another active user.
+
+    Returns (user_id, error_message). error_message is set when the requested user is invalid.
+    """
+    if not current_user.is_admin or not requested_user_id:
+        return current_user.id, None
+    target = User.query.filter_by(id=requested_user_id, is_active=True).first()
+    if not target:
+        return None, _("Selected user is invalid or inactive")
+    return target.id, None
+
+
 def _edit_timer_form_projects_tasks(timer, can_edit_schedule):
     """Active projects/tasks for the edit form; scoped for subcontractors."""
     from app.utils.scope_filter import apply_project_scope_to_model
@@ -52,13 +74,19 @@ def _edit_timer_form_projects_tasks(timer, can_edit_schedule):
 
 
 def _edit_timer_render_kwargs(timer, can_edit_schedule, show_source_dropdown):
+    from app.utils.scope_filter import get_active_clients_for_user
+
     projects, tasks = _edit_timer_form_projects_tasks(timer, can_edit_schedule)
+    clients = get_active_clients_for_user(current_user) if can_edit_schedule else []
     return {
         "timer": timer,
         "projects": projects,
         "tasks": tasks,
+        "clients": clients,
         "can_edit_schedule": can_edit_schedule,
         "show_source_dropdown": show_source_dropdown,
+        "can_create_clients": current_user.is_admin or current_user.has_permission("create_clients"),
+        "can_create_projects": current_user.is_admin or current_user.has_permission("create_projects"),
     }
 
 
@@ -823,6 +851,7 @@ def timer_status():
             "timer": {
                 "id": active_timer.id,
                 "project_name": active_timer.project.name if active_timer.project else None,
+                "project_id": active_timer.project_id,
                 "client_name": active_timer.client.name if active_timer.client else None,
                 "start_time": active_timer.start_time.isoformat(),
                 "current_duration": active_timer.current_duration_seconds,
@@ -832,6 +861,84 @@ def timer_status():
                 "break_seconds": getattr(active_timer, "break_seconds", None) or 0,
                 "break_formatted": getattr(active_timer, "break_formatted", "00:00:00"),
             },
+        }
+    )
+
+
+@timer_bp.route("/timer/switch-project", methods=["POST"])
+@login_required
+def switch_timer_project():
+    """Switch the active timer to a different project without stopping."""
+    active_timer = current_user.active_timer
+    if not active_timer:
+        if request.headers.get("Accept", "").find("application/json") >= 0 or request.is_json:
+            return jsonify({"success": False, "error": "no_active_timer"}), 400
+        flash(_("No active timer to switch"), "error")
+        return redirect(url_for("main.dashboard"))
+
+    payload = request.get_json(silent=True) or {}
+    new_project_id = _parse_optional_int(payload.get("project_id") or request.form.get("project_id"))
+    if not new_project_id:
+        return jsonify({"success": False, "error": "missing_project_id"}), 400
+
+    if new_project_id == active_timer.project_id:
+        return jsonify({"success": True, "timer": {"project_id": new_project_id}})
+
+    from app.utils.scope_filter import user_can_access_project
+
+    if not user_can_access_project(current_user, new_project_id):
+        return jsonify({"success": False, "error": "access_denied"}), 403
+
+    new_project = Project.query.filter_by(id=new_project_id, status="active").first()
+    if not new_project:
+        return jsonify({"success": False, "error": "invalid_project"}), 400
+
+    from app.services import TimeTrackingService
+
+    result = TimeTrackingService().update_entry(
+        entry_id=active_timer.id,
+        user_id=current_user.id,
+        is_admin=current_user.is_admin,
+        project_id=new_project_id,
+        task_id=None,
+        reason="Switched project from floating timer",
+    )
+    if not result.get("success"):
+        return jsonify({"success": False, "error": result.get("error", "update_failed")}), 400
+
+    try:
+        from app.utils.cache import invalidate_dashboard_for_user
+
+        invalidate_dashboard_for_user(current_user.id)
+    except Exception as e:
+        safe_log(current_app.logger, "debug", "Dashboard cache invalidation failed: %s", e)
+
+    return jsonify(
+        {
+            "success": True,
+            "timer": {
+                "id": active_timer.id,
+                "project_id": new_project_id,
+                "project_name": new_project.name,
+            },
+        }
+    )
+
+
+@timer_bp.route("/timer/projects")
+@login_required
+def timer_projects():
+    """Active projects for quick timer switch UI."""
+    from app.utils.scope_filter import apply_project_scope_to_model
+
+    projects_query = Project.query.filter_by(status="active").order_by(Project.name)
+    scope_p = apply_project_scope_to_model(Project, current_user)
+    if scope_p is not None:
+        projects_query = projects_query.filter(scope_p)
+    projects = projects_query.all()
+    return jsonify(
+        {
+            "projects": [{"id": p.id, "name": p.name} for p in projects],
         }
     )
 
@@ -884,31 +991,55 @@ def edit_timer(timer_id):
         if update_params["paid"] is False:
             update_params["invoice_number"] = None
 
-        # Admins and users with edit_own_time_entries can edit schedule, project, and task
+        # Admins and users with edit_own_time_entries can edit schedule, project/client, and task
         if can_edit_schedule:
-            # Update project if changed
-            new_project_id = request.form.get("project_id", type=int)
-            if new_project_id and new_project_id != timer.project_id:
-                new_project = Project.query.filter_by(id=new_project_id, status="active").first()
-                if new_project:
-                    update_params["project_id"] = new_project_id
-                else:
-                    flash(_("Invalid project selected"), "error")
-                    return render_template(
-                        "timer/edit_timer.html",
-                        **_edit_timer_render_kwargs(timer, can_edit_schedule, show_source_dropdown),
-                    )
-            else:
-                update_params["project_id"] = None  # Don't change if not provided
+            # Prefer project when both are submitted; otherwise allow client-only (Issue #728)
+            new_project_id = _parse_optional_int(request.form.get("project_id"))
+            new_client_id = _parse_optional_int(request.form.get("client_id"))
 
-            # Update task if changed
-            new_task_id = request.form.get("task_id", type=int)
+            if not new_project_id and not new_client_id:
+                flash(_("Select either a project or a client"), "error")
+                return render_template(
+                    "timer/edit_timer.html",
+                    **_edit_timer_render_kwargs(timer, can_edit_schedule, show_source_dropdown),
+                )
+
+            if new_project_id:
+                if new_project_id != timer.project_id:
+                    new_project = Project.query.filter_by(id=new_project_id, status="active").first()
+                    if new_project:
+                        update_params["project_id"] = new_project_id
+                    else:
+                        flash(_("Invalid project selected"), "error")
+                        return render_template(
+                            "timer/edit_timer.html",
+                            **_edit_timer_render_kwargs(timer, can_edit_schedule, show_source_dropdown),
+                        )
+            else:
+                # Client-only: set/change client (service clears project_id and task_id)
+                if new_client_id != timer.client_id or timer.project_id is not None:
+                    new_client = Client.query.filter_by(id=new_client_id, status="active").first()
+                    if new_client:
+                        update_params["client_id"] = new_client_id
+                    else:
+                        flash(_("Invalid client selected"), "error")
+                        return render_template(
+                            "timer/edit_timer.html",
+                            **_edit_timer_render_kwargs(timer, can_edit_schedule, show_source_dropdown),
+                        )
+
+            # Update task if changed (only valid with a project)
+            new_task_id = _parse_optional_int(request.form.get("task_id"))
+            effective_project_id = new_project_id
             if new_task_id != timer.task_id:
                 if new_task_id:
-                    new_task = Task.query.filter_by(
-                        id=new_task_id,
-                        project_id=update_params.get("project_id") or timer.project_id,
-                    ).first()
+                    if not effective_project_id:
+                        flash(_("Task can only be assigned to project-based time entries"), "error")
+                        return render_template(
+                            "timer/edit_timer.html",
+                            **_edit_timer_render_kwargs(timer, can_edit_schedule, show_source_dropdown),
+                        )
+                    new_task = Task.query.filter_by(id=new_task_id, project_id=effective_project_id).first()
                     if new_task:
                         update_params["task_id"] = new_task_id
                     else:
@@ -917,10 +1048,9 @@ def edit_timer(timer_id):
                             "timer/edit_timer.html",
                             **_edit_timer_render_kwargs(timer, can_edit_schedule, show_source_dropdown),
                         )
-                else:
-                    update_params["task_id"] = None
-            else:
-                update_params["task_id"] = None  # Don't change if not provided
+                elif new_project_id:
+                    # Clear task when "No Task" is selected (0 = clear sentinel in update_entry)
+                    update_params["task_id"] = 0
 
             # Update start and end times if provided
             start_date = request.form.get("start_date")
@@ -1348,6 +1478,26 @@ def manual_entry():
     active_clients = clients_query.all()
     only_one_client = len(active_clients) == 1
     single_client = active_clients[0] if only_one_client else None
+    users = _active_users_for_admin()
+    selected_user_id = current_user.id
+
+    def _manual_ctx(**extra):
+        ctx = {
+            "projects": active_projects,
+            "clients": active_clients,
+            "only_one_client": only_one_client,
+            "single_client": single_client,
+            "users": users,
+            "selected_user_id": selected_user_id,
+            "selected_project_id": project_id,
+            "selected_client_id": client_id,
+            "selected_task_id": task_id,
+            "template_data": template_data,
+            "can_create_clients": current_user.is_admin or current_user.has_permission("create_clients"),
+            "can_create_projects": current_user.is_admin or current_user.has_permission("create_projects"),
+        }
+        ctx.update(extra)
+        return ctx
 
     # Get project_id, client_id, and task_id from query parameters for pre-filling
     project_id = request.args.get("project_id", type=int)
@@ -1394,6 +1544,27 @@ def manual_entry():
         tags = sanitize_input(request.form.get("tags", "").strip(), max_length=500)
         billable = request.form.get("billable") == "on"
 
+        target_user_id, user_err = _resolve_admin_booking_user_id(request.form.get("user_id", type=int))
+        if user_err:
+            flash(user_err, "error")
+            return render_template(
+                "timer/manual_entry.html",
+                **_manual_ctx(
+                    selected_user_id=request.form.get("user_id", type=int) or current_user.id,
+                    prefill_notes=notes,
+                    prefill_tags=tags,
+                    prefill_billable=billable,
+                    prefill_start_date=start_date,
+                    prefill_start_time=start_time,
+                    prefill_end_date=end_date,
+                    prefill_end_time=end_time,
+                    prefill_worked_time=worked_time,
+                    prefill_worked_time_mode=worked_time_mode,
+                    prefill_break_time=break_time,
+                ),
+            )
+        selected_user_id = target_user_id
+
         def _parse_worked_time_minutes(raw: str):
             s = (raw or "").strip()
             if not s:
@@ -1415,58 +1586,28 @@ def manual_entry():
         has_all_times = bool(start_date and start_time and end_date and end_time)
         has_duration = worked_minutes is not None
 
+        prefill_kwargs = dict(
+            prefill_notes=notes,
+            prefill_tags=tags,
+            prefill_billable=billable,
+            prefill_start_date=start_date,
+            prefill_start_time=start_time,
+            prefill_end_date=end_date,
+            prefill_end_time=end_time,
+            prefill_worked_time=worked_time,
+            prefill_worked_time_mode=worked_time_mode,
+            prefill_break_time=break_time,
+        )
+
         # Validate time input: either full start/end, or duration-only.
         if not has_all_times and not has_duration:
-            flash(
-                _("Please provide either start/end date+time or a worked time duration (HH:MM)."),
-                "error",
-            )
-            return render_template(
-                "timer/manual_entry.html",
-                projects=active_projects,
-                clients=active_clients,
-                only_one_client=only_one_client,
-                single_client=single_client,
-                selected_project_id=project_id,
-                selected_client_id=client_id,
-                selected_task_id=task_id,
-                template_data=template_data,
-                prefill_notes=notes,
-                prefill_tags=tags,
-                prefill_billable=billable,
-                prefill_start_date=start_date,
-                prefill_start_time=start_time,
-                prefill_end_date=end_date,
-                prefill_end_time=end_time,
-                prefill_worked_time=worked_time,
-                prefill_worked_time_mode=worked_time_mode,
-                prefill_break_time=break_time,
-            )
+            flash(_("Please provide either start/end date+time or a worked time duration (HH:MM)."), "error")
+            return render_template("timer/manual_entry.html", **_manual_ctx(**prefill_kwargs))
 
         # Validate that either project or client is selected
         if not project_id and not client_id:
             flash(_("Either a project or a client must be selected"), "error")
-            return render_template(
-                "timer/manual_entry.html",
-                projects=active_projects,
-                clients=active_clients,
-                only_one_client=only_one_client,
-                single_client=single_client,
-                selected_project_id=project_id,
-                selected_client_id=client_id,
-                selected_task_id=task_id,
-                template_data=template_data,
-                prefill_notes=notes,
-                prefill_tags=tags,
-                prefill_billable=billable,
-                prefill_start_date=start_date,
-                prefill_start_time=start_time,
-                prefill_end_date=end_date,
-                prefill_end_time=end_time,
-                prefill_worked_time=worked_time,
-                prefill_worked_time_mode=worked_time_mode,
-                prefill_break_time=break_time,
-            )
+            return render_template("timer/manual_entry.html", **_manual_ctx(**prefill_kwargs))
 
         # If a locked client is configured, ensure selected project matches it.
         locked_id = get_locked_client_id()
@@ -1550,27 +1691,7 @@ def manual_entry():
                 duration_seconds_override = worked_minutes * 60
         except ValueError:
             flash(_("Invalid date/time format"), "error")
-            return render_template(
-                "timer/manual_entry.html",
-                projects=active_projects,
-                clients=active_clients,
-                only_one_client=only_one_client,
-                single_client=single_client,
-                selected_project_id=project_id,
-                selected_client_id=client_id,
-                selected_task_id=task_id,
-                template_data=template_data,
-                prefill_notes=notes,
-                prefill_tags=tags,
-                prefill_billable=billable,
-                prefill_start_date=start_date,
-                prefill_start_time=start_time,
-                prefill_end_date=end_date,
-                prefill_end_time=end_time,
-                prefill_worked_time=worked_time,
-                prefill_worked_time_mode=worked_time_mode,
-                prefill_break_time=break_time,
-            )
+            return render_template("timer/manual_entry.html", **_manual_ctx(**prefill_kwargs))
 
         # When user entered both duration override and break, net duration = duration - break
         if duration_seconds_override is not None and break_seconds is not None:
@@ -1579,32 +1700,14 @@ def manual_entry():
         # Validate time range
         if end_time_parsed <= start_time_parsed:
             flash(_("End time must be after start time"), "error")
-            return render_template(
-                "timer/manual_entry.html",
-                projects=active_projects,
-                clients=active_clients,
-                only_one_client=only_one_client,
-                single_client=single_client,
-                selected_project_id=project_id,
-                selected_client_id=client_id,
-                selected_task_id=task_id,
-                template_data=template_data,
-                prefill_notes=notes,
-                prefill_tags=tags,
-                prefill_billable=billable,
-                prefill_start_date=start_date,
-                prefill_start_time=start_time,
-                prefill_end_date=end_date,
-                prefill_end_time=end_time,
-                prefill_worked_time=worked_time,
-                prefill_worked_time_mode=worked_time_mode,
-                prefill_break_time=break_time,
-            )
+            return render_template("timer/manual_entry.html", **_manual_ctx(**prefill_kwargs))
+
+        # Rounding is applied once in TimeTrackingService.create_manual_entry
 
         # Use service to create entry (handles validation)
         time_tracking_service = TimeTrackingService()
         result = time_tracking_service.create_manual_entry(
-            user_id=current_user.id,
+            user_id=target_user_id,
             project_id=project_id,
             client_id=client_id,
             start_time=start_time_parsed,
@@ -1619,27 +1722,7 @@ def manual_entry():
 
         if not result.get("success"):
             flash(_(result.get("message", "Could not create manual entry")), "error")
-            return render_template(
-                "timer/manual_entry.html",
-                projects=active_projects,
-                clients=active_clients,
-                only_one_client=only_one_client,
-                single_client=single_client,
-                selected_project_id=project_id,
-                selected_client_id=client_id,
-                selected_task_id=task_id,
-                template_data=template_data,
-                prefill_notes=notes,
-                prefill_tags=tags,
-                prefill_billable=billable,
-                prefill_start_date=start_date,
-                prefill_start_time=start_time,
-                prefill_end_date=end_date,
-                prefill_end_time=end_time,
-                prefill_worked_time=worked_time,
-                prefill_worked_time_mode=worked_time_mode,
-                prefill_break_time=break_time,
-            )
+            return render_template("timer/manual_entry.html", **_manual_ctx(**prefill_kwargs))
 
         entry = result.get("entry")
 
@@ -1652,22 +1735,33 @@ def manual_entry():
             else:
                 target_name = "Unknown"
 
+            owner = entry.user.display_name if entry.user else None
             if task_id and entry.project:
                 task = Task.query.get(task_id)
                 task_name = task.name if task else "Unknown Task"
-                flash(
-                    _(
-                        "Manual entry created for %(project)s - %(task)s",
-                        project=target_name,
-                        task=task_name,
-                    ),
-                    "success",
-                )
+                if target_user_id != current_user.id and owner:
+                    flash(
+                        _(
+                            "Manual entry created for %(user)s on %(project)s - %(task)s",
+                            user=owner,
+                            project=target_name,
+                            task=task_name,
+                        ),
+                        "success",
+                    )
+                else:
+                    flash(
+                        _("Manual entry created for %(project)s - %(task)s", project=target_name, task=task_name),
+                        "success",
+                    )
             else:
-                flash(
-                    _("Manual entry created for %(target)s", target=target_name),
-                    "success",
-                )
+                if target_user_id != current_user.id and owner:
+                    flash(
+                        _("Manual entry created for %(user)s on %(target)s", user=owner, target=target_name),
+                        "success",
+                    )
+                else:
+                    flash(_("Manual entry created for %(target)s", target=target_name), "success")
 
             # Log activity
             entity_name = entry.project.name if entry.project else (entry.client.name if entry.client else "Unknown")
@@ -1689,6 +1783,7 @@ def manual_entry():
                     "task_name": task_name,
                     "duration_formatted": duration_formatted,
                     "duration_hours": entry.duration_hours if hasattr(entry, "duration_hours") else None,
+                    "target_user_id": target_user_id,
                 },
                 ip_address=request.remote_addr,
                 user_agent=request.headers.get("User-Agent"),
@@ -1698,10 +1793,11 @@ def manual_entry():
         try:
             from app.utils.cache import invalidate_dashboard_for_user
 
-            invalidate_dashboard_for_user(current_user.id)
+            invalidate_dashboard_for_user(target_user_id)
+            if target_user_id != current_user.id:
+                invalidate_dashboard_for_user(current_user.id)
             current_app.logger.debug(
-                "Invalidated dashboard cache for user %s after manual entry creation",
-                current_user.id,
+                "Invalidated dashboard cache for user %s after manual entry creation", target_user_id
             )
         except Exception as e:
             current_app.logger.warning("Failed to invalidate dashboard cache: %s", e)
@@ -1716,16 +1812,7 @@ def manual_entry():
 
     return render_template(
         "timer/manual_entry.html",
-        projects=active_projects,
-        clients=active_clients,
-        only_one_client=only_one_client,
-        single_client=single_client,
-        selected_project_id=project_id,
-        selected_client_id=client_id,
-        selected_task_id=task_id,
-        template_data=template_data,
-        prefill_start_date=today_str,
-        prefill_end_date=today_str,
+        **_manual_ctx(prefill_start_date=today_str, prefill_end_date=today_str),
     )
 
 
@@ -1760,6 +1847,8 @@ def manual_entry_for_project(project_id):
         clients=active_clients,
         only_one_client=only_one_client,
         single_client=single_client,
+        users=_active_users_for_admin(),
+        selected_user_id=current_user.id,
         selected_project_id=project_id,
         selected_task_id=task_id,
         prefill_start_date=today_str,
@@ -1771,8 +1860,37 @@ def manual_entry_for_project(project_id):
 @login_required
 def bulk_entry():
     """Create bulk time entries for multiple days"""
-    # Get active projects for dropdown
+    # Get active projects/clients for dropdown
     active_projects = Project.query.filter_by(status="active").order_by(Project.name).all()
+    active_clients = Client.query.filter_by(status="active").order_by(Client.name).all()
+    only_one_client = len(active_clients) == 1
+    single_client = active_clients[0] if only_one_client else None
+    users = _active_users_for_admin()
+    selected_user_id = current_user.id
+
+    def _bulk_ctx(**extra):
+        selected_client_id = extra.pop("selected_client_id", None)
+        if selected_client_id is None and project_id:
+            proj = next((p for p in active_projects if p.id == project_id), None)
+            if proj is None:
+                proj = Project.query.get(project_id)
+            if proj is not None:
+                selected_client_id = proj.client_id
+        ctx = {
+            "projects": active_projects,
+            "clients": active_clients,
+            "only_one_client": only_one_client,
+            "single_client": single_client,
+            "users": users,
+            "selected_user_id": selected_user_id,
+            "selected_project_id": project_id,
+            "selected_task_id": task_id,
+            "selected_client_id": selected_client_id,
+            "can_create_clients": current_user.is_admin or current_user.has_permission("create_clients"),
+            "can_create_projects": current_user.is_admin or current_user.has_permission("create_projects"),
+        }
+        ctx.update(extra)
+        return ctx
 
     # Get project_id and task_id from query parameters for pre-filling
     project_id = request.args.get("project_id", type=int)
@@ -1790,59 +1908,40 @@ def bulk_entry():
         billable = request.form.get("billable") == "on"
         skip_weekends = request.form.get("skip_weekends") == "on"
 
+        target_user_id, user_err = _resolve_admin_booking_user_id(request.form.get("user_id", type=int))
+        if user_err:
+            flash(user_err, "error")
+            return render_template(
+                "timer/bulk_entry.html",
+                **_bulk_ctx(selected_user_id=request.form.get("user_id", type=int) or current_user.id),
+            )
+        selected_user_id = target_user_id
+
         # Validate required fields
         if not all([project_id, start_date, end_date, start_time, end_time]):
             flash(_("All fields are required"), "error")
-            return render_template(
-                "timer/bulk_entry.html",
-                projects=active_projects,
-                selected_project_id=project_id,
-                selected_task_id=task_id,
-            )
+            return render_template("timer/bulk_entry.html", **_bulk_ctx())
 
         # Check if project exists
         project = _project_service.get_by_id(project_id)
         if not project:
             flash(_("Invalid project selected"), "error")
-            return render_template(
-                "timer/bulk_entry.html",
-                projects=active_projects,
-                selected_project_id=project_id,
-                selected_task_id=task_id,
-            )
+            return render_template("timer/bulk_entry.html", **_bulk_ctx())
 
         # Check if project is active (not archived or inactive)
         if project.status == "archived":
-            flash(
-                _("Cannot create time entries for an archived project. Please unarchive the project first."),
-                "error",
-            )
-            return render_template(
-                "timer/bulk_entry.html",
-                projects=active_projects,
-                selected_project_id=project_id,
-                selected_task_id=task_id,
-            )
+            flash(_("Cannot create time entries for an archived project. Please unarchive the project first."), "error")
+            return render_template("timer/bulk_entry.html", **_bulk_ctx())
         elif project.status != "active":
             flash(_("Cannot create time entries for an inactive project"), "error")
-            return render_template(
-                "timer/bulk_entry.html",
-                projects=active_projects,
-                selected_project_id=project_id,
-                selected_task_id=task_id,
-            )
+            return render_template("timer/bulk_entry.html", **_bulk_ctx())
 
         # Validate task if provided
         if task_id:
             task = Task.query.filter_by(id=task_id, project_id=project_id).first()
             if not task:
                 flash(_("Invalid task selected"), "error")
-                return render_template(
-                    "timer/bulk_entry.html",
-                    projects=active_projects,
-                    selected_project_id=project_id,
-                    selected_task_id=task_id,
-                )
+                return render_template("timer/bulk_entry.html", **_bulk_ctx())
 
         # Parse and validate dates
         try:
@@ -1853,30 +1952,15 @@ def bulk_entry():
 
             if end_date_obj < start_date_obj:
                 flash(_("End date must be after or equal to start date"), "error")
-                return render_template(
-                    "timer/bulk_entry.html",
-                    projects=active_projects,
-                    selected_project_id=project_id,
-                    selected_task_id=task_id,
-                )
+                return render_template("timer/bulk_entry.html", **_bulk_ctx())
 
             # Check for reasonable date range (max 31 days)
             if (end_date_obj - start_date_obj).days > 31:
                 flash(_("Date range cannot exceed 31 days"), "error")
-                return render_template(
-                    "timer/bulk_entry.html",
-                    projects=active_projects,
-                    selected_project_id=project_id,
-                    selected_task_id=task_id,
-                )
+                return render_template("timer/bulk_entry.html", **_bulk_ctx())
         except ValueError:
             flash(_("Invalid date format"), "error")
-            return render_template(
-                "timer/bulk_entry.html",
-                projects=active_projects,
-                selected_project_id=project_id,
-                selected_task_id=task_id,
-            )
+            return render_template("timer/bulk_entry.html", **_bulk_ctx())
 
         # Parse and validate times
         try:
@@ -1885,20 +1969,10 @@ def bulk_entry():
 
             if end_time_obj <= start_time_obj:
                 flash("End time must be after start time", "error")
-                return render_template(
-                    "timer/bulk_entry.html",
-                    projects=active_projects,
-                    selected_project_id=project_id,
-                    selected_task_id=task_id,
-                )
+                return render_template("timer/bulk_entry.html", **_bulk_ctx())
         except ValueError:
             flash(_("Invalid time format"), "error")
-            return render_template(
-                "timer/bulk_entry.html",
-                projects=active_projects,
-                selected_project_id=project_id,
-                selected_task_id=task_id,
-            )
+            return render_template("timer/bulk_entry.html", **_bulk_ctx())
 
         # Generate date range
         current_date = start_date_obj
@@ -1915,12 +1989,7 @@ def bulk_entry():
 
         if not dates_to_create:
             flash(_("No valid dates found in the selected range"), "error")
-            return render_template(
-                "timer/bulk_entry.html",
-                projects=active_projects,
-                selected_project_id=project_id,
-                selected_task_id=task_id,
-            )
+            return render_template("timer/bulk_entry.html", **_bulk_ctx())
 
         # Check for existing entries on the same dates/times
 
@@ -1932,7 +2001,7 @@ def bulk_entry():
 
             # Check for overlapping entries
             overlapping = TimeEntry.query.filter(
-                TimeEntry.user_id == current_user.id,
+                TimeEntry.user_id == target_user_id,
                 TimeEntry.start_time <= end_datetime,
                 TimeEntry.end_time >= start_datetime,
                 TimeEntry.end_time.isnot(None),
@@ -1946,12 +2015,7 @@ def bulk_entry():
                 f"Time entries already exist for these dates: {', '.join(existing_entries[:5])}{'...' if len(existing_entries) > 5 else ''}",
                 "error",
             )
-            return render_template(
-                "timer/bulk_entry.html",
-                projects=active_projects,
-                selected_project_id=project_id,
-                selected_task_id=task_id,
-            )
+            return render_template("timer/bulk_entry.html", **_bulk_ctx())
 
         # Create bulk entries
         created_entries = []
@@ -1962,7 +2026,7 @@ def bulk_entry():
                 end_datetime = datetime.combine(date_obj, end_time_obj)
 
                 entry = TimeEntry(
-                    user_id=current_user.id,
+                    user_id=target_user_id,
                     project_id=project_id,
                     task_id=task_id,
                     start_time=start_datetime,
@@ -1977,23 +2041,10 @@ def bulk_entry():
                 created_entries.append(entry)
 
             if not safe_commit(
-                "bulk_entry",
-                {
-                    "user_id": current_user.id,
-                    "project_id": project_id,
-                    "count": len(created_entries),
-                },
+                "bulk_entry", {"user_id": target_user_id, "project_id": project_id, "count": len(created_entries)}
             ):
-                flash(
-                    _("Could not create bulk entries due to a database error. Please check server logs."),
-                    "error",
-                )
-                return render_template(
-                    "timer/bulk_entry.html",
-                    projects=active_projects,
-                    selected_project_id=project_id,
-                    selected_task_id=task_id,
-                )
+                flash(_("Could not create bulk entries due to a database error. Please check server logs."), "error")
+                return render_template("timer/bulk_entry.html", **_bulk_ctx())
 
             task_name = ""
             if task_id:
@@ -2009,23 +2060,10 @@ def bulk_entry():
         except Exception as e:
             db.session.rollback()
             current_app.logger.exception("Error creating bulk entries: %s", e)
-            flash(
-                _("An error occurred while creating bulk entries. Please try again."),
-                "error",
-            )
-            return render_template(
-                "timer/bulk_entry.html",
-                projects=active_projects,
-                selected_project_id=project_id,
-                selected_task_id=task_id,
-            )
+            flash(_("An error occurred while creating bulk entries. Please try again."), "error")
+            return render_template("timer/bulk_entry.html", **_bulk_ctx())
 
-    return render_template(
-        "timer/bulk_entry.html",
-        projects=active_projects,
-        selected_project_id=project_id,
-        selected_task_id=task_id,
-    )
+    return render_template("timer/bulk_entry.html", **_bulk_ctx())
 
 
 @timer_bp.route("/timer")
@@ -2098,14 +2136,39 @@ def timer_page():
     from app.services.attendance_compliance_service import AttendanceComplianceService
     from app.services.workday_session_service import WorkdaySessionService
 
-    active_workday_session = WorkdaySessionService().get_active_session(current_user.id)
+    workday_svc = WorkdaySessionService()
+    active_workday_session = workday_svc.get_active_session(current_user.id)
     attendance_status = AttendanceComplianceService().get_status(current_user.id)
+    overnight_open_workday = workday_svc.is_overnight_open_session(active_workday_session)
+    suggested_leave_time = (
+        workday_svc.suggested_leave_datetime_local(active_workday_session, current_user)
+        if overnight_open_workday and active_workday_session
+        else None
+    )
+    auto_closed_workday_session = (
+        None if overnight_open_workday else workday_svc.get_unconfirmed_auto_closed_session(current_user.id)
+    )
+    auto_closed_suggested_leave_time = (
+        workday_svc.suggested_leave_datetime_local(auto_closed_workday_session, current_user)
+        if auto_closed_workday_session
+        else None
+    )
+    auto_closed_max_leave_time = (
+        auto_closed_workday_session.end_time.strftime("%Y-%m-%dT%H:%M")
+        if auto_closed_workday_session and auto_closed_workday_session.end_time
+        else None
+    )
 
     return render_template(
         "timer/timer_page.html",
         active_timer=active_timer,
         active_workday_session=active_workday_session,
         attendance_break_active=attendance_status.get("break_active", False),
+        overnight_open_workday=overnight_open_workday,
+        suggested_leave_time=suggested_leave_time,
+        auto_closed_workday_session=auto_closed_workday_session,
+        auto_closed_suggested_leave_time=auto_closed_suggested_leave_time,
+        auto_closed_max_leave_time=auto_closed_max_leave_time,
         projects=active_projects,
         clients=active_clients,
         only_one_client=only_one_client,
@@ -2137,14 +2200,25 @@ def bulk_entry_for_project(project_id):
         flash("Invalid project selected", "error")
         return redirect(url_for("main.dashboard"))
 
-    # Get active projects for dropdown
+    # Get active projects/clients for dropdown
     active_projects = Project.query.filter_by(status="active").order_by(Project.name).all()
+    active_clients = Client.query.filter_by(status="active").order_by(Client.name).all()
+    only_one_client = len(active_clients) == 1
+    single_client = active_clients[0] if only_one_client else None
 
     return render_template(
         "timer/bulk_entry.html",
         projects=active_projects,
+        clients=active_clients,
+        only_one_client=only_one_client,
+        single_client=single_client,
+        users=_active_users_for_admin(),
+        selected_user_id=current_user.id,
         selected_project_id=project_id,
         selected_task_id=task_id,
+        selected_client_id=project.client_id,
+        can_create_clients=current_user.is_admin or current_user.has_permission("create_clients"),
+        can_create_projects=current_user.is_admin or current_user.has_permission("create_projects"),
     )
 
 
@@ -2196,6 +2270,8 @@ def duplicate_timer(timer_id):
         clients=active_clients,
         only_one_client=only_one_client,
         single_client=single_client,
+        users=_active_users_for_admin(),
+        selected_user_id=timer.user_id if current_user.is_admin else current_user.id,
         selected_project_id=timer.project_id,
         selected_client_id=timer.client_id,
         selected_task_id=timer.task_id,

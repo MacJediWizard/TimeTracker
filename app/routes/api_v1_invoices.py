@@ -122,9 +122,23 @@ def update_invoice(invoice_id):
 
     data = request.get_json() or {}
     update_kwargs = {}
-    for field in ("client_name", "client_email", "client_address", "notes", "terms", "status", "currency_code"):
+    # API update dropped; also recompute totals after a tax_rate change (see below).
+    for field in (
+        "client_name",
+        "client_email",
+        "client_address",
+        "notes",
+        "terms",
+        "status",
+        "currency_code",
+        "buyer_reference",
+    ):
         if field in data:
             update_kwargs[field] = data[field]
+    if "issue_date" in data:
+        parsed = _parse_date(data["issue_date"])
+        if parsed:
+            update_kwargs["issue_date"] = parsed
     if "due_date" in data:
         parsed = _parse_date(data["due_date"])
         if parsed:
@@ -145,6 +159,21 @@ def update_invoice(invoice_id):
     result = invoice_service.update_invoice(invoice_id=invoice_id, user_id=g.api_user.id, **update_kwargs)
     if not result.get("success"):
         return error_response(result.get("message", "Could not update invoice"), status_code=400)
+    # InvoiceService.update_invoice — set them directly (same pattern as amount_paid below).
+    direct_dirty = False
+    if "buyer_reference" in data:
+        result["invoice"].buyer_reference = data["buyer_reference"]
+        direct_dirty = True
+    if "issue_date" in data:
+        parsed_issue = _parse_date(data["issue_date"])
+        if parsed_issue:
+            result["invoice"].issue_date = parsed_issue
+            direct_dirty = True
+    if "tax_rate" in update_kwargs:
+        result["invoice"].calculate_totals()
+        direct_dirty = True
+    if direct_dirty:
+        db.session.commit()
     if "amount_paid" in data:
         result["invoice"].update_payment_status()
         db.session.commit()
@@ -397,3 +426,38 @@ def reject_invoice_approval(approval_id):
             "invoice_approval": _approval_to_api_dict(result["approval"]),
         }
     )
+
+
+@api_v1_invoices_bp.route("/invoices/<int:invoice_id>/send-peppol", methods=["POST"])
+@require_api_token("write:invoices")
+def send_invoice_peppol_api(invoice_id):
+    """Token-auth Peppol send — API twin of the @login_required web route.
+
+    upstream exposes Peppol send only as a session web route;
+    agents need a token-scoped path. Mirrors send_invoice_peppol_route.
+    """
+    from app.models import Invoice
+    from app.services import PeppolService
+
+    invoice = Invoice.query.get(invoice_id)
+    if not invoice:
+        return error_response("Invoice not found", status_code=404)
+    try:
+        service = PeppolService()
+        success, tx, message = service.send_invoice(invoice=invoice, triggered_by_user_id=g.api_user.id)
+    except Exception as e:
+        current_app.logger.error(f"API Peppol send failed: {type(e).__name__}: {e}")
+        return error_response(f"Failed to send via Peppol: {e}", status_code=502)
+    payload = {
+        "success": success,
+        "message": message,
+        "peppol_tx_id": tx.id if tx else None,
+        # Whether the human-readable PDF travelled inside the UBL (BG-24). Reported
+        # rather than assumed: a PDF failure degrades to a send without it.
+        "pdf_attached": service.last_pdf_status == "embedded",
+        "pdf_status": service.last_pdf_status,
+        "attachment_filenames": service.last_attachment_filenames,
+    }
+    if success:
+        return jsonify(payload)
+    return jsonify(payload), 400

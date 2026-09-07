@@ -192,14 +192,23 @@
                         {% set consumed = (project.budget_consumed_amount or 0.0) %}
                         {% set total = project.budget_amount|float %}
                         {% set pct = (consumed / total * 100) if total > 0 else 0 %}
-                        {% if pct >= 90 %}
-                            {% set badge_classes = 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' %}
-                        {% elif pct >= 70 %}
-                            {% set badge_classes = 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' %}
-                        {% else %}
-                            {% set badge_classes = 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' %}
-                        {% endif %}
-                        <span class="px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap {{ badge_classes }}">{{ pct|round(0) }}%</span>
+                        <div class="min-w-[7rem]">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="text-xs font-semibold
+                                    {% if pct >= 90 %}text-red-600 dark:text-red-400
+                                    {% elif pct >= 70 %}text-amber-600 dark:text-amber-400
+                                    {% else %}text-green-600 dark:text-green-400{% endif %}">
+                                    {{ pct|round(0) }}%
+                                </span>
+                            </div>
+                            <div class="w-full h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                <div class="h-full rounded-full transition-all duration-300
+                                    {% if pct >= 90 %}bg-red-500
+                                    {% elif pct >= 70 %}bg-amber-500
+                                    {% else %}bg-green-500{% endif %}"
+                                    style="width: {{ [pct,100]|min }}%"></div>
+                            </div>
+                        </div>
                     {% else %}
                         <span class="text-text-muted-light dark:text-text-muted-dark">—</span>
                     {% endif %}
@@ -404,7 +413,7 @@
     transform: translateY(-2px);
 }
 </style>
-<script>
+<script nonce="{{ csp_nonce() }}">
 // View mode toggle
 function setViewMode(mode) {
     const listView = document.getElementById('listView');
@@ -441,7 +450,7 @@ document.addEventListener('DOMContentLoaded', function() {
 <form id="confirmBulkDelete-form" method="POST" action="{{ url_for('projects.bulk_delete_projects') }}" class="hidden">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 </form>
-<script>
+<script nonce="{{ csp_nonce() }}">
 function toggleFilterVisibility() {
     const filterBody = document.getElementById('filterBody');
     const toggleIcon = document.getElementById('filterToggleIcon');

@@ -7,6 +7,7 @@ from datetime import datetime, time, timedelta
 from flask import Blueprint, current_app, jsonify, make_response, request, send_from_directory, session
 from flask_babel import gettext as _
 from flask_login import current_user, login_required
+from flask_socketio import join_room, leave_room
 from sqlalchemy import func, or_
 from werkzeug.utils import secure_filename
 
@@ -481,15 +482,136 @@ def timer_status():
             "active": True,
             "timer": {
                 "id": active_timer.id,
-                "project_name": active_timer.project.name,
+                "project_name": active_timer.project.name if active_timer.project else None,
                 "project_id": active_timer.project_id,
                 "task_id": active_timer.task_id,
                 "start_time": active_timer.start_time.isoformat(),
                 "current_duration": active_timer.current_duration_seconds,
                 "duration_formatted": active_timer.duration_formatted,
+                "idle_notified": bool(active_timer.idle_notified_at),
+                "needs_review": bool(active_timer.idle_flagged_at),
+                "last_heartbeat_at": (
+                    active_timer.last_heartbeat_at.isoformat() if active_timer.last_heartbeat_at else None
+                ),
             },
         }
     )
+
+
+@api_bp.route("/api/timer/notes-suggestions")
+@login_required
+def timer_notes_suggestions():
+    """Recent time-entry notes for description autocomplete, optionally scoped to a project."""
+    project_id = request.args.get("project_id", type=int)
+    q = db.session.query(TimeEntry.notes).filter(
+        TimeEntry.user_id == current_user.id,
+        TimeEntry.notes.isnot(None),
+        TimeEntry.notes != "",
+    )
+    if project_id:
+        q = q.filter(TimeEntry.project_id == project_id)
+    rows = q.order_by(TimeEntry.updated_at.desc()).limit(150).all()
+
+    seen = set()
+    suggestions = []
+    for (notes,) in rows:
+        text = (notes or "").strip()
+        if not text:
+            continue
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        suggestions.append(text[:200])
+        if len(suggestions) >= 20:
+            break
+
+    return jsonify({"ok": True, "suggestions": suggestions})
+
+
+@api_bp.route("/api/timer/heartbeat", methods=["POST"])
+@login_required
+@deprecated_session_api("/api/v1/timer/heartbeat")
+def api_timer_heartbeat():
+    """Record activity for the active timer (idle timeout safety net)."""
+    active_timer = current_user.active_timer
+    if not active_timer:
+        return jsonify({"error": "No active timer"}), 400
+
+    try:
+        active_timer.record_heartbeat()
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.warning("Timer heartbeat failed: %s", e)
+        return jsonify({"error": "Failed to record heartbeat"}), 500
+
+    return ("", 204)
+
+
+@api_bp.route("/api/timer/review", methods=["POST"])
+@login_required
+@deprecated_session_api("/api/v1/timer/review")
+def api_timer_review():
+    """Resolve an idle needs-review flag on the active timer.
+
+    Body: {"action": "trim" | "keep" | "continue", "end_time": optional ISO (for "keep")}
+    - trim: stop credited to last activity + idle timeout (the old auto-stop behaviour)
+    - keep: stop at now (or the provided end_time)
+    - continue: clear the flag and keep the timer running (user is actually working)
+    """
+    from app.models import Settings
+    from app.models.time_entry import local_now
+    from app.utils.db import safe_commit
+
+    data = request.get_json(silent=True) or {}
+    action = (data.get("action") or "").strip().lower()
+    if action not in ("trim", "keep", "continue"):
+        return jsonify({"error": "action must be trim, keep or continue"}), 400
+
+    active_timer = current_user.active_timer
+    if not active_timer:
+        return jsonify({"error": "No active timer"}), 400
+
+    try:
+        if action == "continue":
+            active_timer.clear_idle_flags()
+            active_timer.last_heartbeat_at = local_now()
+            if not safe_commit("timer_review", {"user_id": current_user.id, "entry_id": active_timer.id}):
+                db.session.rollback()
+                return jsonify({"error": "Failed to resolve review"}), 500
+            return jsonify({"ok": True, "stopped": False})
+
+        if action == "keep" and data.get("end_time"):
+            try:
+                end_time = datetime.fromisoformat(data["end_time"])
+            except ValueError:
+                return jsonify({"error": "invalid end_time"}), 400
+            if end_time <= active_timer.start_time:
+                return jsonify({"error": "end_time must be after start_time"}), 400
+            active_timer.stop_timer(end_time=end_time)
+        elif action == "trim":
+            settings = Settings.get_settings()
+            idle_minutes = max(1, min(480, int(getattr(settings, "idle_timeout_minutes", 30) or 30)))
+            last_active = active_timer.last_heartbeat_at or active_timer.start_time
+            if getattr(last_active, "tzinfo", None) is not None:
+                last_active = last_active.replace(tzinfo=None)
+            stop_at = last_active + timedelta(minutes=idle_minutes)
+            now = local_now()
+            if stop_at > now:
+                stop_at = now
+            active_timer.stop_timer(end_time=stop_at)
+        else:  # keep at now
+            active_timer.stop_timer()
+
+        return jsonify({"ok": True, "stopped": True, "time_entry": active_timer.to_dict()})
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.warning("Timer review failed: %s", e)
+        return jsonify({"error": "Failed to resolve review"}), 500
 
 
 @api_bp.route("/api/tags")
@@ -620,8 +742,8 @@ def list_tasks_for_project():
     if status:
         query = query.filter_by(status=status)
     else:
-        # Default to tasks not done/cancelled
-        query = query.filter(Task.status.in_(["todo", "in_progress", "review"]))
+        # Default to tasks not done/cancelled (aligned with Task.is_active / custom Kanban keys)
+        query = query.filter(Task.status.notin_(["done", "cancelled"]))
 
     tasks = query.order_by(Task.priority.desc(), Task.name.asc()).all()
     return jsonify({"tasks": [{"id": t.id, "name": t.name, "status": t.status, "priority": t.priority} for t in tasks]})
@@ -2698,6 +2820,7 @@ def productivity_stats():
 
         summary = ProductivityService.get_summary(current_user)
         daily_breakdown = ProductivityService.get_daily_breakdown(current_user, days=14)
+        daily_project_breakdown = ProductivityService.get_daily_project_breakdown(current_user, days=14)
         streak = ProductivityService.get_streak(current_user)
         focus = ProductivityService.get_focus_stats(current_user, days=period)
         projects = ProductivityService.get_project_breakdown(current_user, days=period)
@@ -2709,6 +2832,7 @@ def productivity_stats():
             "period": period,
             "summary": summary,
             "daily_breakdown": daily_breakdown,
+            "daily_project_breakdown": daily_project_breakdown,
             "streak": streak,
             "focus": focus,
             "projects": projects,
@@ -2806,7 +2930,7 @@ def handle_join_user_room(data):
     """Join user-specific room for real-time updates"""
     user_id = data.get("user_id")
     if user_id and current_user.is_authenticated and current_user.id == user_id:
-        socketio.join_room(f"user_{user_id}")
+        join_room(f"user_{user_id}")
         print(f"User {user_id} joined room")
 
 
@@ -2815,7 +2939,7 @@ def handle_leave_user_room(data):
     """Leave user-specific room"""
     user_id = data.get("user_id")
     if user_id:
-        socketio.leave_room(f"user_{user_id}")
+        leave_room(f"user_{user_id}")
         print(f"User {user_id} left room")
 
 
@@ -2844,7 +2968,7 @@ def handle_join_client_room(data):
     if client_id is None:
         return
     room = f"client_portal_{client_id}"
-    socketio.join_room(room)
+    join_room(room)
 
 
 @socketio.on("leave_client_room")
@@ -2852,4 +2976,4 @@ def handle_leave_client_room(data):
     """Leave client portal room."""
     client_id = _get_client_id_from_session()
     if client_id is not None:
-        socketio.leave_room(f"client_portal_{client_id}")
+        leave_room(f"client_portal_{client_id}")

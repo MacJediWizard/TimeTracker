@@ -59,7 +59,11 @@ async function cacheFirst(request) {
     }
     return response;
   } catch (e) {
-    return new Response('Offline', { status: 503, statusText: 'Service Unavailable' });
+    // A cache miss that also fails the network is a genuine transport error.
+    // Return Response.error() (a real network-error response) rather than a
+    // synthetic 503 body: a JS/CSS loader would otherwise parse the JSON error
+    // as source and fail confusingly. Callers see fetch semantics for a failure.
+    return Response.error();
   }
 }
 
@@ -73,14 +77,6 @@ async function networkFirstDocument(request) {
       '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Offline</title></head><body><p>You are offline.</p></body></html>',
       { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
     );
-  }
-}
-
-async function networkFirstApi(request) {
-  try {
-    return await fetch(request);
-  } catch (_) {
-    return new Response('Offline', { status: 503, statusText: 'Service Unavailable' });
   }
 }
 
@@ -106,13 +102,20 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Health probes must hit the network directly (no synthetic 503 on transient fail).
+  if (path === '/api/health' || path === '/_health') {
+    return;
+  }
+
   if (path.startsWith('/static/')) {
     event.respondWith(cacheFirst(request));
     return;
   }
 
+  // Let the browser own every other /api/ request. Synthesizing an offline
+  // response here masks real transport errors and can feed a JSON body to a
+  // caller that expected a network failure; pass it through untouched.
   if (path.startsWith('/api/')) {
-    event.respondWith(networkFirstApi(request));
     return;
   }
 
@@ -120,4 +123,76 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(networkFirstDocument(request));
     return;
   }
+});
+
+// ---------------------------------------------------------------------------
+// Web Push (idle "Still working?" alerts + smart reminders)
+// ---------------------------------------------------------------------------
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (e) {
+    data = { title: 'TimeTracker', message: event.data ? event.data.text() : '' };
+  }
+  const isIdle = data.kind === 'idle_timeout' || data.kind === 'idle_needs_review';
+  const title = data.title || 'TimeTracker';
+  const options = {
+    body: data.message || '',
+    tag: 'tt-' + (data.kind || 'note'),
+    requireInteraction: isIdle,
+    renotify: true,
+    data: { url: (data.action && data.action.url) || '/', kind: data.kind || 'note' },
+  };
+  if (isIdle) {
+    options.actions = [
+      { action: 'still-working', title: 'I\'m still working' },
+      { action: 'stop-timer', title: 'Stop timer' },
+    ];
+  }
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const info = event.notification.data || {};
+  const base = info.url || '/';
+
+  const resolveReview = (action) =>
+    fetch('/api/timer/review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ action }),
+    }).catch(() => {});
+
+  if (info.kind === 'idle_timeout' || info.kind === 'idle_needs_review') {
+    if (event.action === 'still-working') {
+      event.waitUntil(resolveReview('continue'));
+      return;
+    }
+    if (event.action === 'stop-timer') {
+      event.waitUntil(resolveReview('keep'));
+      return;
+    }
+  }
+
+  event.waitUntil(
+    (async () => {
+      const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      for (const client of clientList) {
+        try {
+          const cUrl = new URL(client.url);
+          if (cUrl.origin === self.location.origin && 'focus' in client) {
+            await client.focus();
+            if ('navigate' in client) {
+              try { await client.navigate(base); } catch (e) {}
+            }
+            return;
+          }
+        } catch (e) {}
+      }
+      await self.clients.openWindow(base);
+    })()
+  );
 });

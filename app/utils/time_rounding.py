@@ -1,7 +1,8 @@
 """Time rounding utilities for per-user time entry rounding preferences"""
 
 import math
-from typing import Optional
+from datetime import datetime, timedelta
+from typing import Optional, Tuple
 
 
 def round_time_duration(duration_seconds: int, rounding_minutes: int = 1, rounding_method: str = "nearest") -> int:
@@ -11,25 +12,26 @@ def round_time_duration(duration_seconds: int, rounding_minutes: int = 1, roundi
     Args:
         duration_seconds: The raw duration in seconds
         rounding_minutes: The rounding interval in minutes (e.g., 1, 5, 10, 15, 30, 60)
-        rounding_method: The rounding method ('nearest', 'up', or 'down')
+        rounding_method: The rounding method ('nearest', 'up', 'down', or 'boundary')
 
     Returns:
         int: The rounded duration in seconds
 
-    Examples:
-        >>> round_time_duration(3720, 15, 'nearest')  # 62 minutes -> 60 minutes (1 hour)
-        3600
-        >>> round_time_duration(3720, 15, 'up')  # 62 minutes -> 75 minutes (1.25 hours)
-        4500
-        >>> round_time_duration(3720, 15, 'down')  # 62 minutes -> 60 minutes (1 hour)
-        3600
+    Notes:
+        ``boundary`` mode does not change duration by itself — callers should use
+        :func:`round_entry_boundaries` to adjust start/end timestamps and then
+        recompute duration. For safety, ``boundary`` here behaves like ``nearest``.
     """
     # If rounding is disabled (rounding_minutes = 1), return raw duration
     if rounding_minutes <= 1:
         return duration_seconds
 
     # Validate rounding method
-    if rounding_method not in ("nearest", "up", "down"):
+    if rounding_method not in ("nearest", "up", "down", "boundary"):
+        rounding_method = "nearest"
+
+    # Boundary is handled by round_entry_boundaries; fall through to nearest for duration-only
+    if rounding_method == "boundary":
         rounding_method = "nearest"
 
     # Convert to minutes for easier calculation
@@ -47,20 +49,143 @@ def round_time_duration(duration_seconds: int, rounding_minutes: int = 1, roundi
     return int(rounded_minutes * 60)
 
 
-def get_user_rounding_settings(user) -> dict:
+def round_entry_boundaries(
+    start_time: datetime, end_time: datetime, rounding_minutes: int
+) -> Tuple[datetime, datetime]:
     """
-    Get the time rounding settings for a user.
+    Round start_time DOWN and end_time UP to the nearest interval boundary.
 
-    Args:
-        user: A User model instance
+    Example (5-minute interval): 09:46–09:54 → 09:45–09:55.
 
-    Returns:
-        dict: Dictionary with 'enabled', 'minutes', and 'method' keys
+    Seconds and microseconds are cleared on both timestamps.
     """
+    if rounding_minutes <= 1 or start_time is None or end_time is None:
+        return start_time, end_time
+
+    def _floor_to_interval(dt: datetime) -> datetime:
+        total_minutes = dt.hour * 60 + dt.minute
+        floored = (total_minutes // rounding_minutes) * rounding_minutes
+        return dt.replace(
+            hour=floored // 60,
+            minute=floored % 60,
+            second=0,
+            microsecond=0,
+        )
+
+    def _ceil_to_interval(dt: datetime) -> datetime:
+        # If already exactly on a boundary (and no leftover seconds), keep it
+        if dt.second == 0 and dt.microsecond == 0 and (dt.hour * 60 + dt.minute) % rounding_minutes == 0:
+            return dt.replace(second=0, microsecond=0)
+        total_minutes = dt.hour * 60 + dt.minute
+        # Any leftover seconds push us into the next minute for ceiling purposes
+        if dt.second > 0 or dt.microsecond > 0:
+            total_minutes += 1
+        ceiled = math.ceil(total_minutes / rounding_minutes) * rounding_minutes
+        # Handle overflow past midnight by using timedelta from midnight of the day
+        day_start = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        return day_start + timedelta(minutes=ceiled)
+
+    rounded_start = _floor_to_interval(start_time)
+    rounded_end = _ceil_to_interval(end_time)
+
+    # Guarantee end is strictly after start (at least one interval)
+    if rounded_end <= rounded_start:
+        rounded_end = rounded_start + timedelta(minutes=rounding_minutes)
+
+    return rounded_start, rounded_end
+
+
+def apply_minimum_duration(duration_seconds: int, minimum_minutes: int) -> int:
+    """Raise duration to at least ``minimum_minutes`` (0 or less = no floor)."""
+    if not minimum_minutes or minimum_minutes <= 0:
+        return duration_seconds
+    minimum_seconds = int(minimum_minutes) * 60
+    return max(duration_seconds, minimum_seconds)
+
+
+_VALID_METHODS = ("nearest", "up", "down", "boundary")
+
+
+def _normalize_method(method) -> str:
+    if method not in _VALID_METHODS:
+        return "nearest"
+    return method
+
+
+def get_global_rounding_policy() -> dict:
+    """
+    Return the installation-wide rounding policy from Settings, with Config fallback.
+
+    ``enabled`` is always True at the global level; ``minutes <= 1`` is a no-op.
+    """
+    minutes = 1
+    method = "nearest"
+    minimum_minutes = 0
+    enforced = False
+    try:
+        from app.models.settings import Settings
+
+        settings = Settings.get_settings()
+        minutes = int(getattr(settings, "rounding_minutes", 1) or 1)
+        method = _normalize_method(getattr(settings, "rounding_method", "nearest"))
+        minimum_minutes = int(getattr(settings, "rounding_minimum_minutes", 0) or 0)
+        enforced = bool(getattr(settings, "rounding_enforce_global", False))
+    except Exception:
+        from app.config import Config
+
+        minutes = int(getattr(Config, "ROUNDING_MINUTES", 1) or 1)
+        method = _normalize_method(getattr(Config, "ROUNDING_METHOD", "nearest"))
+        minimum_minutes = int(getattr(Config, "ROUNDING_MINIMUM_MINUTES", 0) or 0)
+        enforced = bool(getattr(Config, "ROUNDING_ENFORCE_GLOBAL", False))
+
     return {
-        "enabled": getattr(user, "time_rounding_enabled", True),
-        "minutes": getattr(user, "time_rounding_minutes", 1),
-        "method": getattr(user, "time_rounding_method", "nearest"),
+        "enabled": True,
+        "minutes": minutes,
+        "method": method,
+        "minimum_minutes": minimum_minutes,
+        "enforced": enforced,
+    }
+
+
+def get_user_rounding_settings(user=None) -> dict:
+    """
+    Resolve the effective rounding settings for a user (or the global policy).
+
+    When ``Settings.rounding_enforce_global`` is True, the admin policy is used
+    verbatim and per-user fields are ignored.
+
+    Otherwise each field falls back to the global value when the user is still
+    at the default (interval 1, method ``nearest``, minimum 0).
+
+    ``user=None`` returns the global policy.
+    """
+    global_policy = get_global_rounding_policy()
+
+    if user is None or global_policy["enforced"]:
+        return {
+            "enabled": global_policy["enabled"],
+            "minutes": global_policy["minutes"],
+            "method": global_policy["method"],
+            "minimum_minutes": global_policy["minimum_minutes"],
+        }
+
+    enabled = getattr(user, "time_rounding_enabled", True)
+    minutes = getattr(user, "time_rounding_minutes", 1)
+    method = _normalize_method(getattr(user, "time_rounding_method", "nearest"))
+    minimum = getattr(user, "time_rounding_minimum_minutes", 0) or 0
+
+    if enabled and minutes <= 1:
+        minutes = global_policy["minutes"]
+    if method == "nearest":
+        method = global_policy["method"]
+    if not minimum:
+        minimum = global_policy["minimum_minutes"]
+
+    return {
+        "enabled": enabled,
+        "minutes": minutes,
+        "method": method,
+        "minimum_minutes": minimum,
     }
 
 
@@ -68,39 +193,27 @@ def apply_user_rounding(duration_seconds: int, user) -> int:
     """
     Apply a user's rounding preferences to a duration.
 
-    Args:
-        duration_seconds: The raw duration in seconds
-        user: A User model instance with rounding preferences
-
-    Returns:
-        int: The rounded duration in seconds
+    For ``boundary`` method this only applies the minimum-duration floor —
+    callers must adjust timestamps via :func:`round_entry_boundaries` first.
     """
     settings = get_user_rounding_settings(user)
 
-    # If rounding is disabled for this user, return raw duration
+    # If rounding is disabled for this user, still apply minimum duration
     if not settings["enabled"]:
-        return duration_seconds
+        return apply_minimum_duration(duration_seconds, settings["minimum_minutes"])
 
-    return round_time_duration(duration_seconds, settings["minutes"], settings["method"])
+    if settings["method"] == "boundary":
+        # Duration already reflects boundary-adjusted timestamps
+        rounded = duration_seconds
+    else:
+        rounded = round_time_duration(duration_seconds, settings["minutes"], settings["method"])
+
+    return apply_minimum_duration(rounded, settings["minimum_minutes"])
 
 
 def format_rounding_interval(minutes: int) -> str:
     """
     Format a rounding interval in minutes as a human-readable string.
-
-    Args:
-        minutes: The rounding interval in minutes
-
-    Returns:
-        str: A human-readable description
-
-    Examples:
-        >>> format_rounding_interval(1)
-        'No rounding (exact time)'
-        >>> format_rounding_interval(15)
-        '15 minutes'
-        >>> format_rounding_interval(60)
-        '1 hour'
     """
     if minutes <= 1:
         return "No rounding (exact time)"
@@ -114,14 +227,9 @@ def format_rounding_interval(minutes: int) -> str:
 
 
 def get_available_rounding_intervals() -> list:
-    """
-    Get the list of available rounding intervals.
-
-    Returns:
-        list: List of tuples (minutes, label)
-    """
+    """Get the list of available rounding intervals."""
     return [
-        (1, "No rounding (exact time)"),
+        (1, "No rounding / use system default"),
         (5, "5 minutes"),
         (10, "10 minutes"),
         (15, "15 minutes"),
@@ -131,14 +239,26 @@ def get_available_rounding_intervals() -> list:
 
 
 def get_available_rounding_methods() -> list:
-    """
-    Get the list of available rounding methods.
-
-    Returns:
-        list: List of tuples (method, label, description)
-    """
+    """Get the list of available rounding methods."""
     return [
-        ("nearest", "Round to nearest", "Round to the nearest interval (standard rounding)"),
-        ("up", "Always round up", "Always round up to the next interval (ceiling)"),
-        ("down", "Always round down", "Always round down to the previous interval (floor)"),
+        ("nearest", "Round to nearest", "Round the total duration to the nearest interval"),
+        ("up", "Always round up", "Always round the total duration up to the next interval"),
+        ("down", "Always round down", "Always round the total duration down to the previous interval"),
+        (
+            "boundary",
+            "Round start/end to boundaries",
+            "Round start time down and end time up to interval markers (e.g. 09:46–09:54 → 09:45–09:55)",
+        ),
+    ]
+
+
+def get_available_minimum_durations() -> list:
+    """Get the list of available minimum billable durations."""
+    return [
+        (0, "No minimum"),
+        (5, "5 minutes"),
+        (10, "10 minutes"),
+        (15, "15 minutes"),
+        (30, "30 minutes"),
+        (60, "1 hour"),
     ]

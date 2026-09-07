@@ -49,7 +49,7 @@ TimeTracker is built with modern, reliable technologies:
 - **Python 3.11+** — Core programming language
 - **Flask 3.0.0** — Web framework
 - **SQLAlchemy 2.0.23** — ORM and database toolkit
-- **Flask-SocketIO 5.3.6** — WebSocket support for real-time updates
+- **Flask-SocketIO 5.6.1** — WebSocket support for real-time updates
 - **Flask-Migrate 4.0.5** — Database migrations
 - **Flask-Babel 4.0.0** — Internationalization (i18n)
 
@@ -108,6 +108,66 @@ TimeTracker has been continuously enhanced with powerful new features! Here's wh
 ### ✨ Fork additions
 
 - 🪄 **SOW auto-provisioning (Claude API)** — Paste or upload a Statement of Work (text/PDF/DOCX); Claude parses it into a structured plan that you review and edit, then provisions a **Client, Project, Kanban board, and Tasks** in one step. Includes a dedicated Claude provider in **Settings → Claude / SOW** with selectable model and effort. ([docs](docs/features/SOW_AUTO_PROVISIONING.md))
+
+### ✨ Highlights of v5.13.4
+
+**Patch (5.13.4):** **Alembic multiple heads** — merge migration `184_merge_183_heads` rejoins the parallel `183` device-token and idle needs-review branches so `flask db upgrade` has a single head. See [CHANGELOG.md](CHANGELOG.md#5134---2026-09-04).
+
+### ✨ Highlights of v5.13.3
+
+**Patch (5.13.3):** **Tracked hours on tasks (#745)** — list, detail, and CSV export show aggregated tracked time. **Idle needs-review** — unanswered idle timers are flagged for review (banner, push, API) instead of lost. **Idle timeout (#722)** — extension heartbeats and mobile FCM wake-up keep Still working? reliable. **Graceful offline (#746)** — JSON offline API responses, toast dedupe, and chat backoff when the backend drops. **Onboarding tour** — skip confirmation stays dismissible. **Datetime format** — workday and CRM fields honor the chosen time format via Flatpickr. See [CHANGELOG.md](CHANGELOG.md#5133---2026-09-02).
+
+### ✨ Highlights of v5.13.2
+
+**Patch (5.13.2):** **Linear setup wizard** — guided API-key setup matching other integrations. **Web manual entry (#728)** — cascading client → project → task pickers with inline create and dark-mode comboboxes. **Mobile start timer** — unified searchable pickers, project-first with client auto-fill, crash/selection/flicker fixes. **Android signing** — stable CI keystore for release APKs. See [CHANGELOG.md](CHANGELOG.md#5132---2026-08-27).
+
+### ✨ Highlights of v5.13.1
+
+**Patch (5.13.1):** **Projects by last used (#738)** — pickers and API lists surface recent work first. **Idle timeout (#722)** — auto-stop records the configured duration and surfaces Still working? on web, extension, and mobile. **Picker fixes (#728)** — blur resets typed-but-unselected text, Create project requires a client, translated Create labels. **Extension release zip** — Chromium extension package attached to GitHub Releases. See [CHANGELOG.md](CHANGELOG.md#5131---2026-08-26).
+
+### ✨ Highlights of v5.13.0
+
+**Minor (5.13.0):** **Daily progress widget** — compact strip on the dashboard with today's hours vs target and a quick-start timer. **Quick-log & tasks due today** — one-click log form and due-today task widget without leaving home. **Timer long-run warning** — alert when a timer exceeds the configurable threshold, with workday progress. **Navigation declutter** — sidebar and mobile More drawer reorganised with key destinations promoted. **Recurring tasks list** — status filters, pause/resume/run-now inline actions. **Floating timer bar & idle-stop** — redesigned compact bar and smoother idle boundary. **Fixes** — productivity heatmap, invoice tax rate/currency resolution, swallowed errors (#736), timer heartbeats (#736), portal admin template, recurring tasks CRUD. See [CHANGELOG.md](CHANGELOG.md#5130---2026-08-23).
+
+### ✨ Highlights of v5.12.0
+
+**Minor (5.12.0):** **Task dependencies & Gantt links** — blockers between tasks with arrows on the chart. **Milestones** — named due-date checkpoints and project timeline. **Utilization report** — billable vs total hours by user or project. **Expense approvals** — manager queue with bulk-approve and pending badge. **Quote signatures** — in-portal sign/accept with PDF embed. **Resource scheduling** — weekly capacity swimlanes. **Project health** — budget burn, completion, milestones, and overdue work in one view. **Fixes** — dashboard Start Timer modal (#734), PostgreSQL approval status enum case. See [CHANGELOG.md](CHANGELOG.md#5120---2026-08-20).
+
+### ✨ Highlights of v5.11.5
+
+**Patch (5.11.5):** **Global rounding policy (#725)** — admin interval, method, and minimum with enforce-for-all; unset personal fields inherit defaults. **Client-only timers (#728)** — API, extension, mobile, and desktop can start against a client without a project; remaining timer pages use searchable comboboxes. **Fixes** — boundary rounding on duration overrides, email absolute links / `APP_BASE_URL`, kiosk stop duration, quote approval and client-portal quote emails, dead Jinja blocks, desktop manual-entry payload, extension idle notifications, Android Timer crash under R8 (#731). See [CHANGELOG.md](CHANGELOG.md#5115---2026-08-15).
+
+### ✨ Highlights of v5.11.4
+
+**Patch (5.11.4):** **Boundary rounding & minimum duration (#725)** — start/end boundary rounding, per-user minimum billable time, and admin interval fallback; rounding applied on remaining write paths. **Searchable client/project combobox (#728)** — filterable selects with inline create; client-only edits preserved. **Idle heartbeats (#722)** — server-side auto-stop and “Still working?” across web, extension, mobile, and desktop. **Fixes** — Approve button submit (#709), extension picker races (#700), idle-tab 503 toasts (#703), client API joinedload (#716). See [CHANGELOG.md](CHANGELOG.md#5114---2026-08-13).
+
+### ✨ Highlights of v5.11.3
+
+**Patch (5.11.3):** **Manual-entry rounding (#725)** — replaced deprecated `User.query.get` with `db.session.get` when resolving the rounding user, silencing the SQLAlchemy 2.x deprecation warning. Added integration tests for the start-timer 409 payload (#700), `calculate_duration` rounding, and explicit manual-entry duration rounding. See [CHANGELOG.md](CHANGELOG.md#5113---2026-08-11).
+
+### ✨ Highlights of v5.11.2
+
+**Patch (5.11.2):** **Attendance Approve (#709)** — correction review no longer treats a missing decision as Reject. **Extension task picker (#700)** — custom Kanban and on-hold tasks appear in the timer dropdown. **Idle auto-stop** — unanswered “Still working?” prompts stop the timer after a grace window. See [CHANGELOG.md](CHANGELOG.md#5112---2026-08-09).
+
+### ✨ Highlights of v5.11.1
+
+**Patch (5.11.1):** **Client version sync** — Electron desktop (`desktop/package.json`) and Flutter mobile (`mobile/pubspec.yaml`) bumped to match the webapp at **5.11.1**. See [CHANGELOG.md](CHANGELOG.md#5111---2026-08-06).
+
+### ✨ Highlights of v5.11.0
+
+**Minor (5.11.0):** **Auto-deduct break on clock-out** — admins can opt in to automatically inserting a meal break when a workday exceeds a configurable threshold, with smart deficit fill for partial manual breaks. **Mobile timer notification (#714)** — persistent Android/iOS notification shows project, task, and elapsed time while a timer runs. **Fixes** — overnight totals clipped (#706), extension task picker (#700), client projects API error (#716), OpenAPI Tasks/Clients endpoints. See [CHANGELOG.md](CHANGELOG.md#5110---2026-08-06).
+
+### ✨ Highlights of v5.10.1
+
+**Patch (5.10.1):** **Overnight clock-out (#706)** — prompt to correct leave time when a workday stays open past midnight. **Fixes** — Chrome extension connect (#700), compact time typing / edit date format (#704), dashboard “At work today” double-count. See [CHANGELOG.md](CHANGELOG.md#5101---2026-07-25).
+
+### ✨ Highlights of v5.10.0
+
+**Minor (5.10.0):** **Admins can book time for others (#701)** — manual, bulk, and API v1 creates. **Chromium timer extension (#700)** — toolbar start/stop with badge. **Self-hosted frontend** — vendored assets, esbuild pipeline, air-gapped-friendly CSP. **Fixes** — idle connection recovery (#702/#703), 24h time preference (#704), sidebar expand (#699). See [CHANGELOG.md](CHANGELOG.md#5100---2026-07-23).
+
+### ✨ Highlights of v5.9.4
+
+**Patch (5.9.4):** **Desktop & mobile catch-up** — timer pause/resume, workday/attendance, reports, Kanban, CRM, and deeper finance flows brought in line with the webapp. **API** — issues endpoints on REST API v1 for clients. See [CHANGELOG.md](CHANGELOG.md#594---2026-07-23).
 ### ✨ Highlights of v5.9.3
 
 **Patch (5.9.3):** **Kanban** — per-column WIP limits, per-task checklists, and saveable board templates. **Comments** — @mention notifications for teammates. **Calendar** — holiday overlays in day/week views and fixed workday history dates. **Client portal** — native portal sessions stay in the portal UI ([#677](https://github.com/DRYTRIX/TimeTracker/issues/677)). **CI** — automated Docker Hub publishing with resilient credential handling. See [CHANGELOG.md](CHANGELOG.md#593---2026-07-16).

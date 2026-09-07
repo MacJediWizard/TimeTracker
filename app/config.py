@@ -277,6 +277,11 @@ class Config:
     PERF_QUERY_PROFILE = os.getenv("PERF_QUERY_PROFILE", "false").lower() == "true"
 
     # Rate limiting
+    # Master switch honoured by Flask-Limiter: when false, every @limiter.limit
+    # decorator (including per-route ones such as the login throttle) is disabled.
+    # Defaults to true so production behaviour is unchanged; test/CI harnesses that
+    # log in many times in quick succession set RATELIMIT_ENABLED=false.
+    RATELIMIT_ENABLED = os.getenv("RATELIMIT_ENABLED", "true").lower() == "true"
     RATELIMIT_DEFAULT = os.getenv("RATELIMIT_DEFAULT", "")  # e.g., "200 per day;50 per hour"
     RATELIMIT_STORAGE_URI = os.getenv("RATELIMIT_STORAGE_URI", "memory://")
 

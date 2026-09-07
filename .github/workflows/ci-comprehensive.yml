@@ -384,10 +384,16 @@ jobs:
           # / ADMIN_PASSWORD are not read, so the container creates the account
           # without a password. The Playwright login helper sets that password on
           # first login using E2E_PASSWORD (see "Run Playwright suite" below).
+          # The Playwright suite logs in ~26 times in quick succession from one
+          # host; the login route is throttled to 5/min, so disable rate limiting
+          # for the E2E container. This is test-harness config (like WTF_CSRF in
+          # unit tests) and does not touch any behaviour the CSP/a11y/asset/offline
+          # specs assert; RATELIMIT_ENABLED defaults to true in production.
           docker run -d --name timetracker-e2e --network host \
             -e SECRET_KEY=ci-e2e-secret-key-not-for-production \
             -e DATABASE_URL=postgresql://timetracker:timetracker@localhost:5432/timetracker \
             -e ADMIN_USERNAMES=e2eadmin \
+            -e RATELIMIT_ENABLED=false \
             -e TZ=UTC \
             timetracker-e2e:ci
 

@@ -157,6 +157,31 @@
         return hours12 + ':' + mm + ' ' + meridiem;
     }
 
+    /**
+     * Give Flatpickr's visible altInput an accessible name. The altInput does not
+     * inherit the source input's id, so any <label for=...> stays bound to the now
+     * hidden original and the visible control reads as unlabelled (axe: label /
+     * select-name, critical). Resolve a name from the source input and copy it.
+     * @param {HTMLElement} el       the original (source) input
+     * @param {object} instance      the Flatpickr instance (has .altInput)
+     */
+    function labelAltInput(el, instance) {
+        if (!instance || !instance.altInput) return;
+        if (instance.altInput.getAttribute('aria-label')) return;
+        var name = el.getAttribute('aria-label');
+        if (!name && el.id) {
+            var lbl = document.querySelector('label[for="' + el.id + '"]');
+            if (lbl) name = (lbl.textContent || '').trim();
+        }
+        if (!name) name = el.getAttribute('placeholder');
+        if (!name) {
+            var raw = el.getAttribute('name') || el.id || '';
+            name = raw.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').trim();
+            if (name) name = name.charAt(0).toUpperCase() + name.slice(1);
+        }
+        if (name) instance.altInput.setAttribute('aria-label', name);
+    }
+
     function initUserDateInputs() {
         if (typeof flatpickr === 'undefined') return;
         var inputs = document.querySelectorAll('input.user-date-input[type="date"]');
@@ -172,7 +197,10 @@
                 altFormat: altFormat,
                 altInputClass: altClass,
                 allowInput: false,
-                locale: { firstDayOfWeek: firstDay }
+                locale: { firstDayOfWeek: firstDay },
+                onReady: function (_selectedDates, _dateStr, instance) {
+                    labelAltInput(el, instance);
+                }
             });
         });
     }
@@ -202,6 +230,7 @@
                     if (instance.input) {
                         instance.input.style.display = 'none';
                     }
+                    labelAltInput(el, instance);
                 }
             });
         });
@@ -245,6 +274,7 @@
                     if (instance.input) {
                         instance.input.style.display = 'none';
                     }
+                    labelAltInput(el, instance);
                 }
             });
         });

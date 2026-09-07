@@ -11,6 +11,7 @@
     let lastDashboardUpdateAt = 0;
     let weekComparisonChart = null;
     let weekComparisonHasRendered = false;
+    let weekComparisonAwaitingChart = false;
     const MIN_UPDATE_INTERVAL_MS = 5000; // Throttle: no updates more than once per 5s
 
     // Initialize on DOM ready
@@ -493,8 +494,24 @@
                 return Number(row.hours) || 0;
             });
 
-            if (typeof Chart === 'undefined' || !canvas) {
-                throw new Error('Chart.js unavailable');
+            if (!canvas) {
+                throw new Error('week-comparison canvas missing');
+            }
+
+            // Chart.js is loaded on demand once a below-the-fold chart nears the
+            // viewport (see the IntersectionObserver in dashboard.html). If it is not
+            // present yet, keep the skeleton up and re-render when 'chartjs:ready'
+            // fires — do NOT force the library to load here, or it would be pulled
+            // into the initial page load and blow the JS budget (assets.spec.mjs).
+            if (typeof Chart === 'undefined') {
+                if (!weekComparisonAwaitingChart) {
+                    weekComparisonAwaitingChart = true;
+                    document.addEventListener('chartjs:ready', function onReady() {
+                        weekComparisonAwaitingChart = false;
+                        loadWeekComparison();
+                    }, { once: true });
+                }
+                return;
             }
 
             if (weekComparisonChart) {

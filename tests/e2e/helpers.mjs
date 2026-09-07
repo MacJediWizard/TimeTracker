@@ -8,10 +8,10 @@ export const PUBLIC_PAGES = [{ name: 'login', path: '/login' }];
 
 export const AUTHENTICATED_PAGES = [
   { name: 'dashboard', path: '/' },
-  { name: 'time entries', path: '/timer/time-entries' },
-  { name: 'projects', path: '/projects/' },
-  { name: 'reports', path: '/reports/' },
-  { name: 'invoices', path: '/invoices/' },
+  { name: 'time entries', path: '/time-entries' },
+  { name: 'projects', path: '/projects' },
+  { name: 'reports', path: '/reports' },
+  { name: 'invoices', path: '/invoices' },
 ];
 
 /**

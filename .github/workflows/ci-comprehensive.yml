@@ -389,11 +389,18 @@ jobs:
           # for the E2E container. This is test-harness config (like WTF_CSRF in
           # unit tests) and does not touch any behaviour the CSP/a11y/asset/offline
           # specs assert; RATELIMIT_ENABLED defaults to true in production.
+          #
+          # The admin is provisioned out-of-band via ADMIN_USERNAMES, so the
+          # interactive first-run wizard would otherwise trap every request at
+          # /setup and the specs would scan the setup page instead of the real
+          # authenticated pages. SETUP_COMPLETE=true skips that gate for the
+          # container; it defaults to unset (normal first-run) in production.
           docker run -d --name timetracker-e2e --network host \
             -e SECRET_KEY=ci-e2e-secret-key-not-for-production \
             -e DATABASE_URL=postgresql://timetracker:timetracker@localhost:5432/timetracker \
             -e ADMIN_USERNAMES=e2eadmin \
             -e RATELIMIT_ENABLED=false \
+            -e SETUP_COMPLETE=true \
             -e TZ=UTC \
             timetracker-e2e:ci
 

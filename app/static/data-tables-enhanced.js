@@ -468,7 +468,7 @@
             const pageSizeSelect = `
                 <div class="flex items-center gap-2">
                     <label class="text-sm text-text-muted-light dark:text-text-muted-dark">Show:</label>
-                    <select class="table-page-size-select px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-background-light dark:bg-background-dark">
+                    <select aria-label="Rows per page" class="table-page-size-select px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-background-light dark:bg-background-dark">
                         ${this.options.pageSizeOptions.map(size => 
                             `<option value="${size}" ${size === this.pageSize ? 'selected' : ''}>${size}</option>`
                         ).join('')}

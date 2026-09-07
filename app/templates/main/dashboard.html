@@ -351,7 +351,7 @@
                 <i class="fas fa-clock text-blue-600 dark:text-blue-400 text-2xl"></i>
             </div>
         </div>
-        <div class="sparkline-container" data-sparkline='[0,0,0,0,0,0,0]' data-sparkline-id="today" data-color="#3b82f6" id="sparkline-today" aria-label="{{ _('Loading...') }}"></div>
+        <div class="sparkline-container" data-sparkline='[0,0,0,0,0,0,0]' data-sparkline-id="today" data-color="#3b82f6" id="sparkline-today" role="img" aria-label="{{ _('Loading...') }}"></div>
     </div>
     <!-- Week's Hours Card -->
     <div class="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 border border-green-200 dark:border-green-800 p-6 rounded-xl shadow-sm dashboard-widget" id="weekHours">
@@ -377,7 +377,7 @@
                 <i class="fas fa-calendar-week text-green-600 dark:text-green-400 text-2xl"></i>
             </div>
         </div>
-        <div class="sparkline-container" data-sparkline='[0,0,0,0,0,0,0]' data-sparkline-id="week" data-color="#10b981" id="sparkline-week" aria-label="{{ _('Loading...') }}"></div>
+        <div class="sparkline-container" data-sparkline='[0,0,0,0,0,0,0]' data-sparkline-id="week" data-color="#10b981" id="sparkline-week" role="img" aria-label="{{ _('Loading...') }}"></div>
     </div>
     <!-- Month's Hours Card -->
     <div class="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 border border-purple-200 dark:border-purple-800 p-6 rounded-xl shadow-sm dashboard-widget" id="monthHours">
@@ -398,7 +398,7 @@
                 <i class="fas fa-calendar-alt text-purple-600 dark:text-purple-400 text-2xl"></i>
             </div>
         </div>
-        <div class="sparkline-container" data-sparkline='[0,0,0,0,0,0,0]' data-sparkline-id="month" data-color="#8b5cf6" id="sparkline-month" aria-label="{{ _('Loading...') }}"></div>
+        <div class="sparkline-container" data-sparkline='[0,0,0,0,0,0,0]' data-sparkline-id="month" data-color="#8b5cf6" id="sparkline-month" role="img" aria-label="{{ _('Loading...') }}"></div>
     </div>
     {% if utilization is defined %}
     <div class="bg-gradient-to-br from-teal-50 to-teal-100 dark:from-teal-900/20 dark:to-teal-800/20 border border-teal-200 dark:border-teal-800 p-6 rounded-xl shadow-sm dashboard-widget">
@@ -474,7 +474,7 @@
 </div>
 
 <!-- This week vs last week (Chart.js + /api/reports/week-comparison) -->
-<div id="weekComparisonRoot" class="mb-6 bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark rounded-xl shadow-sm p-6 dashboard-widget"
+<div id="weekComparisonRoot" data-lazy-chart class="mb-6 bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark rounded-xl shadow-sm p-6 dashboard-widget"
      data-api-url="{{ url_for('api.week_comparison') }}"
      data-title="{{ _('This week vs last week') }}"
      data-subtitle="{{ _('Hours per day (Mon–today vs same days last week)') }}"
@@ -803,15 +803,21 @@
                 <a href="{{ url_for('reports.summary_report') }}" class="text-sm text-primary hover:underline">{{ _('View report') }}</a>
             </div>
             {% if time_by_project_7d %}
-            <div class="relative" style="height: 220px;">
+            <div class="relative" style="height: 220px;" data-lazy-chart>
                 <canvas id="dashboardTimeByProjectChart" aria-label="{{ _('Time distribution by project for the last 7 days') }}"></canvas>
             </div>
             <script nonce="{{ csp_nonce() }}">
             (function() {
                 var labels = {{ chart_labels_7d|tojson }};
                 var hours = {{ chart_hours_7d|tojson }};
-                var ctx = document.getElementById('dashboardTimeByProjectChart');
-                if (ctx && typeof Chart !== 'undefined') {
+                var drawn = false;
+                // Chart.js is loaded on demand (see the vendor loaders at the foot of
+                // this template); draw once the library is ready.
+                function draw() {
+                    if (drawn) return;
+                    var ctx = document.getElementById('dashboardTimeByProjectChart');
+                    if (!ctx || typeof Chart === 'undefined') return;
+                    drawn = true;
                     new Chart(ctx, {
                         type: 'bar',
                         data: {
@@ -836,6 +842,8 @@
                         }
                     });
                 }
+                document.addEventListener('chartjs:ready', draw);
+                draw();  // in case Chart.js is already present
             })();
             </script>
             {% else %}
@@ -1649,6 +1657,8 @@
             _initStartTimerModal();
             modal.classList.remove('hidden');
             modal.setAttribute('aria-hidden', 'false');
+            // Load the notes rich-text editor on demand now that the modal is open.
+            if (window.loadDashboardNotesEditor) window.loadDashboardNotesEditor();
         }
 
         document.querySelectorAll('.js-open-start-timer').forEach(function(btn) {
@@ -1731,7 +1741,12 @@
         // Initialize Toast UI Editor for timer notes
     const notesInput = document.getElementById('startTimerNotes');
     const notesPlaceholderText = document.getElementById('startTimerModal')?.dataset?.notesPlaceholder || 'What are you working on?';
-    if (notesInput && window.toastui && window.toastui.Editor) {
+    // Lazy init: Toast UI Editor (~580KB) is loaded on demand the first time the Start
+    // Timer modal opens (see window.loadDashboardNotesEditor), keeping it off the
+    // dashboard's initial JS budget. This builds the editor once the library is present.
+    window.__initDashboardNotesEditor = function () {
+        if (window.dashboardNotesEditor) return;
+        if (!(notesInput && window.toastui && window.toastui.Editor)) return;
         const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
         window.dashboardNotesEditor = new toastui.Editor({
             el: document.getElementById('startTimerNotes_editor'),
@@ -2043,7 +2058,7 @@
             dashboardFileInput.value = '';
         });
 
-    }
+    };
 });
 </script>
 
@@ -2101,6 +2116,64 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 {% endif %}
 
-<!-- Toast UI Editor -->
-<script src="{{ url_for('static', filename='vendor/toastui/toastui-editor.js') }}"></script>
+<!-- Dashboard on-demand vendor loaders (kept out of base.html to protect the
+     dashboard's initial JS budget; see tests/e2e/assets.spec.mjs). -->
+<script nonce="{{ csp_nonce() }}">
+// Toast UI Editor (~580KB): loaded the first time the Start Timer modal opens.
+window.loadDashboardNotesEditor = function () {
+    if (window.dashboardNotesEditor) return;                       // already built
+    if (window.toastui && window.toastui.Editor) {                 // lib already present
+        if (window.__initDashboardNotesEditor) window.__initDashboardNotesEditor();
+        return;
+    }
+    if (window.__toastuiLoading) return;                           // load already in flight
+    window.__toastuiLoading = true;
+    var s = document.createElement('script');
+    s.src = "{{ url_for('static', filename='vendor/toastui/toastui-editor.js') }}";
+    s.onload = function () {
+        window.__toastuiLoading = false;
+        if (window.__initDashboardNotesEditor) window.__initDashboardNotesEditor();
+    };
+    s.onerror = function () {
+        // Fallback: reveal the plain textarea so notes stay editable if the lib fails.
+        window.__toastuiLoading = false;
+        var ta = document.getElementById('startTimerNotes');
+        if (ta) ta.classList.remove('hidden');
+    };
+    document.head.appendChild(s);
+};
+
+// Chart.js (~205KB): both dashboard charts sit below the fold, so the library is
+// fetched only when a chart scrolls near the viewport. Draw sites listen for the
+// 'chartjs:ready' event dispatched here.
+(function () {
+    var CHART_SRC = "{{ url_for('static', filename='vendor/chartjs/chart.umd.js') }}";
+    window.__ensureChartJs = function () {
+        if (typeof Chart !== 'undefined') { document.dispatchEvent(new Event('chartjs:ready')); return; }
+        if (window.__chartJsLoading) return;
+        window.__chartJsLoading = true;
+        var s = document.createElement('script');
+        s.src = CHART_SRC;
+        s.onload = function () { document.dispatchEvent(new Event('chartjs:ready')); };
+        document.head.appendChild(s);
+    };
+    function observeCharts() {
+        // Observe the always-visible chart *containers*, not the canvases: the
+        // week-comparison canvas lives inside a hidden ('display:none') body until its
+        // chart renders, and a display:none element never intersects — observing it
+        // would deadlock (chart never loads -> body never shown -> never intersects).
+        var targets = document.querySelectorAll('[data-lazy-chart]');
+        if (!targets.length) return;
+        if (!('IntersectionObserver' in window)) { window.__ensureChartJs(); return; }
+        var obs = new IntersectionObserver(function (entries, o) {
+            for (var i = 0; i < entries.length; i++) {
+                if (entries[i].isIntersecting) { o.disconnect(); window.__ensureChartJs(); break; }
+            }
+        }, { rootMargin: '300px' });
+        targets.forEach(function (c) { obs.observe(c); });
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', observeCharts);
+    else observeCharts();
+})();
+</script>
 {% endblock %}

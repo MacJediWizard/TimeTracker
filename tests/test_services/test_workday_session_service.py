@@ -137,7 +137,16 @@ class TestWorkdaySessionPeriodTotals:
 
     def test_active_session_clips_to_period_end(self, app, workday_user):
         with app.app_context():
-            start = local_now().replace(hour=9, minute=0, second=0, microsecond=0)
+            # Anchor to 09:00 today, but never in the future: when the suite runs
+            # before 09:00 app-local (Europe/Rome) the 09:00 start would be ahead of
+            # now, making (now - start) negative so the clip assertion fails even
+            # though the service correctly reports 0. Fall back to the top of the
+            # current hour so the session is genuinely active (started in the past)
+            # on the same calendar day, at any time of day.
+            now = local_now()
+            start = now.replace(hour=9, minute=0, second=0, microsecond=0)
+            if start > now:
+                start = now.replace(minute=0, second=0, microsecond=0)
             session = WorkdaySession(user_id=workday_user.id, start_time=start, source="manual")
             db.session.add(session)
             db.session.commit()

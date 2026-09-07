@@ -44,10 +44,19 @@ def upgrade():
 
     inspector = inspect(bind)
     if not _has_column(inspector, "tasks", "milestone_id"):
-        op.add_column(
-            "tasks",
-            sa.Column("milestone_id", sa.Integer(), sa.ForeignKey("milestones.id", ondelete="SET NULL"), nullable=True),
-        )
+        # SQLite cannot ALTER TABLE ADD COLUMN with a FOREIGN KEY constraint, which
+        # aborts `flask db upgrade` on a SQLite-backed deploy. Use batch mode
+        # (copy-and-move) so the FK is recreated there; PostgreSQL takes the plain
+        # ADD COLUMN. Mirrors migration 157's cross-dialect FK-column pattern.
+        milestone_fk = sa.ForeignKey("milestones.id", ondelete="SET NULL", name="fk_tasks_milestone_id_milestones")
+        if bind.dialect.name == "sqlite":
+            with op.batch_alter_table("tasks") as batch_op:
+                batch_op.add_column(sa.Column("milestone_id", sa.Integer(), milestone_fk, nullable=True))
+        else:
+            op.add_column(
+                "tasks",
+                sa.Column("milestone_id", sa.Integer(), milestone_fk, nullable=True),
+            )
         op.create_index("ix_tasks_milestone_id", "tasks", ["milestone_id"])
 
 

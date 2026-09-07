@@ -26,10 +26,14 @@ def upgrade():
         sa.Column("depends_on_id", sa.Integer(), sa.ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False),
         sa.Column("dependency_type", sa.String(20), nullable=False, server_default="finish_to_start"),
         sa.Column("created_at", sa.DateTime(), nullable=False),
+        # Declare the unique pair inline: SQLite allows UNIQUE at table-creation time
+        # but rejects ALTER TABLE ... ADD CONSTRAINT (no create_unique_constraint), which
+        # would abort `flask db upgrade` on a SQLite-backed deploy. On PostgreSQL this
+        # produces the same named constraint as a standalone op.
+        sa.UniqueConstraint("task_id", "depends_on_id", name="uq_task_dependencies_pair"),
     )
     op.create_index("ix_task_dependencies_task_id", "task_dependencies", ["task_id"])
     op.create_index("ix_task_dependencies_depends_on_id", "task_dependencies", ["depends_on_id"])
-    op.create_unique_constraint("uq_task_dependencies_pair", "task_dependencies", ["task_id", "depends_on_id"])
 
 
 def downgrade():

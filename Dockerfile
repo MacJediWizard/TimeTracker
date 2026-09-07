@@ -24,7 +24,7 @@ RUN mkdir -p app/static/dist
 RUN npm run build:docker
 
 # --- Stage 2: Python Application ---
-FROM python:3.11-slim-bullseye
+FROM python:3.11-slim-bookworm
 
 # Build-time version argument with safe default
 ARG APP_VERSION=dev-0
@@ -40,10 +40,31 @@ ENV TZ=Europe/Rome
 ENV DONATE_HIDE_PUBLIC_KEY_FILE=/app/donate_hide_public.pem
 LABEL org.opencontainers.image.description="Self-hosted time tracking web application for projects, clients, and reports."
 
-# Install all system dependencies in a single layer
+# Install all system dependencies in a single layer.
+# apt is wrapped in a retry: during a Debian point release the security suite
+# rotates its pool and purges older .debs, so a freshly fetched index can
+# briefly reference a .deb that already 404s. Each retry clears the package
+# index and re-fetches, so the next attempt sees a self-consistent mirror; a
+# genuinely missing package still fails the build once attempts are exhausted.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
+    set -eux; \
+    apt_get_retry() { \
+        i=0; \
+        while [ "$i" -lt 5 ]; do \
+            i=$((i + 1)); \
+            if apt-get update -o Acquire::Retries=3 \
+                && apt-get install -y --no-install-recommends -o Acquire::Retries=3 "$@"; then \
+                return 0; \
+            fi; \
+            echo "apt attempt $i failed; clearing index and retrying..." >&2; \
+            rm -rf /var/lib/apt/lists/*; \
+            sleep 10; \
+        done; \
+        echo "apt failed after 5 attempts" >&2; \
+        return 1; \
+    }; \
+    apt_get_retry \
     # Core utilities
     curl \
     tzdata \
@@ -68,12 +89,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     # PostgreSQL client dependencies
     gnupg \
     wget \
-    lsb-release \
-    && sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list' \
-    && wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends postgresql-client-16 \
-    && rm -rf /var/lib/apt/lists/*
+    lsb-release; \
+    echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list; \
+    wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -; \
+    apt_get_retry postgresql-client-16; \
+    rm -rf /var/lib/apt/lists/*
 
 # Set work directory
 WORKDIR /app

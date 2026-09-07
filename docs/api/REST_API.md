@@ -189,18 +189,22 @@ Returns API version and available endpoints. No authentication required.
 
 `setup_required` is a boolean: when `true`, the installation’s initial web setup is not complete; finish setup in the browser. Desktop and mobile apps use this (and JSON shape) to avoid treating arbitrary HTTP 200 pages as TimeTracker. During that phase, `GET /api/v1/info`, `GET /api/v1/health`, and `POST /api/v1/auth/login` are not redirected to the HTML setup wizard so clients still receive JSON.
 
+`enabled_modules` is an array of module IDs currently enabled for the installation (same IDs as Admin → Module Management). Mobile and desktop clients use it to hide module-gated UI. Authenticated `GET /api/v1/users/me` also returns `enabled_modules` scoped to the token user when applicable.
+
 **Response:**
 ```json
 {
   "api_version": "v1",
-  "app_version": "1.0.0",
+  "app_version": "5.12.0",
   "setup_required": false,
+  "enabled_modules": ["projects", "timer", "tasks", "invoices", "calendar"],
   "documentation_url": "/api/docs",
   "endpoints": {
     "projects": "/api/v1/projects",
     "time_entries": "/api/v1/time-entries",
     "tasks": "/api/v1/tasks",
-    "clients": "/api/v1/clients"
+    "clients": "/api/v1/clients",
+    "issues": "/api/v1/issues"
   }
 }
 ```
@@ -668,13 +672,37 @@ POST /api/v1/timer/start
 
 **Required Scope:** `write:time_entries`
 
-**Request Body:**
+**Request Body:** Provide `project_id` and/or `client_id` (at least one required). Client-only timers omit `project_id`; `task_id` is only valid with a project.
 ```json
 {
   "project_id": 1,
   "task_id": 5
 }
 ```
+```json
+{
+  "client_id": 3,
+  "notes": "General client work"
+}
+```
+
+#### Pause Timer
+```
+POST /api/v1/timer/pause
+```
+
+**Required Scope:** `write:time_entries`
+
+Pauses the active timer (`paused_at` set). Elapsed work time freezes until resume.
+
+#### Resume Timer
+```
+POST /api/v1/timer/resume
+```
+
+**Required Scope:** `write:time_entries`
+
+Resumes a paused timer; time spent paused is added to `break_seconds`.
 
 **Responses:**
 - **`201 Created`** — Timer started; JSON includes `message` and `timer` (time entry fields).
@@ -695,6 +723,47 @@ Stops the active timer for the authenticated user.
 ### Workday sessions (clock-in / clock-out)
 
 Workday sessions track **time at work** without a project or client. They are separate from project timers; dashboard and reports show both totals side by side (never summed).
+
+#### Attendance history
+```
+GET /api/v1/attendance/history?days=30
+```
+
+**Required Scope:** `read:time_entries`
+
+#### Request attendance correction
+```
+POST /api/v1/attendance/corrections
+```
+
+**Required Scope:** `write:time_entries`
+
+Body includes `attendance_day_id`, `entity_type` (e.g. `AddWorkPeriod`), `entity_id`, `corrected_values`, and `reason`.
+
+#### Belgium attendance compliance report
+```
+GET /api/v1/reports/compliance/belgium-attendance?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
+```
+
+**Required Scope:** `read:reports`
+
+#### Time-off request PDF
+```
+GET /api/v1/time-off/requests/{id}/pdf
+```
+
+**Required Scope:** `read:time_entries`
+
+#### Issues
+```
+GET /api/v1/issues
+POST /api/v1/issues
+GET /api/v1/issues/{id}
+PATCH /api/v1/issues/{id}
+DELETE /api/v1/issues/{id}
+```
+
+**Required Scope:** `read:projects` / `write:projects`. Requires the **issues** module enabled. Create requires `client_id` and `title`.
 
 #### Get workday status
 ```
@@ -725,6 +794,16 @@ POST /api/v1/workday/end
 
 **Required Scope:** `write:time_entries`
 
+**Request Body (optional):**
+```json
+{
+  "notes": "Optional note",
+  "end_time": "2026-07-24T17:00:00"
+}
+```
+
+`end_time` (alias `at_time`) closes the active session at a past leave time — useful when correcting a forgotten overnight clock-out. Must be after the session start and not in the future.
+
 Kiosk equivalents: `POST /api/kiosk/start-workday`, `POST /api/kiosk/end-workday`, `GET /api/kiosk/workday-status`.
 
 ### Tasks
@@ -738,7 +817,7 @@ GET /api/v1/tasks
 
 **Query Parameters:**
 - `project_id` - Filter by project
-- `status` - Filter by status
+- `status` - Filter by status (`todo`, `in_progress`, `review`, `done`, `cancelled`, or any custom Kanban column key). Aliases `active` and `open` match all non-closed tasks (excludes `done` and `cancelled`, including custom statuses such as `on_hold` or `blocked`). Comma-separated values match any listed status (e.g. `todo,review`).
 - `page` - Page number
 - `per_page` - Items per page
 

@@ -37,9 +37,26 @@ class Config:
     # Application settings
     TZ = os.getenv("TZ", "Europe/Rome")
     CURRENCY = os.getenv("CURRENCY", "EUR")
+    # Public base URL of this instance, e.g. https://time.example.com
+    # Used for absolute links in emails sent from background jobs (no HTTP request
+    # in flight). Do NOT set Flask SERVER_NAME for this: SERVER_NAME makes Flask
+    # host-match every request and 404 Host headers that differ (common behind
+    # reverse proxies). Prefer APP_BASE_URL; otherwise the app learns the host
+    # from live requests (see app.utils.urls.remember_request_base_url).
+    APP_BASE_URL = os.getenv("APP_BASE_URL", "").strip()
+    PREFERRED_URL_SCHEME = os.getenv("PREFERRED_URL_SCHEME", "http")
     ROUNDING_MINUTES = int(os.getenv("ROUNDING_MINUTES", 1))
+    ROUNDING_METHOD = os.getenv("ROUNDING_METHOD", "nearest")
+    ROUNDING_MINIMUM_MINUTES = int(os.getenv("ROUNDING_MINIMUM_MINUTES", 0))
+    ROUNDING_ENFORCE_GLOBAL = os.getenv("ROUNDING_ENFORCE_GLOBAL", "false").lower() == "true"
     SINGLE_ACTIVE_TIMER = os.getenv("SINGLE_ACTIVE_TIMER", "true").lower() == "true"
     IDLE_TIMEOUT_MINUTES = int(os.getenv("IDLE_TIMEOUT_MINUTES", 30))
+
+    # Web Push (VAPID) — required for browser push notifications ("Still working?"
+    # idle alerts with the tab closed, smart reminders). Generate e.g. with py_vapid.
+    VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "")
+    VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "")
+    VAPID_CONTACT_EMAIL = os.getenv("VAPID_CONTACT_EMAIL", "")
 
     # User management (default false for production-safe deployments)
     ALLOW_SELF_REGISTER = os.getenv("ALLOW_SELF_REGISTER", "false").lower() == "true"
@@ -260,6 +277,11 @@ class Config:
     PERF_QUERY_PROFILE = os.getenv("PERF_QUERY_PROFILE", "false").lower() == "true"
 
     # Rate limiting
+    # Master switch honoured by Flask-Limiter: when false, every @limiter.limit
+    # decorator (including per-route ones such as the login throttle) is disabled.
+    # Defaults to true so production behaviour is unchanged; test/CI harnesses that
+    # log in many times in quick succession set RATELIMIT_ENABLED=false.
+    RATELIMIT_ENABLED = os.getenv("RATELIMIT_ENABLED", "true").lower() == "true"
     RATELIMIT_DEFAULT = os.getenv("RATELIMIT_DEFAULT", "")  # e.g., "200 per day;50 per hour"
     RATELIMIT_STORAGE_URI = os.getenv("RATELIMIT_STORAGE_URI", "memory://")
 

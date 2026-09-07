@@ -228,9 +228,11 @@ def register_context_processors(app):
                 if layout_support_prompt:
                     v = layout_support_prompt.get("variant")
                     if v == SupportPromptService.VARIANT_AFTER_REPORT:
+                        lp_message = _("Report exported — if TimeTracker saves you time, a coffee goes a long way.")
+                    elif v == SupportPromptService.VARIANT_FIRST_INVOICE:
                         lp_message = _(
-                            "That report was quick to generate. If TimeTracker saves you time, "
-                            "consider supporting its development."
+                            "You just sent your first invoice with TimeTracker — if the app is helping your "
+                            "business, consider supporting its development."
                         )
 
                 support_ui_json = json.dumps(
@@ -259,8 +261,8 @@ def register_context_processors(app):
                             "shareFail": _("Could not copy link"),
                             "supportAction": _("Support"),
                             "longSessionToast": _(
-                                "You have been using TimeTracker actively for a while. "
-                                "If it helps your work, consider supporting its development."
+                                "You've been tracking for a while today. TimeTracker is free because of "
+                                "supporters like you."
                             ),
                         },
                     },
@@ -326,6 +328,20 @@ def register_context_processors(app):
         except Exception:
             pass
         return {"keyboard_shortcuts_config": None}
+
+    @app.context_processor
+    def inject_pending_expense_approvals():
+        count = 0
+        try:
+            if getattr(current_user, "is_authenticated", False) and (
+                current_user.is_admin or current_user.has_permission("view_all_time_entries")
+            ):
+                from app.models import Expense
+
+                count = Expense.query.filter_by(status="pending").count()
+        except Exception:
+            count = 0
+        return {"pending_expense_approvals": count}
 
     @app.before_request
     def before_request():

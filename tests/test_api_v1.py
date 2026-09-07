@@ -405,6 +405,9 @@ class TestTimer:
         data = json.loads(response.data)
         assert data["active"] == False
         assert data["timer"] is None
+        assert "idle_timeout_minutes" in data
+        assert isinstance(data["idle_timeout_minutes"], int)
+        assert data["idle_timeout_minutes"] >= 1
 
     def test_start_timer(self, client, api_token, test_project):
         """Test starting a timer"""
@@ -420,6 +423,63 @@ class TestTimer:
         data = json.loads(response.data)
         assert "timer" in data
         assert data["timer"]["project_id"] == test_project.id
+
+    def test_start_timer_client_only(self, client, api_token, test_client_model):
+        """Start a timer with client_id and no project_id."""
+        headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
+        response = client.post(
+            "/api/v1/timer/start",
+            json={"client_id": test_client_model.id, "notes": "Client-only work"},
+            headers=headers,
+        )
+
+        assert response.status_code == 201
+        data = json.loads(response.data)
+        assert data["timer"]["client_id"] == test_client_model.id
+        assert data["timer"]["project_id"] is None
+        assert data["timer"]["task_id"] is None
+
+    def test_start_timer_client_only_rejects_task_id(self, client, api_token, test_client_model):
+        """task_id is not allowed for client-only timer starts."""
+        headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
+        response = client.post(
+            "/api/v1/timer/start",
+            json={"client_id": test_client_model.id, "task_id": 1},
+            headers=headers,
+        )
+
+        assert response.status_code == 400
+
+    def test_start_timer_conflict_includes_active_timer(self, client, api_token, test_user, test_project):
+        """Starting while a timer is running returns 409 with the active timer embedded."""
+        active = TimeEntry(
+            user_id=int(test_user),
+            project_id=test_project.id,
+            start_time=datetime.utcnow(),
+            end_time=None,
+            source="api",
+            billable=True,
+            notes="Already running",
+        )
+        db.session.add(active)
+        db.session.commit()
+        active_id = active.id
+
+        headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
+        response = client.post(
+            "/api/v1/timer/start",
+            json={"project_id": test_project.id},
+            headers=headers,
+        )
+
+        assert response.status_code == 409
+        data = json.loads(response.data)
+        assert data["success"] is False
+        assert data["error_code"] == "timer_already_running"
+        assert data.get("timer") is not None
+        assert data["timer"]["id"] == active_id
+        assert data["timer"]["project_id"] == test_project.id
+        assert data["timer"]["end_time"] is None
 
     def test_stop_timer(self, client, api_token, test_user, test_project):
         """Test stopping a timer"""
@@ -441,6 +501,261 @@ class TestTimer:
         data = json.loads(response.data)
         assert "time_entry" in data
         assert data["time_entry"]["end_time"] is not None
+
+    def test_stop_timer_with_stop_time(self, client, api_token, test_user, test_project, app):
+        """Test idle-style stop with an explicit stop_time"""
+        from datetime import timedelta
+
+        from app.models.time_entry import local_now
+
+        start = local_now() - timedelta(hours=1)
+        stop_at = start + timedelta(minutes=30)
+        timer = TimeEntry(
+            user_id=int(test_user),
+            project_id=test_project.id,
+            start_time=start,
+            end_time=None,
+            source="api",
+            billable=True,
+        )
+        db.session.add(timer)
+        db.session.commit()
+
+        headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
+        # Naive ISO — treated as local app time, matching stored start_time
+        response = client.post(
+            "/api/v1/timer/stop",
+            json={"stop_time": stop_at.isoformat()},
+            headers=headers,
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert "time_entry" in data
+        assert data["time_entry"]["end_time"] is not None
+        # Duration should reflect ~30 minutes, not the full hour
+        assert data["time_entry"]["duration_seconds"] is not None
+        assert 25 * 60 <= data["time_entry"]["duration_seconds"] <= 35 * 60
+
+    def test_timer_heartbeat(self, client, api_token, test_user, test_project, app):
+        """Heartbeat updates last_heartbeat_at and clears idle_notified_at."""
+        from datetime import timedelta
+
+        from app.models.time_entry import local_now
+
+        start = local_now() - timedelta(hours=1)
+        timer = TimeEntry(
+            user_id=int(test_user),
+            project_id=test_project.id,
+            start_time=start,
+            end_time=None,
+            source="api",
+            billable=True,
+        )
+        timer.last_heartbeat_at = start
+        timer.idle_notified_at = local_now() - timedelta(minutes=2)
+        db.session.add(timer)
+        db.session.commit()
+        timer_id = timer.id
+
+        headers = {"Authorization": f"Bearer {api_token}"}
+        response = client.post("/api/v1/timer/heartbeat", headers=headers)
+        assert response.status_code == 204
+
+        refreshed = db.session.get(TimeEntry, timer_id)
+        assert refreshed.last_heartbeat_at is not None
+        assert refreshed.last_heartbeat_at > start
+        assert refreshed.idle_notified_at is None
+
+    def test_timer_heartbeat_no_active(self, client, api_token):
+        headers = {"Authorization": f"Bearer {api_token}"}
+        response = client.post("/api/v1/timer/heartbeat", headers=headers)
+        assert response.status_code == 400
+
+    def test_check_idle_timers_notifies_then_stops(self, client, api_token, test_user, test_project, app):
+        """Server idle job notifies on first pass, then flags for review after
+        grace — the timer keeps running so recorded time is never truncated."""
+        from datetime import timedelta
+
+        from app.models import Settings
+        from app.models.time_entry import local_now
+        from app.utils.scheduled_tasks import check_idle_timers
+
+        settings = Settings.get_settings()
+        settings.idle_timeout_minutes = 30
+        db.session.commit()
+
+        start = local_now() - timedelta(hours=2)
+        timer = TimeEntry(
+            user_id=int(test_user),
+            project_id=test_project.id,
+            start_time=start,
+            end_time=None,
+            source="api",
+            billable=True,
+        )
+        timer.last_heartbeat_at = local_now() - timedelta(hours=1)
+        db.session.add(timer)
+        db.session.commit()
+        timer_id = timer.id
+
+        # First pass: notify
+        check_idle_timers()
+        refreshed = db.session.get(TimeEntry, timer_id)
+        assert refreshed.end_time is None
+        assert refreshed.idle_notified_at is not None
+
+        # Second pass after grace: flag for review, timer KEEPS RUNNING
+        refreshed.idle_notified_at = local_now() - timedelta(minutes=6)
+        db.session.commit()
+        check_idle_timers()
+        flagged = db.session.get(TimeEntry, timer_id)
+        assert flagged.end_time is None
+        assert flagged.idle_flagged_at is not None
+
+    def test_check_idle_timers_safety_cap_stops_and_keeps_flag(self, client, api_token, test_user, test_project, app):
+        """With the safety cap enabled, an unanswered flagged timer is stopped
+        credited to last activity but stays flagged for review."""
+        from datetime import timedelta
+
+        from app.models import Settings
+        from app.models.time_entry import local_now
+        from app.utils.scheduled_tasks import check_idle_timers
+
+        settings = Settings.get_settings()
+        settings.idle_timeout_minutes = 30
+        settings.idle_auto_stop_hours = 1
+        db.session.commit()
+
+        start = local_now() - timedelta(hours=4)
+        timer = TimeEntry(
+            user_id=int(test_user),
+            project_id=test_project.id,
+            start_time=start,
+            end_time=None,
+            source="api",
+            billable=True,
+        )
+        timer.last_heartbeat_at = local_now() - timedelta(hours=3)
+        timer.idle_notified_at = local_now() - timedelta(minutes=30)
+        timer.idle_flagged_at = local_now() - timedelta(hours=2)
+        db.session.add(timer)
+        db.session.commit()
+        timer_id = timer.id
+
+        check_idle_timers()
+        stopped = db.session.get(TimeEntry, timer_id)
+        assert stopped.end_time is not None
+        # Still flagged so the user reviews/adjusts the entry
+        assert stopped.idle_flagged_at is not None
+
+        expected_stop = timer.last_heartbeat_at + timedelta(minutes=30)
+        if getattr(expected_stop, "tzinfo", None) is not None:
+            expected_stop = expected_stop.replace(tzinfo=None)
+        end = stopped.end_time
+        if getattr(end, "tzinfo", None) is not None:
+            end = end.replace(tzinfo=None)
+        assert abs((end - expected_stop).total_seconds()) < 5
+
+    def test_timer_review_endpoints(self, client, api_token, test_user, test_project, app):
+        """POST /api/v1/timer/review supports trim / keep / continue actions."""
+        import json as _json
+        from datetime import timedelta
+
+        from app.models import Settings
+        from app.models.time_entry import local_now
+
+        settings = Settings.get_settings()
+        settings.idle_timeout_minutes = 30
+        db.session.commit()
+
+        def make_timer():
+            # End any still-running timer so active_timer resolves to the new one
+            active = TimeEntry.query.filter_by(user_id=int(test_user), end_time=None).all()
+            for t in active:
+                t.stop_timer()
+            timer = TimeEntry(
+                user_id=int(test_user),
+                project_id=test_project.id,
+                start_time=local_now() - timedelta(hours=2),
+                end_time=None,
+                source="api",
+                billable=True,
+            )
+            timer.last_heartbeat_at = local_now() - timedelta(hours=1)
+            timer.idle_flagged_at = local_now() - timedelta(minutes=10)
+            db.session.add(timer)
+            db.session.commit()
+            return timer
+
+        headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
+
+        # continue: clears the flag, keeps running
+        timer = make_timer()
+        response = client.post(
+            "/api/v1/timer/review", headers=headers, data=_json.dumps({"action": "continue"})
+        )
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["stopped"] is False
+        refreshed = db.session.get(TimeEntry, timer.id)
+        assert refreshed.end_time is None
+        assert refreshed.idle_flagged_at is None
+
+        # trim: stops credited to last activity + idle timeout
+        timer = make_timer()
+        response = client.post(
+            "/api/v1/timer/review", headers=headers, data=_json.dumps({"action": "trim"})
+        )
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["stopped"] is True
+        trimmed = db.session.get(TimeEntry, timer.id)
+        assert trimmed.end_time is not None
+        assert (trimmed.duration_seconds or 0) >= 85 * 60
+
+        # keep: stops at now
+        timer = make_timer()
+        response = client.post(
+            "/api/v1/timer/review", headers=headers, data=_json.dumps({"action": "keep"})
+        )
+        assert response.status_code == 200
+        kept = db.session.get(TimeEntry, timer.id)
+        assert kept.end_time is not None
+        assert (kept.duration_seconds or 0) >= 115 * 60
+
+    def test_check_idle_timers_skips_paused(self, client, api_token, test_user, test_project, app):
+        """Paused timers must not be idle-notified or auto-stopped."""
+        from datetime import timedelta
+
+        from app.models import Settings
+        from app.models.time_entry import local_now
+        from app.utils.scheduled_tasks import check_idle_timers
+
+        settings = Settings.get_settings()
+        settings.idle_timeout_minutes = 30
+        db.session.commit()
+
+        start = local_now() - timedelta(hours=2)
+        timer = TimeEntry(
+            user_id=int(test_user),
+            project_id=test_project.id,
+            start_time=start,
+            end_time=None,
+            source="api",
+            billable=True,
+        )
+        timer.last_heartbeat_at = local_now() - timedelta(hours=1)
+        timer.paused_at = local_now() - timedelta(minutes=10)
+        db.session.add(timer)
+        db.session.commit()
+        timer_id = timer.id
+
+        check_idle_timers()
+        refreshed = db.session.get(TimeEntry, timer_id)
+        assert refreshed.end_time is None
+        assert refreshed.idle_notified_at is None
+        assert refreshed.paused_at is not None
 
 
 class TestTasks:
@@ -487,6 +802,124 @@ class TestTasks:
         assert "task" in data
         assert data["task"]["name"] == "New Task"
 
+    def test_list_tasks_status_active_alias(self, client, api_token, test_user, test_project):
+        """status=active excludes done/cancelled and includes custom Kanban keys."""
+        open_task = Task(
+            name="Open Task",
+            project_id=test_project.id,
+            status="todo",
+            priority="medium",
+            created_by=int(test_user),
+        )
+        on_hold_task = Task(
+            name="On Hold Task",
+            project_id=test_project.id,
+            status="on_hold",
+            priority="medium",
+            created_by=int(test_user),
+        )
+        blocked_task = Task(
+            name="Blocked Task",
+            project_id=test_project.id,
+            status="blocked",
+            priority="medium",
+            created_by=int(test_user),
+        )
+        done_task = Task(
+            name="Done Task",
+            project_id=test_project.id,
+            status="done",
+            priority="medium",
+            created_by=int(test_user),
+        )
+        cancelled_task = Task(
+            name="Cancelled Task",
+            project_id=test_project.id,
+            status="cancelled",
+            priority="medium",
+            created_by=int(test_user),
+        )
+        db.session.add_all([open_task, on_hold_task, blocked_task, done_task, cancelled_task])
+        db.session.commit()
+
+        headers = {"Authorization": f"Bearer {api_token}"}
+        response = client.get(
+            f"/api/v1/tasks?project_id={test_project.id}&status=active",
+            headers=headers,
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        names = {t["name"] for t in data["tasks"]}
+        assert names == {"Open Task", "On Hold Task", "Blocked Task"}
+
+    def test_list_tasks_status_exact_match(self, client, api_token, test_user, test_project):
+        """status=done returns only done tasks"""
+        open_task = Task(
+            name="Open Task",
+            project_id=test_project.id,
+            status="todo",
+            priority="medium",
+            created_by=int(test_user),
+        )
+        done_task = Task(
+            name="Done Task",
+            project_id=test_project.id,
+            status="done",
+            priority="medium",
+            created_by=int(test_user),
+        )
+        db.session.add_all([open_task, done_task])
+        db.session.commit()
+
+        headers = {"Authorization": f"Bearer {api_token}"}
+        response = client.get(
+            f"/api/v1/tasks?project_id={test_project.id}&status=done",
+            headers=headers,
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert len(data["tasks"]) == 1
+        assert data["tasks"][0]["name"] == "Done Task"
+
+    def test_list_tasks_status_comma_separated(self, client, api_token, test_user, test_project):
+        """Comma-separated status values return tasks matching any listed status"""
+        todo_task = Task(
+            name="Todo Task",
+            project_id=test_project.id,
+            status="todo",
+            priority="medium",
+            created_by=int(test_user),
+        )
+        review_task = Task(
+            name="Review Task",
+            project_id=test_project.id,
+            status="review",
+            priority="medium",
+            created_by=int(test_user),
+        )
+        done_task = Task(
+            name="Done Task",
+            project_id=test_project.id,
+            status="done",
+            priority="medium",
+            created_by=int(test_user),
+        )
+        db.session.add_all([todo_task, review_task, done_task])
+        db.session.commit()
+
+        headers = {"Authorization": f"Bearer {api_token}"}
+        response = client.get(
+            f"/api/v1/tasks?project_id={test_project.id}&status=todo,review",
+            headers=headers,
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        names = {task["name"] for task in data["tasks"]}
+        assert names == {"Todo Task", "Review Task"}
+
 
 class TestClients:
     """Test client endpoints"""
@@ -519,6 +952,16 @@ class TestClients:
         data = json.loads(response.data)
         assert "client" in data
         assert data["client"]["name"] == "New Client"
+
+    def test_get_client_by_id(self, client, api_token, test_client_model):
+        """Issue #716: GET /api/v1/clients/<id> must not 500 on dynamic projects."""
+        headers = {"Authorization": f"Bearer {api_token}"}
+        response = client.get(f"/api/v1/clients/{test_client_model.id}", headers=headers)
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert "client" in data
+        assert data["client"]["id"] == test_client_model.id
+        assert data["client"]["name"] == test_client_model.name
 
 
 class TestReports:

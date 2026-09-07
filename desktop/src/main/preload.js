@@ -37,6 +37,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onShortcutAction: (callback) => {
     ipcRenderer.on('shortcut:action', (event, action) => callback(action));
   },
+  onAppResume: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('app:resume', handler);
+    return () => ipcRenderer.removeListener('app:resume', handler);
+  },
   
   // Timer actions (to main process)
   timerStart: (projectId, taskId) => ipcRenderer.send('timer:start', { projectId, taskId }),
@@ -45,6 +50,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Send timer status to main process (for tray updates)
   sendTimerStatus: (data) => ipcRenderer.send('timer:status-update', data),
+
+  // Idle timeout prompt (main → renderer)
+  onIdlePrompt: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on('idle:prompt', handler);
+    return () => ipcRenderer.removeListener('idle:prompt', handler);
+  },
+  onIdleDismissed: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on('idle:dismissed', handler);
+    return () => ipcRenderer.removeListener('idle:dismissed', handler);
+  },
+  onIdleTimerStopped: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on('idle:timer-stopped', handler);
+    return () => ipcRenderer.removeListener('idle:timer-stopped', handler);
+  },
+  onIdleNeedsReview: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on('idle:needs-review', handler);
+    return () => ipcRenderer.removeListener('idle:needs-review', handler);
+  },
+  idleStillWorking: () => ipcRenderer.send('idle:still-working'),
+  idleStop: () => ipcRenderer.send('idle:stop'),
   
   // Splash screen
   splashReady: () => ipcRenderer.send('splash:ready'),

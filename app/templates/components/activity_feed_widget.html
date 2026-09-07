@@ -113,7 +113,7 @@
     </div>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce() }}">
 let activityPage = 1;
 let activityFilter = ''; // Empty string means show all
 const activityLimit = 10;
@@ -253,7 +253,8 @@ async function loadActivities(append = false) {
             credentials: 'same-origin',
             headers: {
                 'Accept': 'application/json'
-            }
+            },
+            __ttQuiet: true
         });
         if (!response.ok) {
             console.error('API response not OK:', response.status, response.statusText);
@@ -341,7 +342,9 @@ function createActivityHTML(activity) {
     const icon = getActivityIcon(activity.action);
     const displayName = activity.display_name || activity.username || 'Unknown';
     const timeAgo = formatTimeAgo(new Date(activity.created_at));
-    const fullTime = new Date(activity.created_at).toLocaleString();
+    const fullTime = window.formatUserDateTime
+        ? window.formatUserDateTime(new Date(activity.created_at))
+        : new Date(activity.created_at).toLocaleString();
     
     let extraDataHTML = '';
     if (activity.extra_data && activity.extra_data.old_status && activity.extra_data.new_status) {
@@ -419,8 +422,9 @@ document.addEventListener('DOMContentLoaded', function() {
     updateFilterIndicators('all');
 });
 
-// Auto-refresh activity feed every 30 seconds
+// Auto-refresh activity feed every 30 seconds (skip while tab is hidden — #746)
 setInterval(() => {
+    if (document.hidden) return;
     if (activityPage === 1) {
         refreshActivityFeed();
     }

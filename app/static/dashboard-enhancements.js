@@ -11,6 +11,7 @@
     let lastDashboardUpdateAt = 0;
     let weekComparisonChart = null;
     let weekComparisonHasRendered = false;
+    let weekComparisonAwaitingChart = false;
     const MIN_UPDATE_INTERVAL_MS = 5000; // Throttle: no updates more than once per 5s
 
     // Initialize on DOM ready
@@ -147,7 +148,8 @@
     async function loadActivityTimeline() {
         try {
             const response = await fetch('/api/activity/timeline', {
-                credentials: 'same-origin'
+                credentials: 'same-origin',
+                __ttQuiet: true
             });
 
             if (!response.ok) {
@@ -283,8 +285,9 @@
             dashboard.insertBefore(indicator, dashboard.firstChild);
         }
 
-        // Start real-time update interval
+        // Start real-time update interval — skip while tab is hidden (#703)
         realTimeUpdateInterval = setInterval(() => {
+            if (typeof document !== 'undefined' && document.hidden) return;
             updateDashboardData();
         }, 30000); // Update every 30 seconds
 
@@ -326,7 +329,8 @@
     async function updateStats() {
         try {
             const response = await fetch('/api/dashboard/stats', {
-                credentials: 'same-origin'
+                credentials: 'same-origin',
+                __ttQuiet: true
             });
 
             if (!response.ok) {
@@ -408,7 +412,8 @@
     async function updateSparklines() {
         try {
             const response = await fetch('/api/dashboard/sparklines', {
-                credentials: 'same-origin'
+                credentials: 'same-origin',
+                __ttQuiet: true
             });
 
             if (!response.ok) {
@@ -465,7 +470,7 @@
         const apiUrl = root.getAttribute('data-api-url') || '/api/reports/week-comparison';
 
         try {
-            const response = await fetch(apiUrl, { credentials: 'same-origin' });
+            const response = await fetch(apiUrl, { credentials: 'same-origin', __ttQuiet: true });
             if (!response.ok) {
                 throw new Error('week-comparison failed');
             }
@@ -489,8 +494,24 @@
                 return Number(row.hours) || 0;
             });
 
-            if (typeof Chart === 'undefined' || !canvas) {
-                throw new Error('Chart.js unavailable');
+            if (!canvas) {
+                throw new Error('week-comparison canvas missing');
+            }
+
+            // Chart.js is loaded on demand once a below-the-fold chart nears the
+            // viewport (see the IntersectionObserver in dashboard.html). If it is not
+            // present yet, keep the skeleton up and re-render when 'chartjs:ready'
+            // fires — do NOT force the library to load here, or it would be pulled
+            // into the initial page load and blow the JS budget (assets.spec.mjs).
+            if (typeof Chart === 'undefined') {
+                if (!weekComparisonAwaitingChart) {
+                    weekComparisonAwaitingChart = true;
+                    document.addEventListener('chartjs:ready', function onReady() {
+                        weekComparisonAwaitingChart = false;
+                        loadWeekComparison();
+                    }, { once: true });
+                }
+                return;
             }
 
             if (weekComparisonChart) {
@@ -625,7 +646,7 @@
         if (contentEl) contentEl.classList.add('hidden');
 
         try {
-            const response = await fetch('/api/stats/value-dashboard', { credentials: 'same-origin' });
+            const response = await fetch('/api/stats/value-dashboard', { credentials: 'same-origin', __ttQuiet: true });
             if (!response.ok) {
                 throw new Error('value-dashboard failed');
             }

@@ -395,13 +395,20 @@ def test_invoice_payment_tracking(app, invoice_with_items):
 @pytest.mark.models
 def test_invoice_overdue_status(app, user, project, test_client):
     """Test invoice overdue status."""
+    from app.models.time_entry import local_now
+
+    # Anchor due_date to the same app business clock that Invoice.days_overdue
+    # reads (local_now().date()), not the system date. Otherwise, when the system
+    # timezone and the business timezone straddle midnight, the two clocks differ
+    # by a day and days_overdue is off by one (a latent time-of-day flake).
+    today = local_now().date()
     # Create overdue invoice
     overdue_invoice = InvoiceFactory(
         invoice_number=Invoice.generate_invoice_number(),
         project_id=project.id,
         client_id=test_client.id,
         client_name="Test Client",
-        due_date=date.today() - timedelta(days=10),
+        due_date=today - timedelta(days=10),
         created_by=user.id,
         status="sent",
     )

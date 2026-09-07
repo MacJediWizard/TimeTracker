@@ -169,15 +169,17 @@ class TimeEntryRepository(BaseRepository[TimeEntry]):
         """Create a new timer (active time entry)"""
         from app.models.time_entry import local_now
 
+        now = local_now()
         entry = self.model(
             user_id=user_id,
             project_id=project_id,
             client_id=client_id,
             task_id=task_id,
-            start_time=local_now(),
+            start_time=now,
             notes=notes,
             source=source,
         )
+        entry.last_heartbeat_at = now
         db.session.add(entry)
         return entry
 
@@ -214,7 +216,9 @@ class TimeEntryRepository(BaseRepository[TimeEntry]):
             invoice_number=invoice_number,
             source=TimeEntrySource.MANUAL.value,
         )
-        if duration_seconds is None:
+        # No override, or boundary mode (override path skips timestamp adjustment):
+        # recompute so start/end and duration stay consistent.
+        if duration_seconds is None or entry._uses_boundary_rounding():
             entry.calculate_duration()
         db.session.add(entry)
         return entry

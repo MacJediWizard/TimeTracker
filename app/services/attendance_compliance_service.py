@@ -7,6 +7,8 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
+from flask import current_app
+
 from app import db
 from app.models import Settings, User, WorkdaySession
 from app.models.attendance_compliance import (
@@ -174,6 +176,8 @@ class AttendanceComplianceService:
 
         day = period.attendance_day
         day.recalculate_totals()
+        self._maybe_apply_auto_break(day, period, now)
+        day.recalculate_totals()
 
         if not safe_commit("attendance_clock_out", {"user_id": user_id, "period_id": period.id}):
             return {"success": False, "message": "Could not end workday", "error": "database_error"}
@@ -244,6 +248,59 @@ class AttendanceComplianceService:
 
     def _end_break(self, brk: AttendanceBreak, end_time: datetime) -> None:
         brk.end_time = end_time
+        brk.calculate_duration()
+
+    def _maybe_apply_auto_break(
+        self,
+        day: DailyAttendanceRecord,
+        period: AttendanceWorkPeriod,
+        clock_out_time: datetime,
+    ) -> None:
+        """Insert a configured break on clock-out when work exceeds the threshold and break is insufficient."""
+        settings = Settings.get_settings()
+        if not getattr(settings, "auto_break_enabled", False):
+            return
+        if not period.start_time or not clock_out_time:
+            return
+
+        after_hours = float(getattr(settings, "auto_break_after_hours", 6.0) or 6.0)
+        duration_minutes = int(getattr(settings, "auto_break_duration_minutes", 30) or 30)
+        if after_hours <= 0 or duration_minutes <= 0:
+            return
+
+        threshold_seconds = int(after_hours * 3600)
+        if (day.total_work_seconds or 0) < threshold_seconds:
+            return
+
+        target_seconds = duration_minutes * 60
+        existing_break_seconds = day.total_break_seconds or 0
+        if existing_break_seconds >= target_seconds:
+            return
+
+        deficit_seconds = target_seconds - existing_break_seconds
+        if deficit_seconds <= 0:
+            return
+
+        break_start = period.start_time + timedelta(seconds=threshold_seconds)
+        break_end = break_start + timedelta(seconds=deficit_seconds)
+        if break_end > clock_out_time:
+            break_end = clock_out_time
+            break_start = break_end - timedelta(seconds=deficit_seconds)
+        if break_start < period.start_time:
+            break_start = period.start_time
+        if break_end <= break_start:
+            return
+
+        brk = AttendanceBreak(
+            attendance_day_id=day.id,
+            work_period_id=period.id,
+            user_id=period.user_id,
+            start_time=break_start,
+            end_time=break_end,
+            break_type=AttendanceBreakType.REST,
+            is_auto_break=True,
+        )
+        db.session.add(brk)
         brk.calculate_duration()
 
     def get_status(self, user_id: int) -> Dict[str, Any]:
@@ -425,6 +482,7 @@ class AttendanceComplianceService:
         corrected_values: Dict[str, Any],
         reason: str,
         requested_by: int,
+        allow_locked: bool = False,
     ) -> Dict[str, Any]:
         reason = (reason or "").strip()
         if not reason:
@@ -436,7 +494,7 @@ class AttendanceComplianceService:
         requester = User.query.get(requested_by)
         if day.user_id != requested_by and not (requester and requester.is_admin):
             return {"success": False, "message": "You can only request corrections for your own attendance"}
-        if day.is_locked:
+        if day.is_locked and not allow_locked:
             return {"success": False, "message": "Locked attendance records require admin-approved corrections"}
 
         if entity_type == "AddWorkPeriod":
@@ -495,6 +553,24 @@ class AttendanceComplianceService:
             requested_by=user_id,
         )
 
+    def list_pending_corrections(self, limit: int = 200) -> List[AttendanceCorrection]:
+        """Return pending attendance corrections for admin review."""
+        return (
+            AttendanceCorrection.query.filter_by(status=AttendanceCorrectionStatus.PENDING)
+            .order_by(AttendanceCorrection.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+
+    def list_user_corrections(self, user_id: int, limit: int = 50) -> List[AttendanceCorrection]:
+        """Return a user's recent correction requests (any status)."""
+        return (
+            AttendanceCorrection.query.filter_by(requested_by=user_id)
+            .order_by(AttendanceCorrection.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+
     def review_correction(
         self,
         correction_id: int,
@@ -514,16 +590,25 @@ class AttendanceComplianceService:
 
         if not approve:
             correction.status = AttendanceCorrectionStatus.REJECTED
-            safe_commit("reject_attendance_correction", {"correction_id": correction_id})
+            if not safe_commit("reject_attendance_correction", {"correction_id": correction_id}):
+                return {"success": False, "message": "Could not save rejection"}
             return {"success": True, "correction": correction, "applied": False}
 
-        applied = self._apply_correction(correction)
+        try:
+            applied = self._apply_correction(correction)
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception("Failed to apply attendance correction %s", correction_id)
+            return {"success": False, "message": "Could not apply correction"}
+
         if not applied:
+            db.session.rollback()
             return {"success": False, "message": "Could not apply correction"}
 
         correction.status = AttendanceCorrectionStatus.APPLIED
         correction.applied_at = local_now()
-        safe_commit("apply_attendance_correction", {"correction_id": correction_id})
+        if not safe_commit("apply_attendance_correction", {"correction_id": correction_id}):
+            return {"success": False, "message": "Could not save approved correction"}
         return {"success": True, "correction": correction, "applied": True}
 
     def _snapshot_entity(self, entity_type: str, entity_id: int) -> Optional[Dict[str, Any]]:
@@ -538,8 +623,40 @@ class AttendanceComplianceService:
             return obj.to_dict() if obj else None
         return None
 
+    @staticmethod
+    def _parse_corrected_datetime(value: Any) -> Optional[datetime]:
+        """Parse a corrected_values datetime (ISO string or datetime) to naive datetime."""
+        if value is None or value == "":
+            return None
+        if isinstance(value, datetime):
+            return value.replace(tzinfo=None) if value.tzinfo else value
+        if not isinstance(value, str):
+            return None
+        raw = value.strip()
+        if not raw:
+            return None
+        # Accept datetime-local ("YYYY-MM-DDTHH:MM") and full ISO strings
+        try:
+            parsed = datetime.fromisoformat(raw)
+        except ValueError:
+            try:
+                parsed = datetime.strptime(raw[:16], "%Y-%m-%dT%H:%M")
+            except ValueError:
+                return None
+        return parsed.replace(tzinfo=None) if parsed.tzinfo else parsed
+
     def _apply_correction(self, correction: AttendanceCorrection) -> bool:
         values = correction.corrected_values or {}
+        if isinstance(values, str):
+            import json
+
+            try:
+                values = json.loads(values)
+            except (TypeError, ValueError):
+                return False
+        if not isinstance(values, dict):
+            return False
+
         entity_type = correction.entity_type
         entity_id = correction.entity_id
 
@@ -548,28 +665,54 @@ class AttendanceComplianceService:
             if not period:
                 return False
             if "start_time" in values and values["start_time"]:
-                period.start_time = datetime.fromisoformat(values["start_time"])
+                start = self._parse_corrected_datetime(values["start_time"])
+                if start is None:
+                    return False
+                period.start_time = start
             if "end_time" in values:
-                period.end_time = datetime.fromisoformat(values["end_time"]) if values["end_time"] else None
+                if values["end_time"]:
+                    end = self._parse_corrected_datetime(values["end_time"])
+                    if end is None:
+                        return False
+                    period.end_time = end
+                else:
+                    period.end_time = None
             if "notes" in values:
                 period.notes = values["notes"]
             period.calculate_duration()
             period.attendance_day.recalculate_totals()
+            if period.workday_session_id:
+                from app.models import WorkdaySession
+
+                linked = WorkdaySession.query.get(period.workday_session_id)
+                if linked:
+                    linked.start_time = period.start_time
+                    linked.end_time = period.end_time
+                    linked.calculate_duration()
         elif entity_type == "AttendanceBreak":
             brk = AttendanceBreak.query.get(entity_id)
             if not brk:
                 return False
             if "start_time" in values and values["start_time"]:
-                brk.start_time = datetime.fromisoformat(values["start_time"])
+                start = self._parse_corrected_datetime(values["start_time"])
+                if start is None:
+                    return False
+                brk.start_time = start
             if "end_time" in values:
-                brk.end_time = datetime.fromisoformat(values["end_time"]) if values["end_time"] else None
+                if values["end_time"]:
+                    end = self._parse_corrected_datetime(values["end_time"])
+                    if end is None:
+                        return False
+                    brk.end_time = end
+                else:
+                    brk.end_time = None
             brk.calculate_duration()
             brk.attendance_day.recalculate_totals()
         elif entity_type == "DailyAttendanceRecord":
             day = DailyAttendanceRecord.query.get(entity_id)
             if not day:
                 return False
-            if "status" in values:
+            if "status" in values and values["status"]:
                 try:
                     day.status = AttendanceDayStatus(values["status"])
                 except ValueError:
@@ -582,13 +725,10 @@ class AttendanceComplianceService:
                 return False
             if day.work_periods.count() > 0:
                 return False
-            start_raw = values.get("start_time")
-            if not start_raw:
+            start_time = self._parse_corrected_datetime(values.get("start_time"))
+            if not start_time:
                 return False
-            start_time = datetime.fromisoformat(start_raw)
-            end_time = None
-            if values.get("end_time"):
-                end_time = datetime.fromisoformat(values["end_time"])
+            end_time = self._parse_corrected_datetime(values.get("end_time"))
             period = AttendanceWorkPeriod(
                 attendance_day_id=day.id,
                 user_id=day.user_id,

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,9 +7,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:timetracker_mobile/core/config/app_config.dart';
 import 'package:timetracker_mobile/core/constants/app_constants.dart';
+import 'package:timetracker_mobile/core/services/notification_service.dart';
 import 'package:timetracker_mobile/core/telemetry/mobile_otel.dart';
 import 'package:timetracker_mobile/data/api/api_client.dart';
+import 'package:timetracker_mobile/domain/usecases/sync_usecase.dart';
 import 'package:timetracker_mobile/utils/network/connection_diagnostics.dart';
+import 'package:timetracker_mobile/utils/network/server_info.dart';
 import 'package:timetracker_mobile/utils/ssl/certificate_error.dart';
 import 'package:timetracker_mobile/utils/ssl/ssl_utils.dart';
 
@@ -87,6 +92,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
       final baseUrl = serverUrl.endsWith('/') ? serverUrl : '$serverUrl/';
       final trustedHosts = await AppConfig.getTrustedInsecureHosts();
+
+      final infoResult = await probeServerInfo(
+        serverUrl,
+        trustedInsecureHosts: trustedHosts,
+      );
+      if (!infoResult.ok) {
+        setState(() {
+          _error = infoResult.message ?? 'Could not reach TimeTracker server';
+          _isLoading = false;
+        });
+        return;
+      }
+
       final dio = Dio(BaseOptions(
         baseUrl: baseUrl,
         connectTimeout: const Duration(seconds: 15),
@@ -133,6 +151,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // Only persist configuration after we know the connection works.
       await AppConfig.setServerUrl(serverUrl);
       await _storage.write(key: 'api_token', value: token);
+
+      // Kick off background periodic sync after a successful login.
+      unawaited(SyncUseCase.shared.startPeriodicSync());
+
+      // Register FCM device token for idle wake-up when Firebase is configured.
+      unawaited(
+        NotificationService.instance.registerDeviceToken(apiClient),
+      );
 
       if (mounted) {
         Navigator.of(context).pushReplacementNamed(AppConstants.routeHome);

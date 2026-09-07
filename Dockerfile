@@ -4,19 +4,27 @@
 FROM node:18-slim as frontend
 WORKDIR /app
 COPY package*.json ./
+# `npm install`, not `npm ci`: package-lock.json is intentionally gitignored
+# (see .gitignore "Node.js / Frontend build"), so no lockfile reaches this stage.
 RUN npm install
-# Copy files needed for Tailwind build
+# Copy files needed for the Tailwind, vendor and JS builds
 COPY tailwind.config.js ./
 COPY postcss.config.js ./
-COPY app/static/src ./app/static/src
+COPY scripts/copy-vendor.mjs scripts/build-js.mjs ./scripts/
+COPY app/static ./app/static
 COPY app/templates ./app/templates
 # Create dist directory for output
 RUN mkdir -p app/static/dist
-# Run the build (creates app/static/dist/output.css)
+# build:docker runs three steps:
+#   1. Tailwind  -> app/static/dist/output.css
+#   2. copy:vendor -> app/static/vendor/ (self-hosted third-party libs; the app must
+#      render with no outbound network access)
+#   3. build:js  -> app/static/dist/*.min.js + manifest.json (content-hashed bundles
+#      resolved at render time by asset_url(), see app/utils/assets.py)
 RUN npm run build:docker
 
 # --- Stage 2: Python Application ---
-FROM python:3.11-slim-bullseye
+FROM python:3.11-slim-bookworm
 
 # Build-time version argument with safe default
 ARG APP_VERSION=dev-0
@@ -32,10 +40,31 @@ ENV TZ=Europe/Rome
 ENV DONATE_HIDE_PUBLIC_KEY_FILE=/app/donate_hide_public.pem
 LABEL org.opencontainers.image.description="Self-hosted time tracking web application for projects, clients, and reports."
 
-# Install all system dependencies in a single layer
+# Install all system dependencies in a single layer.
+# apt is wrapped in a retry: during a Debian point release the security suite
+# rotates its pool and purges older .debs, so a freshly fetched index can
+# briefly reference a .deb that already 404s. Each retry clears the package
+# index and re-fetches, so the next attempt sees a self-consistent mirror; a
+# genuinely missing package still fails the build once attempts are exhausted.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
+    set -eux; \
+    apt_get_retry() { \
+        i=0; \
+        while [ "$i" -lt 5 ]; do \
+            i=$((i + 1)); \
+            if apt-get update -o Acquire::Retries=3 \
+                && apt-get install -y --no-install-recommends -o Acquire::Retries=3 "$@"; then \
+                return 0; \
+            fi; \
+            echo "apt attempt $i failed; clearing index and retrying..." >&2; \
+            rm -rf /var/lib/apt/lists/*; \
+            sleep 10; \
+        done; \
+        echo "apt failed after 5 attempts" >&2; \
+        return 1; \
+    }; \
+    apt_get_retry \
     # Core utilities
     curl \
     tzdata \
@@ -60,12 +89,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     # PostgreSQL client dependencies
     gnupg \
     wget \
-    lsb-release \
-    && sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list' \
-    && wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends postgresql-client-16 \
-    && rm -rf /var/lib/apt/lists/*
+    lsb-release; \
+    echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list; \
+    wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -; \
+    apt_get_retry postgresql-client-16; \
+    rm -rf /var/lib/apt/lists/*
 
 # Set work directory
 WORKDIR /app
@@ -102,11 +130,17 @@ RUN chmod -R 775 /app/translations \
     && chmod 755 /app/app/static/dist \
     && chmod -R 755 /app/app/static
 
-# Copy compiled assets from frontend stage (after general COPY to ensure it overwrites any local version)
-COPY --chown=timetracker:timetracker --from=frontend /app/app/static/dist/output.css /app/app/static/dist/output.css
+# Copy compiled assets from frontend stage (after general COPY to ensure it overwrites any local version).
+# dist/  = Tailwind output.css + hashed JS bundles + manifest.json
+# vendor/ = self-hosted third-party libraries (Font Awesome, Chart.js, flatpickr,
+#           socket.io, Toast UI, Pickr, Konva, Sortable, FullCalendar, frappe-gantt,
+#           anime.js, Inter webfonts). Without these the app would reach out to
+#           cdnjs/jsDelivr/uicdn at runtime and fail in air-gapped installs.
+COPY --chown=timetracker:timetracker --from=frontend /app/app/static/dist /app/app/static/dist
+COPY --chown=timetracker:timetracker --from=frontend /app/app/static/vendor /app/app/static/vendor
 
-# Ensure the CSS file has correct permissions
-RUN chmod 644 /app/app/static/dist/output.css
+# Ensure the built assets are world-readable
+RUN chmod -R a+rX /app/app/static/dist /app/app/static/vendor
 
 # Copy the startup script
 COPY --chown=timetracker:timetracker docker/start-fixed.py /app/start.py

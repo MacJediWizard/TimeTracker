@@ -14,42 +14,48 @@ class TestEnhancedUI:
         """Test that enhanced UI CSS is loaded"""
         response = authenticated_client.get(url_for("main.dashboard"))
         assert response.status_code == 200
-        assert b"enhanced-ui.css" in response.data
+        # The enhanced-ui styles are compiled into the bundled dist/output.css
+        # (app/static/src/input.css:708), which _head.html links via static_url.
+        assert b"output.css" in response.data
 
     def test_enhanced_js_loaded(self, authenticated_client):
         """Test that enhanced UI JavaScript is loaded"""
         response = authenticated_client.get(url_for("main.dashboard"))
         assert response.status_code == 200
-        assert b"enhanced-ui.js" in response.data
+        # enhanced-ui.js ships in the "core-d" bundle (scripts/build-js.mjs).
+        assert b"core-d" in response.data
 
     def test_charts_js_loaded(self, authenticated_client):
         """Test that charts JavaScript is loaded"""
         response = authenticated_client.get(url_for("main.dashboard"))
         assert response.status_code == 200
-        assert b"charts.js" in response.data
+        # charts.js ships in the "core-d" bundle.
+        assert b"core-d" in response.data
 
     def test_onboarding_js_loaded(self, authenticated_client):
         """Test that onboarding JavaScript is loaded"""
         response = authenticated_client.get(url_for("main.dashboard"))
         assert response.status_code == 200
-        assert b"onboarding.js" in response.data
+        # onboarding.js ships in the "core-d" bundle.
+        assert b"core-d" in response.data
 
     def test_toast_notifications_js_loaded(self, authenticated_client):
         """Test that toast notification script is loaded on dashboard"""
         response = authenticated_client.get(url_for("main.dashboard"))
         assert response.status_code == 200
-        assert b"toast-notifications.js" in response.data
+        # toast-notifications.js ships in the "core-a1" bundle.
+        assert b"core-a1" in response.data
 
     def test_set_submit_button_loading_available(self, authenticated_client):
         """Test that setSubmitButtonLoading helper is provided by enhanced-ui.js.
 
-        The dashboard HTML references enhanced-ui.js via <script src=...>; the
-        symbol itself lives in the served static file. Fetch the file and
-        confirm the helper is exported.
+        The dashboard HTML references enhanced-ui.js via the "core-d" bundle; the
+        symbol itself lives in the served static file. Fetch the file and confirm
+        the helper is present (build-independent — no dist bundle required).
         """
         page = authenticated_client.get(url_for("main.dashboard"))
         assert page.status_code == 200
-        assert b"enhanced-ui.js" in page.data
+        assert b"core-d" in page.data
 
         asset = authenticated_client.get(url_for("static", filename="enhanced-ui.js"))
         assert asset.status_code == 200
@@ -58,12 +64,13 @@ class TestEnhancedUI:
     def test_filter_ajax_error_toast_message_in_enhanced_ui(self, authenticated_client):
         """Test that enhanced-ui.js shows a consistent error toast on filter failure.
 
-        Same shape as above — the user-facing string lives in the static JS,
-        not in the rendered page HTML.
+        Same shape as above — the user-facing string lives in the static JS, not in
+        the rendered page HTML.
         """
         page = authenticated_client.get(url_for("projects.list_projects"))
         assert page.status_code == 200
-        assert b"enhanced-ui.js" in page.data
+        # enhanced-ui.js ships in the "core-d" bundle.
+        assert b"core-d" in page.data
 
         asset = authenticated_client.get(url_for("static", filename="enhanced-ui.js"))
         assert asset.status_code == 200

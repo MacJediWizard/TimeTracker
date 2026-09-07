@@ -3,11 +3,11 @@ API v1 - Time Entries and Timer endpoints.
 Sub-blueprint for /api/v1/time-entries and /api/v1/timer/*.
 """
 
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request
 from marshmallow import ValidationError
 
 from app.routes.api_v1_common import _parse_date_range, paginate_query
-from app.schemas.time_entry_schema import TimeEntryCreateSchema, TimeEntryUpdateSchema
+from app.schemas.time_entry_schema import TimeEntryCreateSchema, TimeEntryUpdateSchema, TimerStartSchema
 from app.utils.api_auth import require_api_token
 from app.utils.api_responses import (
     error_response,
@@ -177,9 +177,22 @@ def create_time_entry():
     start_time = validated["start_time"]
     end_time = validated.get("end_time") or start_time
 
+    # Admins may create entries for another active user (parity with calendar API)
+    target_user_id = g.api_user.id
+    requested_user_id = validated.get("user_id")
+    if requested_user_id and requested_user_id != g.api_user.id:
+        if not g.api_user.is_admin:
+            return error_response("Only admins can create time entries for other users", status_code=403)
+        from app.models import User
+
+        target = User.query.filter_by(id=requested_user_id, is_active=True).first()
+        if not target:
+            return error_response("Selected user is invalid or inactive", status_code=400)
+        target_user_id = target.id
+
     time_tracking_service = TimeTrackingService()
     result = time_tracking_service.create_manual_entry(
-        user_id=g.api_user.id,
+        user_id=target_user_id,
         project_id=validated.get("project_id"),
         client_id=validated.get("client_id"),
         start_time=start_time,
@@ -223,6 +236,7 @@ def create_time_entry():
                 "task_name": task_name,
                 "duration_formatted": duration_formatted,
                 "duration_hours": entry.duration_hours if hasattr(entry, "duration_hours") else None,
+                "target_user_id": target_user_id,
             },
             ip_address=ip_address,
             user_agent=user_agent,
@@ -355,46 +369,177 @@ def delete_time_entry(entry_id):
 @require_api_token("read:time_entries")
 def timer_status():
     """Get current timer status."""
+    from app.models import Settings
+
+    settings = Settings.get_settings()
+    idle_timeout_minutes = getattr(settings, "idle_timeout_minutes", 30) or 30
+
     active_timer = g.api_user.active_timer
     if not active_timer:
-        return jsonify({"active": False, "timer": None})
-    return jsonify({"active": True, "timer": active_timer.to_dict()})
+        return jsonify(
+            {
+                "active": False,
+                "timer": None,
+                "idle_timeout_minutes": idle_timeout_minutes,
+                "idle_notified": False,
+            }
+        )
+    return jsonify(
+        {
+            "active": True,
+            "timer": active_timer.to_dict(),
+            "idle_timeout_minutes": idle_timeout_minutes,
+            "idle_notified": bool(active_timer.idle_notified_at),
+            "needs_review": bool(active_timer.idle_flagged_at),
+        }
+    )
+
+
+@api_v1_time_entries_bp.route("/timer/heartbeat", methods=["POST"])
+@require_api_token("write:time_entries")
+def timer_heartbeat():
+    """Record activity for the active timer (idle timeout safety net).
+
+    Clears any pending idle notification so the server grace window resets.
+    """
+    from app import db
+    from app.utils.db import safe_commit
+
+    active_timer = g.api_user.active_timer
+    if not active_timer:
+        return error_response(
+            "No active timer",
+            error_code="no_active_timer",
+            status_code=400,
+        )
+
+    try:
+        active_timer.record_heartbeat()
+    except ValueError as e:
+        return error_response(str(e), error_code="heartbeat_failed", status_code=400)
+
+    if not safe_commit("timer_heartbeat", {"user_id": g.api_user.id, "entry_id": active_timer.id}):
+        db.session.rollback()
+        return error_response(
+            "Failed to record heartbeat",
+            error_code="database_error",
+            status_code=500,
+        )
+
+    return ("", 204)
+
+
+@api_v1_time_entries_bp.route("/timer/review", methods=["POST"])
+@require_api_token("write:time_entries")
+def timer_review():
+    """Resolve an idle needs-review flag on the active timer.
+
+    Body: {"action": "trim" | "keep" | "continue", "end_time": optional ISO (for "keep")}
+    - trim: stop credited to last activity + idle timeout (the old auto-stop behaviour)
+    - keep: stop at now (or the provided end_time)
+    - continue: clear the flag and keep the timer running (user is actually working)
+    """
+    from datetime import datetime, timedelta
+
+    from app import db
+    from app.models import Settings
+    from app.models.time_entry import local_now
+    from app.utils.db import safe_commit
+
+    data = request.get_json(silent=True) or {}
+    action = (data.get("action") or "").strip().lower()
+    if action not in ("trim", "keep", "continue"):
+        return error_response("action must be trim, keep or continue", error_code="invalid_action", status_code=400)
+
+    active_timer = g.api_user.active_timer
+    if not active_timer:
+        return error_response("No active timer", error_code="no_active_timer", status_code=400)
+
+    try:
+        if action == "continue":
+            active_timer.clear_idle_flags()
+            active_timer.last_heartbeat_at = local_now()
+            if not safe_commit("timer_review", {"user_id": g.api_user.id, "entry_id": active_timer.id}):
+                db.session.rollback()
+                return error_response("Failed to resolve review", error_code="database_error", status_code=500)
+            return jsonify({"ok": True, "stopped": False})
+
+        if action == "keep" and data.get("end_time"):
+            try:
+                end_time = datetime.fromisoformat(data["end_time"])
+            except ValueError:
+                return error_response("invalid end_time", error_code="invalid_end_time", status_code=400)
+            if end_time <= active_timer.start_time:
+                return error_response(
+                    "end_time must be after start_time", error_code="invalid_end_time", status_code=400
+                )
+            active_timer.stop_timer(end_time=end_time)
+        elif action == "trim":
+            settings = Settings.get_settings()
+            idle_minutes = max(1, min(480, int(getattr(settings, "idle_timeout_minutes", 30) or 30)))
+            last_active = active_timer.last_heartbeat_at or active_timer.start_time
+            if getattr(last_active, "tzinfo", None) is not None:
+                last_active = last_active.replace(tzinfo=None)
+            stop_at = last_active + timedelta(minutes=idle_minutes)
+            now = local_now()
+            if stop_at > now:
+                stop_at = now
+            active_timer.stop_timer(end_time=stop_at)
+        else:  # keep at now
+            active_timer.stop_timer()
+
+        return jsonify({"ok": True, "stopped": True, "time_entry": active_timer.to_dict()})
+    except ValueError as e:
+        db.session.rollback()
+        return error_response(str(e), error_code="review_failed", status_code=400)
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.warning("Timer review failed for user %s: %s", g.api_user.id, e)
+        return error_response("Failed to resolve review", error_code="database_error", status_code=500)
 
 
 @api_v1_time_entries_bp.route("/timer/start", methods=["POST"])
 @require_api_token("write:time_entries")
 def start_timer():
-    """Start a new timer."""
+    """Start a new timer (project-based or client-only)."""
     from app.services import TimeTrackingService
+    from app.utils.scope_filter import user_can_access_client, user_can_access_project
 
     data = request.get_json() or {}
-    project_id = data.get("project_id")
-    if not project_id:
-        return validation_error_response(
-            errors={"project_id": ["project_id is required"]},
-            message="project_id is required",
-        )
+    schema = TimerStartSchema()
+    try:
+        validated = schema.load(data)
+    except ValidationError as err:
+        return handle_validation_error(err)
 
-    from app.utils.scope_filter import user_can_access_project
+    project_id = validated.get("project_id")
+    client_id = validated.get("client_id")
 
-    if not user_can_access_project(g.api_user, project_id):
+    if project_id and not user_can_access_project(g.api_user, project_id):
         return forbidden_response("You do not have access to this project")
+    if client_id and not project_id and not user_can_access_client(g.api_user, client_id):
+        return forbidden_response("You do not have access to this client")
 
     time_tracking_service = TimeTrackingService()
     result = time_tracking_service.start_timer(
         user_id=g.api_user.id,
         project_id=project_id,
-        task_id=data.get("task_id"),
-        notes=data.get("notes"),
-        template_id=data.get("template_id"),
+        client_id=client_id,
+        task_id=validated.get("task_id"),
+        notes=validated.get("notes"),
+        template_id=validated.get("template_id"),
     )
     if not result.get("success"):
         if result.get("error") == "timer_already_running":
-            return error_response(
-                result.get("message", "Could not start timer"),
-                error_code="timer_already_running",
-                status_code=409,
-            )
+            active = g.api_user.active_timer
+            payload = {
+                "success": False,
+                "error": result.get("message", "Could not start timer"),
+                "message": result.get("message", "Could not start timer"),
+                "error_code": "timer_already_running",
+                "timer": active.to_dict() if active else None,
+            }
+            return jsonify(payload), 409
         return error_response(
             result.get("message", "Could not start timer"),
             status_code=400,
@@ -439,8 +584,15 @@ def resume_timer():
 @api_v1_time_entries_bp.route("/timer/stop", methods=["POST"])
 @require_api_token("write:time_entries")
 def stop_timer():
-    """Stop the active timer."""
+    """Stop the active timer.
+
+    Optional JSON body field ``stop_time`` (ISO-8601) stops the timer at a
+    specific timestamp (used for idle auto-stop adjustments).
+    """
+    from datetime import datetime
+
     from app.services import TimeTrackingService
+    from app.utils.timezone import utc_to_local
 
     active_timer = g.api_user.active_timer
     if not active_timer:
@@ -449,8 +601,33 @@ def stop_timer():
             error_code="no_active_timer",
             status_code=400,
         )
+
+    data = request.get_json(silent=True) or {}
+    end_time_local = None
+    stop_time_str = data.get("stop_time")
+    if stop_time_str:
+        try:
+            ts = str(stop_time_str).strip()
+            if ts.endswith("Z"):
+                ts = ts[:-1] + "+00:00"
+            parsed = datetime.fromisoformat(ts)
+            if parsed.tzinfo is not None:
+                end_time_local = utc_to_local(parsed).replace(tzinfo=None)
+            else:
+                end_time_local = parsed
+        except Exception:
+            return error_response(
+                "Invalid stop_time format",
+                error_code="invalid_stop_time",
+                status_code=400,
+            )
+
     time_tracking_service = TimeTrackingService()
-    result = time_tracking_service.stop_timer(user_id=g.api_user.id, entry_id=active_timer.id)
+    result = time_tracking_service.stop_timer(
+        user_id=g.api_user.id,
+        entry_id=active_timer.id,
+        end_time=end_time_local,
+    )
     if not result.get("success"):
         return error_response(
             result.get("message", "Could not stop timer"),

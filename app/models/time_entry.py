@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
 from app import db
-from app.config import Config
 from app.utils.timezone import local_to_utc, utc_to_local
 
 
@@ -35,6 +34,12 @@ class TimeEntry(db.Model):
     billable = db.Column(db.Boolean, default=True, nullable=False)
     paid = db.Column(db.Boolean, default=False, nullable=False, index=True)
     invoice_number = db.Column(db.String(100), nullable=True)
+    # Idle timeout: clients POST /timer/heartbeat while active; server job auto-stops when stale
+    last_heartbeat_at = db.Column(db.DateTime, nullable=True, index=True)
+    idle_notified_at = db.Column(db.DateTime, nullable=True)
+    # Set when the idle grace window expired unanswered: the timer keeps running
+    # but is flagged so the user can trim/adjust it later instead of losing time.
+    idle_flagged_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=local_now, nullable=False)
     updated_at = db.Column(db.DateTime, default=local_now, onupdate=local_now, nullable=False)
 
@@ -111,9 +116,14 @@ class TimeEntry(db.Model):
         self.paid = paid
         self.invoice_number = invoice_number.strip() if invoice_number else None
 
-        # Allow manual duration override
+        # Allow manual duration override. For boundary rounding, adjust start/end
+        # via calculate_duration() instead of storing the override as-is (otherwise
+        # timestamps stay raw while duration is treated as already-final).
         if duration_seconds is not None:
-            self.duration_seconds = duration_seconds
+            if self.start_time and self.end_time and self._uses_boundary_rounding():
+                self.calculate_duration()
+            else:
+                self.duration_seconds = duration_seconds
         # Otherwise, calculate duration if end time is provided
         elif self.end_time:
             self.calculate_duration()
@@ -206,8 +216,33 @@ class TimeEntry(db.Model):
         tz = get_timezone_obj()
         return dt.astimezone(tz).replace(tzinfo=None)
 
+    def _resolve_rounding_user(self):
+        """Resolve the user for rounding prefs (works on transient instances)."""
+        user = None
+        try:
+            user = self.user
+        except Exception:
+            user = None
+        if user is None and self.user_id:
+            from app.models.user import User
+
+            user = db.session.get(User, self.user_id)
+        return user
+
+    def _uses_boundary_rounding(self) -> bool:
+        """True when effective rounding method is boundary with an interval > 1."""
+        from app.utils.time_rounding import get_user_rounding_settings
+
+        settings = get_user_rounding_settings(self._resolve_rounding_user())
+        return bool(settings["enabled"] and settings["method"] == "boundary" and settings["minutes"] > 1)
+
     def calculate_duration(self):
-        """Calculate and set duration in seconds with rounding"""
+        """Calculate and set duration in seconds with rounding.
+
+        When the user (or global fallback) uses the ``boundary`` method, start_time
+        is floored and end_time is ceiled to the rounding interval and persisted
+        before duration is computed (Issue #725).
+        """
         if not self.end_time:
             return
 
@@ -216,26 +251,46 @@ class TimeEntry(db.Model):
         end = self._naive_dt(self.end_time)
         if start is None or end is None:
             return
+
+        # Resolve user for per-user rounding preferences.
+        # On transient instances (not yet in session), self.user may be None or raise —
+        # look up by user_id so rounding still applies.
+        user = self._resolve_rounding_user()
+
+        from app.utils.time_rounding import apply_user_rounding, get_user_rounding_settings, round_entry_boundaries
+
+        settings = get_user_rounding_settings(user)
+        if settings["enabled"] and settings["method"] == "boundary" and settings["minutes"] > 1:
+            rounded_start, rounded_end = round_entry_boundaries(start, end, settings["minutes"])
+            self.start_time = rounded_start
+            self.end_time = rounded_end
+            start = rounded_start
+            end = rounded_end
+
         duration = end - start
         raw_seconds = int(duration.total_seconds())
         break_sec = self.break_seconds or 0
         raw_seconds = max(0, raw_seconds - break_sec)
+        self.duration_seconds = apply_user_rounding(raw_seconds, user)
 
-        # Apply per-user rounding if user preferences are set
-        if self.user and hasattr(self.user, "time_rounding_enabled"):
-            from app.utils.time_rounding import apply_user_rounding
+    def record_heartbeat(self, at=None):
+        """Record client activity for idle timeout enforcement.
 
-            self.duration_seconds = apply_user_rounding(raw_seconds, self.user)
-        else:
-            # Fallback to global rounding setting for backward compatibility
-            rounding_minutes = Config.ROUNDING_MINUTES
-            if rounding_minutes > 1:
-                # Round to nearest interval
-                minutes = raw_seconds / 60
-                rounded_minutes = round(minutes / rounding_minutes) * rounding_minutes
-                self.duration_seconds = int(rounded_minutes * 60)
-            else:
-                self.duration_seconds = raw_seconds
+        Clears any pending idle notification so the server grace window resets.
+        """
+        if self.end_time:
+            raise ValueError("Cannot heartbeat a stopped timer")
+        now = at if at is not None else local_now()
+        self.last_heartbeat_at = now
+        self.idle_notified_at = None
+        self.idle_flagged_at = None
+        self.updated_at = local_now()
+
+    def clear_idle_flags(self):
+        """Clear pending idle notification and needs-review flag (user confirmed activity or resolved review)."""
+        self.idle_notified_at = None
+        self.idle_flagged_at = None
+        self.updated_at = local_now()
 
     def stop_timer(self, end_time=None):
         """Stop an active timer"""
@@ -248,6 +303,8 @@ class TimeEntry(db.Model):
         else:
             self.end_time = local_now()
 
+        self.idle_notified_at = None
+        self.idle_flagged_at = None
         self.calculate_duration()
         self.updated_at = local_now()
 
@@ -330,6 +387,11 @@ class TimeEntry(db.Model):
             "paid": self.paid,
             "invoice_number": self.invoice_number,
             "is_active": self.is_active,
+            "last_heartbeat_at": self.last_heartbeat_at.isoformat() if self.last_heartbeat_at else None,
+            "idle_notified": bool(self.idle_notified_at),
+            "idle_notified_at": self.idle_notified_at.isoformat() if self.idle_notified_at else None,
+            "needs_review": bool(self.idle_flagged_at),
+            "idle_flagged_at": self.idle_flagged_at.isoformat() if self.idle_flagged_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "user": self.user.username if self.user else None,

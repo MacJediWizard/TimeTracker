@@ -144,6 +144,93 @@ def test_provision_rolls_back_project_on_task_failure(app, user, monkeypatch):
         assert Task.query.filter_by(name="Site survey").first() is None
 
 
+def test_provision_non_string_free_text_fields_do_not_crash(app, user):
+    """Free-text plan fields beyond the names — project code/description,
+    client contact_person/email, task description/priority/tags — may arrive as
+    non-strings from an API caller that ignores the schema. Downstream code calls
+    ``code.upper()`` (project_service) and ``tags.strip()`` (Task model), so an
+    unguarded non-string raised AttributeError -> unhandled 500. They must now be
+    coerced to None / the default instead."""
+    with app.app_context():
+        plan = {
+            "client": {
+                "name": "Beta LLC",
+                "contact_person": ["not", "a", "string"],
+                "email": {"addr": "x@y.z"},
+            },
+            "project": {
+                "name": "Weird Project",
+                "code": 12345,  # non-string -> would crash on code.upper()
+                "description": ["a", "b"],
+            },
+            "tasks": [
+                {
+                    "name": "T1",
+                    "status": "todo",
+                    "priority": 3,  # non-string -> default "medium"
+                    "tags": ["net", "wan"],  # non-string -> would crash on tags.strip()
+                    "description": {"d": 1},
+                },
+            ],
+        }
+        result = SowProvisioningService().provision(plan, created_by=user.id)
+        assert result["ok"] is True
+        assert result["task_count"] == 1
+
+        project = Project.query.filter_by(name="Weird Project").one()
+        assert project.code is None
+        assert project.description is None
+
+        task = Task.query.filter_by(name="T1").one()
+        assert task.tags is None
+        assert task.priority == "medium"
+        assert task.description is None
+
+        beta = Client.query.filter_by(name="Beta LLC").one()
+        assert beta.contact_person is None
+        assert beta.email is None
+
+
+def test_provision_rolls_back_new_client_on_project_failure(app, user, monkeypatch):
+    """If project creation fails, a client created solely for this SOW must be
+    removed — no orphan. Pre-fix, _find_or_create_client committed the client
+    before create_project ran (and outside the rollback try), so a failure left
+    the client behind."""
+    with app.app_context():
+        from app.services.project_service import ProjectService
+
+        monkeypatch.setattr(
+            ProjectService,
+            "create_project",
+            lambda self, **kw: {"success": False, "message": "nope", "error": "project_create_failed"},
+        )
+        with pytest.raises(AIServiceError):
+            SowProvisioningService().provision(_plan(), created_by=user.id)
+
+        assert Client.query.filter_by(name="Acme Corp").first() is None
+
+
+def test_provision_keeps_preexisting_client_on_project_failure(app, user, monkeypatch):
+    """A client that already existed must NOT be deleted when provisioning later
+    fails — only a client created during this SOW is rolled back."""
+    with app.app_context():
+        from app.services.project_service import ProjectService
+
+        existing = Client(name="Acme Corp", created_by=user.id)
+        db.session.add(existing)
+        db.session.commit()
+
+        monkeypatch.setattr(
+            ProjectService,
+            "create_project",
+            lambda self, **kw: {"success": False, "message": "nope", "error": "project_create_failed"},
+        )
+        with pytest.raises(AIServiceError):
+            SowProvisioningService().provision(_plan(), created_by=user.id)
+
+        assert Client.query.filter_by(name="Acme Corp").count() == 1
+
+
 # --- routes -------------------------------------------------------------------
 
 

@@ -67,6 +67,13 @@
                         </p>
                     </div>
                     <div>
+                        <label for="app_base_url" class="form-label">{{ _('App base URL') }}</label>
+                        <input type="url" name="app_base_url" id="app_base_url" value="{{ settings.app_base_url or '' }}" placeholder="https://time.example.com" class="form-input">
+                        <p class="mt-1 text-xs text-text-muted-light dark:text-text-muted-dark">
+                            {{ _('Public URL used for absolute links in emails and background notifications (e.g. invoice and quote buttons). Leave blank to use APP_BASE_URL from the environment or the host detected from requests.') }}
+                        </p>
+                    </div>
+                    <div>
                         <label for="currency" class="form-label">Currency</label>
                         <input type="text" name="currency" id="currency" value="{{ settings.currency }}" required class="form-input">
                     </div>
@@ -100,12 +107,51 @@
                 <h2 class="text-lg font-semibold mb-4">Timers</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                        <label for="rounding_minutes" class="form-label">Rounding (Minutes)</label>
-                        <input type="number" name="rounding_minutes" id="rounding_minutes" value="{{ settings.rounding_minutes }}" required class="form-input">
+                        <label for="rounding_minutes" class="form-label">{{ _('Rounding Interval') }}</label>
+                        <select name="rounding_minutes" id="rounding_minutes" class="form-input">
+                            <option value="1" {% if settings.rounding_minutes == 1 %}selected{% endif %}>{{ _('No rounding (exact time)') }}</option>
+                            <option value="5" {% if settings.rounding_minutes == 5 %}selected{% endif %}>{{ _('5 minutes') }}</option>
+                            <option value="10" {% if settings.rounding_minutes == 10 %}selected{% endif %}>{{ _('10 minutes') }}</option>
+                            <option value="15" {% if settings.rounding_minutes == 15 %}selected{% endif %}>{{ _('15 minutes') }}</option>
+                            <option value="30" {% if settings.rounding_minutes == 30 %}selected{% endif %}>{{ _('30 minutes') }}</option>
+                            <option value="60" {% if settings.rounding_minutes == 60 %}selected{% endif %}>{{ _('1 hour') }}</option>
+                        </select>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ _('Default interval for users who have not set a personal rounding interval.') }}</p>
                     </div>
                     <div>
                         <label for="idle_timeout_minutes" class="form-label">Idle Timeout (Minutes)</label>
                         <input type="number" name="idle_timeout_minutes" id="idle_timeout_minutes" value="{{ settings.idle_timeout_minutes }}" required class="form-input">
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ _('After this much inactivity, clients are asked "Still working?" and unanswered timers are flagged for review (they keep running).') }}</p>
+                    </div>
+                    <div>
+                        <label for="idle_auto_stop_hours" class="form-label">{{ _('Idle Safety Cap (Hours)') }}</label>
+                        <input type="number" name="idle_auto_stop_hours" id="idle_auto_stop_hours" value="{{ settings.idle_auto_stop_hours or 0 }}" min="0" max="168" class="form-input">
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ _('Auto-stop a flagged timer after this many hours unanswered (credited to last activity, entry stays flagged for review). 0 disables the cap.') }}</p>
+                    </div>
+                    <div>
+                        <label for="rounding_method" class="form-label">{{ _('Rounding Method') }}</label>
+                        <select name="rounding_method" id="rounding_method" class="form-input">
+                            {% for method, label, description in rounding_methods %}
+                            <option value="{{ method }}" {% if (settings.rounding_method or 'nearest') == method %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ _('Default method when a user has not chosen one. Boundary rounds start down and end up to interval markers.') }}</p>
+                    </div>
+                    <div>
+                        <label for="rounding_minimum_minutes" class="form-label">{{ _('Minimum Entry Duration') }}</label>
+                        <select name="rounding_minimum_minutes" id="rounding_minimum_minutes" class="form-input">
+                            {% for minutes, label in rounding_minimums %}
+                            <option value="{{ minutes }}" {% if (settings.rounding_minimum_minutes or 0) == minutes %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ _('Default billable floor for short entries. Users inherit this unless they set their own.') }}</p>
+                    </div>
+                    <div class="md:col-span-2 flex items-start">
+                        <input type="checkbox" name="rounding_enforce_global" id="rounding_enforce_global" {% if settings.rounding_enforce_global %}checked{% endif %} class="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <label for="rounding_enforce_global" class="ml-2 block text-sm text-gray-900 dark:text-gray-300">
+                            <span class="font-medium">{{ _('Enforce for all users') }}</span>
+                            <span class="block text-xs text-gray-500 dark:text-gray-400">{{ _('Ignore personal rounding preferences so everyone tracks time the same way. Per-user settings are preserved but locked until this is turned off.') }}</span>
+                        </label>
                     </div>
                     <div class="md:col-span-2 flex items-center">
                         <input type="checkbox" name="single_active_timer" id="single_active_timer" {% if settings.single_active_timer %}checked{% endif %} class="h-4 w-4 rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
@@ -204,6 +250,23 @@
                                 <div>
                                     <label for="compliance_min_daily_rest_hours" class="form-label">{{ _('Minimum daily rest (hours)') }}</label>
                                     <input type="number" name="compliance_min_daily_rest_hours" id="compliance_min_daily_rest_hours" value="{{ getattr(settings, 'compliance_min_daily_rest_hours', 11.0) }}" min="8" max="16" step="0.5" class="form-input w-32 mt-1">
+                                </div>
+                            </div>
+                            <div class="mt-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 space-y-3">
+                                <div class="flex items-center">
+                                    <input type="checkbox" name="auto_break_enabled" id="auto_break_enabled" {% if getattr(settings, 'auto_break_enabled', False) %}checked{% endif %} class="h-4 w-4 rounded border-gray-300 text-indigo-600">
+                                    <label for="auto_break_enabled" class="ml-2 text-sm font-medium">{{ _('Automatically deduct break on clock-out') }}</label>
+                                </div>
+                                <p class="text-xs text-text-muted-light dark:text-text-muted-dark">{{ _('When enabled, a break is automatically deducted on clock-out if the workday exceeds the threshold and no sufficient break has been recorded.') }}</p>
+                                <div class="flex flex-wrap gap-4">
+                                    <div>
+                                        <label for="auto_break_after_hours" class="form-label">{{ _('Deduct break after (hours)') }}</label>
+                                        <input type="number" name="auto_break_after_hours" id="auto_break_after_hours" value="{{ getattr(settings, 'auto_break_after_hours', 6.0) }}" min="1" max="12" step="0.5" class="form-input w-32 mt-1">
+                                    </div>
+                                    <div>
+                                        <label for="auto_break_duration_minutes" class="form-label">{{ _('Break duration (minutes)') }}</label>
+                                        <input type="number" name="auto_break_duration_minutes" id="auto_break_duration_minutes" value="{{ getattr(settings, 'auto_break_duration_minutes', 30) }}" min="5" max="120" step="1" class="form-input w-32 mt-1">
+                                    </div>
                                 </div>
                             </div>
                             <div class="flex items-center">
@@ -858,7 +921,7 @@
 
 <style>
 </style>
-<script>
+<script nonce="{{ csp_nonce() }}">
 function previewLogoBeforeUpload(input) {
     const preview = document.getElementById('logoPreview');
     const previewImage = document.getElementById('logoPreviewImage');

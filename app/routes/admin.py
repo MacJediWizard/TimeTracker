@@ -40,6 +40,28 @@ from app.utils.timezone import get_available_timezones
 
 admin_bp = Blueprint("admin", __name__)
 
+_VALID_ROUNDING_MINUTES = {1, 5, 10, 15, 30, 60}
+_VALID_ROUNDING_METHODS = {"nearest", "up", "down", "boundary"}
+_VALID_ROUNDING_MINIMUMS = {0, 5, 10, 15, 30, 60}
+
+
+def _admin_settings_template_kwargs(
+    settings_obj, timezones, kiosk_settings, peppol_env_enabled, ai_config, system_instance_id
+):
+    """Shared context for every render of admin/settings.html."""
+    from app.utils.time_rounding import get_available_minimum_durations, get_available_rounding_methods
+
+    return dict(
+        settings=settings_obj,
+        timezones=timezones,
+        kiosk_settings=kiosk_settings,
+        peppol_env_enabled=peppol_env_enabled,
+        ai_config=ai_config,
+        system_instance_id=system_instance_id,
+        rounding_methods=get_available_rounding_methods(),
+        rounding_minimums=get_available_minimum_durations(),
+    )
+
 
 def _ldap_admin_display():
     """Read-only LDAP config summary for admin settings (from env / app config)."""
@@ -1432,17 +1454,21 @@ def settings():
             system_instance_id = Settings.get_system_instance_id()
             return render_template(
                 "admin/settings.html",
-                settings=settings_obj,
-                timezones=timezones,
-                kiosk_settings=kiosk_settings,
-                peppol_env_enabled=peppol_env_enabled,
-                ai_config=ai_config,
+                **_admin_settings_template_kwargs(
+                    settings_obj,
+                    timezones,
+                    kiosk_settings,
+                    peppol_env_enabled,
+                    ai_config,
+                    system_instance_id,
+                ),
                 claude_config=claude_config,
-                system_instance_id=system_instance_id,
             )
 
         # Update basic settings
         settings_obj.timezone = timezone
+        settings_obj.app_base_url = request.form.get("app_base_url", "").strip()
+        current_app.config["APP_BASE_URL"] = settings_obj.app_base_url or ""
 
         # Validate and update date/time format
         date_fmt = request.form.get("date_format", "YYYY-MM-DD")
@@ -1453,10 +1479,29 @@ def settings():
             settings_obj.time_format = time_fmt
 
         settings_obj.currency = request.form.get("currency", "EUR")
-        settings_obj.rounding_minutes = int(request.form.get("rounding_minutes", 1))
+        try:
+            rounding_minutes = int(request.form.get("rounding_minutes", 1))
+        except (TypeError, ValueError):
+            rounding_minutes = settings_obj.rounding_minutes or 1
+        if rounding_minutes in _VALID_ROUNDING_MINUTES:
+            settings_obj.rounding_minutes = rounding_minutes
+        rounding_method = request.form.get("rounding_method", "nearest")
+        if rounding_method in _VALID_ROUNDING_METHODS:
+            settings_obj.rounding_method = rounding_method
+        try:
+            rounding_minimum = int(request.form.get("rounding_minimum_minutes", 0))
+        except (TypeError, ValueError):
+            rounding_minimum = getattr(settings_obj, "rounding_minimum_minutes", 0) or 0
+        if rounding_minimum in _VALID_ROUNDING_MINIMUMS:
+            settings_obj.rounding_minimum_minutes = rounding_minimum
+        settings_obj.rounding_enforce_global = request.form.get("rounding_enforce_global") == "on"
         settings_obj.single_active_timer = request.form.get("single_active_timer") == "on"
         settings_obj.allow_self_register = request.form.get("allow_self_register") == "on"
         settings_obj.idle_timeout_minutes = int(request.form.get("idle_timeout_minutes", 30))
+        try:
+            settings_obj.idle_auto_stop_hours = max(0, min(168, int(request.form.get("idle_auto_stop_hours", 0) or 0)))
+        except (TypeError, ValueError):
+            settings_obj.idle_auto_stop_hours = getattr(settings_obj, "idle_auto_stop_hours", 0) or 0
         settings_obj.backup_retention_days = int(request.form.get("backup_retention_days", 30))
         settings_obj.backup_time = request.form.get("backup_time", "02:00")
         settings_obj.export_delimiter = request.form.get("export_delimiter", ",")
@@ -1483,13 +1528,15 @@ def settings():
             system_instance_id = Settings.get_system_instance_id()
             return render_template(
                 "admin/settings.html",
-                settings=settings_obj,
-                timezones=timezones,
-                kiosk_settings=kiosk_settings,
-                peppol_env_enabled=peppol_env_enabled,
-                ai_config=ai_config,
+                **_admin_settings_template_kwargs(
+                    settings_obj,
+                    timezones,
+                    kiosk_settings,
+                    peppol_env_enabled,
+                    ai_config,
+                    system_instance_id,
+                ),
                 claude_config=claude_config,
-                system_instance_id=system_instance_id,
             )
         settings_obj.invoice_prefix = invoice_prefix_form
         settings_obj.invoice_number_pattern = invoice_number_pattern_form
@@ -1514,13 +1561,15 @@ def settings():
             system_instance_id = Settings.get_system_instance_id()
             return render_template(
                 "admin/settings.html",
-                settings=settings_obj,
-                timezones=timezones,
-                kiosk_settings=kiosk_settings,
-                peppol_env_enabled=peppol_env_enabled,
-                ai_config=ai_config,
+                **_admin_settings_template_kwargs(
+                    settings_obj,
+                    timezones,
+                    kiosk_settings,
+                    peppol_env_enabled,
+                    ai_config,
+                    system_instance_id,
+                ),
                 claude_config=claude_config,
-                system_instance_id=system_instance_id,
             )
         settings_obj.quote_prefix = quote_prefix_form
         settings_obj.quote_number_pattern = quote_number_pattern_form
@@ -1643,6 +1692,13 @@ def settings():
                 retention = request.form.get("compliance_attendance_retention_years", type=int)
                 if retention is not None and 5 <= retention <= 30:
                     settings_obj.compliance_attendance_retention_years = retention
+            settings_obj.auto_break_enabled = request.form.get("auto_break_enabled") == "on"
+            auto_break_hours = request.form.get("auto_break_after_hours", type=float)
+            if auto_break_hours is not None and 1 <= auto_break_hours <= 12:
+                settings_obj.auto_break_after_hours = auto_break_hours
+            auto_break_dur = request.form.get("auto_break_duration_minutes", type=int)
+            if auto_break_dur is not None and 5 <= auto_break_dur <= 120:
+                settings_obj.auto_break_duration_minutes = auto_break_dur
         except (AttributeError, ValueError, TypeError) as exc:
             safe_log(f"Skipping compliance settings update: {exc}")
 
@@ -1740,13 +1796,15 @@ def settings():
             system_instance_id = Settings.get_system_instance_id()
             return render_template(
                 "admin/settings.html",
-                settings=settings_obj,
-                timezones=timezones,
-                kiosk_settings=kiosk_settings,
-                peppol_env_enabled=peppol_env_enabled,
-                ai_config=ai_config,
+                **_admin_settings_template_kwargs(
+                    settings_obj,
+                    timezones,
+                    kiosk_settings,
+                    peppol_env_enabled,
+                    ai_config,
+                    system_instance_id,
+                ),
                 claude_config=claude_config,
-                system_instance_id=system_instance_id,
             )
         flash(_("Settings updated successfully"), "success")
         return redirect(url_for("admin.settings"))
@@ -1765,13 +1823,15 @@ def settings():
     claude_config = settings_obj.get_claude_config()
     return render_template(
         "admin/settings.html",
-        settings=settings_obj,
-        timezones=timezones,
-        kiosk_settings=kiosk_settings,
-        peppol_env_enabled=peppol_env_enabled,
-        ai_config=ai_config,
+        **_admin_settings_template_kwargs(
+            settings_obj,
+            timezones,
+            kiosk_settings,
+            peppol_env_enabled,
+            ai_config,
+            system_instance_id,
+        ),
         claude_config=claude_config,
-        system_instance_id=system_instance_id,
     )
 
 
@@ -1934,9 +1994,7 @@ def admin_peppol_setup_wizard_send_test():
 @admin_or_permission_required("manage_settings")
 def admin_verify_donate_hide_code():
     """Verify code (Ed25519 or HMAC) and set system-wide donate_ui_hidden=True."""
-    import hmac
-
-    from app.utils.donate_hide_code import compute_donate_hide_code, verify_ed25519_signature
+    from app.utils.donate_hide_code import system_id_log_prefix, verify_supporter_code
 
     settings_obj = Settings.get_settings()
     if getattr(settings_obj, "donate_ui_hidden", False):
@@ -1945,25 +2003,22 @@ def admin_verify_donate_hide_code():
     data = request.get_json() or {}
     code = (data.get("code") or "").strip()
     system_id = Settings.get_system_instance_id()
-    if not system_id:
-        return jsonify({"error": _("Invalid code.")}), 400
-
-    valid = False
-    public_key_pem = current_app.config.get("DONATE_HIDE_PUBLIC_KEY_PEM") or ""
-    if public_key_pem:
-        valid = verify_ed25519_signature(code, system_id, public_key_pem)
+    sid_prefix = system_id_log_prefix(system_id)
+    valid, reason = verify_supporter_code(
+        code,
+        system_id,
+        public_key_pem=current_app.config.get("DONATE_HIDE_PUBLIC_KEY_PEM") or "",
+        secret=current_app.config.get("DONATE_HIDE_UNLOCK_SECRET") or "",
+    )
     if not valid:
-        secret = current_app.config.get("DONATE_HIDE_UNLOCK_SECRET") or ""
-        if secret:
-            expected = compute_donate_hide_code(secret, system_id)
-            valid = bool(expected and hmac.compare_digest(code, expected))
-
-    if not valid:
+        current_app.logger.warning("License verify failed: %s (system_id_prefix=%s)", reason, sid_prefix)
         return jsonify({"error": _("Invalid code.")}), 400
 
     settings_obj.donate_ui_hidden = True
     if safe_commit(db.session):
+        current_app.logger.info("License activated (system_id_prefix=%s)", sid_prefix)
         return jsonify({"success": True})
+    current_app.logger.warning("License verify failed: save_error (system_id_prefix=%s)", sid_prefix)
     return jsonify({"error": _("Error saving settings")}), 500
 
 

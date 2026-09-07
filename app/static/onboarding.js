@@ -10,6 +10,7 @@ class OnboardingManager {
         this.overlay = null;
         this.tooltip = null;
         this.storageKey = 'onboarding_completed';
+        this.active = false;
     }
 
     /**
@@ -19,6 +20,13 @@ class OnboardingManager {
         if (this.isCompleted()) {
             return;
         }
+        // Guard against double-init: multiple scripts auto-start the tour, and a
+        // second overlay would stack above the skip-confirmation dialog, making
+        // the tour impossible to dismiss.
+        if (this.active) {
+            return;
+        }
+        this.active = true;
 
         // Disable tour on mobile devices (width < 768px)
         const isMobile = window.innerWidth <= 768;
@@ -71,7 +79,9 @@ class OnboardingManager {
                     position: fixed;
                     border: 4px solid #3b82f6;
                     border-radius: 8px;
-                    z-index: 10000 !important;
+                    /* No !important: skip() must be able to lower these layers
+                       below the skip-confirmation dialog via inline styles. */
+                    z-index: 10000;
                     transition: all 0.3s ease-out;
                     pointer-events: none;
                     background: transparent;
@@ -120,7 +130,7 @@ class OnboardingManager {
                     padding: 24px;
                     max-width: 400px;
                     min-width: 300px;
-                    z-index: 10001 !important;
+                    z-index: 10001;
                     animation: slideInUp 0.3s ease-out;
                     display: block;
                     visibility: visible;
@@ -265,7 +275,12 @@ class OnboardingManager {
                 
                 .onboarding-tooltip-progress {
                     font-size: 14px;
-                    color: #9ca3af;
+                    /* gray-600 (7.5:1 on white); gray-400 #9ca3af was 2.53:1 and failed WCAG AA */
+                    color: #4b5563;
+                }
+
+                .dark .onboarding-tooltip-progress {
+                    color: #cbd5e1;
                 }
                 
                 .onboarding-tooltip-buttons {
@@ -285,7 +300,8 @@ class OnboardingManager {
                 
                 .onboarding-btn-skip {
                     background: #f3f4f6;
-                    color: #6b7280;
+                    /* gray-600 on gray-100 (6.9:1); gray-500 #6b7280 was 4.39:1 and failed WCAG AA */
+                    color: #4b5563;
                 }
                 
                 .dark .onboarding-btn-skip {
@@ -302,12 +318,13 @@ class OnboardingManager {
                 }
                 
                 .onboarding-btn-primary {
-                    background: #3b82f6;
+                    /* app primary indigo (6.3:1 on white); #3b82f6 was 3.67:1 and failed WCAG AA */
+                    background: #4F46E5;
                     color: white;
                 }
-                
+
                 .onboarding-btn-primary:hover {
-                    background: #2563eb;
+                    background: #4338CA;
                 }
                 
                 @keyframes fadeIn {
@@ -535,6 +552,8 @@ class OnboardingManager {
      * Position tooltip relative to target
      */
     positionTooltip(element, step) {
+        // Don't re-raise the tooltip while the skip confirmation is open
+        if (this._skipPending) return;
         // Get element position first - getBoundingClientRect already accounts for scroll
         const rect = element.getBoundingClientRect();
         
@@ -650,8 +669,8 @@ class OnboardingManager {
         this.tooltip.innerHTML = `
             <div class="onboarding-tooltip-header">
                 <h3 class="onboarding-tooltip-title">${step.title}</h3>
-                <button class="onboarding-tooltip-close" data-action="skip">
-                    <i class="fas fa-times"></i>
+                <button class="onboarding-tooltip-close" data-action="skip" aria-label="Close tour">
+                    <i class="fas fa-times" aria-hidden="true"></i>
                 </button>
             </div>
             <div class="onboarding-tooltip-body">
@@ -711,14 +730,27 @@ class OnboardingManager {
      * Skip the tour
      */
     async skip() {
-        // Temporarily lower the mask and overlay z-index so the confirmation dialog (z-index 2000) appears above them
+        // Prevent pending step-transition timers from re-raising the tooltip
+        // while the confirmation dialog is open.
+        this._skipPending = true;
+        try {
+            await this._showSkipConfirm();
+        } finally {
+            this._skipPending = false;
+        }
+    }
+
+    async _showSkipConfirm() {
+        // Temporarily lower the tour layers (overlay z-index 9998, mask 9999,
+        // highlight 10000, tooltip 10001) so the confirmation dialog (z-index
+        // 2000) appears above all of them and stays readable.
         const mask = document.querySelector('.onboarding-mask');
         const highlight = document.querySelector('.onboarding-highlight');
         const originalMaskZ = mask?.style.zIndex;
         const originalOverlayZ = this.overlay?.style.zIndex;
         const originalHighlightZ = highlight?.style.zIndex;
-        
-        // Lower mask and overlay z-index so confirmation dialog (z-index 2000) appears above
+        const originalTooltipZ = this.tooltip?.style.zIndex;
+
         if (mask) {
             mask.style.zIndex = '1500';
         }
@@ -727,6 +759,9 @@ class OnboardingManager {
         }
         if (highlight) {
             highlight.style.zIndex = '1501';
+        }
+        if (this.tooltip) {
+            this.tooltip.style.zIndex = '1502';
         }
         
         const confirmed = await showConfirm(
@@ -761,6 +796,13 @@ class OnboardingManager {
                 highlight.style.zIndex = '';
             }
         }
+        if (this.tooltip) {
+            if (originalTooltipZ) {
+                this.tooltip.style.zIndex = originalTooltipZ;
+            } else {
+                this.tooltip.style.zIndex = '';
+            }
+        }
         
         if (confirmed) {
             this.complete();
@@ -776,6 +818,7 @@ class OnboardingManager {
         if (this.tooltip) this.tooltip.remove();
         document.querySelector('.onboarding-highlight')?.remove();
         document.querySelector('.onboarding-mask')?.remove();
+        this.active = false;
 
         // Remove resize listener if it exists
         if (this.resizeHandler) {
@@ -817,7 +860,7 @@ const defaultTourSteps = [
     {
         target: '#sidebar',
         title: 'Welcome to TimeTracker! 👋',
-        content: 'Let\'s take a quick tour to help you get started. This is your main navigation where you can access all features. <strong>Tip:</strong> You can collapse the sidebar by clicking the arrow icon to maximize your workspace.',
+        content: 'Let\'s take a quick tour to help you get started. This is your main navigation where you can access all features. <strong>Tip:</strong> Click the arrow icon to collapse or expand the sidebar and maximize your workspace. You can also press <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>B</kbd> to toggle it.',
         position: 'right'
     },
     {

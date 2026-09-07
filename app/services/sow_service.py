@@ -77,33 +77,38 @@ class SowProvisioningService:
         if not project_name:
             raise AIServiceError("SOW plan is missing a project name.", "validation_error", 400)
 
-        client = self._find_or_create_client(client_data, client_name, created_by=created_by)
+        client, client_created = self._find_or_create_client(client_data, client_name, created_by=created_by)
 
-        result = self.project_service.create_project(
-            name=project_name,
-            client_id=client.id,
-            created_by=created_by,
-            description=(project_data.get("description") or None),
-            billable=bool(project_data.get("billable", True)),
-            hourly_rate=_to_float(project_data.get("hourly_rate")),
-            code=(project_data.get("code") or None),
-            budget_amount=_to_float(project_data.get("budget_amount")),
-        )
-        if not result.get("success"):
-            raise AIServiceError(
-                result.get("message") or "Could not create project.",
-                result.get("error") or "project_create_failed",
-                400,
-            )
-        project = result["project"]
-
+        project = None
         try:
+            result = self.project_service.create_project(
+                name=project_name,
+                client_id=client.id,
+                created_by=created_by,
+                description=(_clean_str(project_data.get("description")) or None),
+                billable=bool(project_data.get("billable", True)),
+                hourly_rate=_to_float(project_data.get("hourly_rate")),
+                code=(_clean_str(project_data.get("code")) or None),
+                budget_amount=_to_float(project_data.get("budget_amount")),
+            )
+            if not result.get("success"):
+                raise AIServiceError(
+                    result.get("message") or "Could not create project.",
+                    result.get("error") or "project_create_failed",
+                    400,
+                )
+            project = result["project"]
             self._store_project_dates(project, project_data)
             KanbanColumn.initialize_default_columns(project_id=project.id)
             created_tasks = self._create_tasks(tasks_data, project_id=project.id, created_by=created_by)
         except Exception:
-            # Effectively-atomic: undo the project (tasks/entries cascade) on any failure.
-            self._rollback_project(project)
+            # Effectively-atomic: undo the project (tasks/entries cascade) and, if we
+            # created the client just for this SOW, the client too — so a misparse or a
+            # mid-provision failure never leaves a half-built project or an orphan client.
+            if project is not None:
+                self._rollback_project(project)
+            if client_created:
+                self._rollback_client(client)
             raise
 
         return {
@@ -114,21 +119,27 @@ class SowProvisioningService:
             "tasks": created_tasks,
         }
 
-    def _find_or_create_client(self, client_data: Dict[str, Any], name: str, *, created_by: int) -> Client:
+    def _find_or_create_client(self, client_data: Dict[str, Any], name: str, *, created_by: int) -> tuple[Client, bool]:
+        """Return ``(client, created)``.
+
+        ``created`` is True only when a new row was persisted, so the caller can roll
+        back a SOW-created client on a later failure without deleting a pre-existing
+        one it merely matched by name.
+        """
         existing = self.client_repo.get_by_name(name)
         if existing:
-            return existing
+            return existing, False
         client = Client(
             name=name,
-            contact_person=(client_data.get("contact_person") or None),
-            email=(client_data.get("email") or None),
+            contact_person=(_clean_str(client_data.get("contact_person")) or None),
+            email=(_clean_str(client_data.get("email")) or None),
             default_hourly_rate=_to_float(client_data.get("default_hourly_rate")),
             created_by=created_by,
         )
         db.session.add(client)
         if not safe_commit("sow_create_client", {"name": name}):
             raise AIServiceError("Could not create client from SOW.", "client_create_failed", 400)
-        return client
+        return client, True
 
     def _store_project_dates(self, project, project_data: Dict[str, Any]) -> None:
         start_date = _to_date(project_data.get("start_date"))
@@ -162,12 +173,12 @@ class SowProvisioningService:
                 name=name,
                 project_id=project_id,
                 created_by=created_by,
-                description=(item.get("description") or None),
-                priority=(item.get("priority") or "medium"),
+                description=(_clean_str(item.get("description")) or None),
+                priority=(_clean_str(item.get("priority")) or "medium"),
                 due_date=_to_date(item.get("due_date")),
                 estimated_hours=_to_float(item.get("estimated_hours")),
                 status=status,
-                tags=(item.get("tags") or None),
+                tags=(_clean_str(item.get("tags")) or None),
             )
             if not result.get("success"):
                 raise AIServiceError(
@@ -193,3 +204,11 @@ class SowProvisioningService:
         except Exception:  # pragma: no cover - best-effort cleanup
             db.session.rollback()
             logger.exception("Failed to roll back SOW project after provisioning error")
+
+    def _rollback_client(self, client) -> None:
+        try:
+            db.session.delete(client)
+            safe_commit("sow_rollback_client", {"client_id": getattr(client, "id", None)})
+        except Exception:  # pragma: no cover - best-effort cleanup
+            db.session.rollback()
+            logger.exception("Failed to roll back SOW client after provisioning error")

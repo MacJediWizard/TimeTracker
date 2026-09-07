@@ -8,11 +8,14 @@
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='images/timetracker-logo.svg') }}">
     <link rel="alternate icon" href="{{ url_for('static', filename='images/timetracker-logo.svg') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/timetracker-logo.svg') }}">
-    <link rel="preconnect" href="https://fonts.bunny.net" crossorigin>
-    <link href="https://fonts.bunny.net/css?family=Inter:400,500,600,700&display=swap" rel="stylesheet">
+    {# Inter is self-hosted via @font-face in dist/output.css (app/static/vendor/inter). #}
+    {# Font Awesome must load BEFORE dist/output.css: its `.fa-solid{display:inline-block}`
+       has the same specificity as Tailwind's `.hidden{display:none}`, so whichever
+       loads last wins. #}
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fontawesome/css/all.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='dist/output.css') }}?v={{ app_version }}-toastfix1">
     <link rel="stylesheet" href="{{ url_for('static', filename='toast-notifications.css') }}?v={{ app_version }}-toastfix1">
-    <script>
+    <script nonce="{{ csp_nonce() }}">
         // On page load or when changing themes, best to add inline in `head` to avoid FOUC
         if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
             document.documentElement.classList.add('dark');
@@ -22,6 +25,10 @@
     </script>
 </head>
 <body class="font-sans antialiased bg-background-light dark:bg-background-dark text-text-light dark:text-text-dark">
+    {# Skip link as the first focusable element, mirroring base.html. The login
+       page is a standalone template that does not extend base.html, so it needs
+       its own skip link for keyboard users (and the a11y suite's skip-to-content check). #}
+    <a href="#mainContentAnchor" class="sr-only focus:not-sr-only focus-ring absolute left-2 top-2 z-[1000] px-3 py-2 bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark rounded">{{ _('Skip to content') }}</a>
     <div class="min-h-screen flex items-center justify-center px-4">
         <div class="w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 gap-0 bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark rounded-xl shadow-lg overflow-hidden">
             <div class="hidden md:flex items-center justify-center p-10 bg-gradient-to-br from-primary/10 to-secondary/10 dark:from-primary/20 dark:to-secondary/20">
@@ -39,7 +46,7 @@
                     </div>
                 </div>
             </div>
-            <div class="p-6 sm:p-8">
+            <div id="mainContentAnchor" class="p-6 sm:p-8">
                 <div class="flex items-center gap-3 mb-4 md:hidden">
                     <img src="{{ url_for('static', filename='images/timetracker-logo.svg') }}" alt="TimeTracker Logo" class="w-10 h-10">
                     <span class="text-xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">TimeTracker</span>
@@ -117,8 +124,7 @@
         {% endwith %}
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/js/all.min.js"></script>
-    <script src="{{ url_for('static', filename='toast-notifications.js') }}?v={{ app_version }}-toastfix1"></script>
-    <script src="{{ url_for('static', filename='error-handling-enhanced.js') }}"></script>
+    <script src="{{ asset_url('toast') }}"></script>
+    <script src="{{ asset_url('errors') }}"></script>
 </body>
 </html>

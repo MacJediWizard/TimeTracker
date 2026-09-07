@@ -43,7 +43,7 @@
             <tr>
                 {% if current_user.is_admin %}
                 <th class="px-4 py-3 w-12">
-                    <input type="checkbox" id="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" onchange="toggleAllProjects()">
+                    <input type="checkbox" id="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" onchange="toggleAllProjects()" aria-label="{{ _('Select all projects') }}">
                 </th>
                 {% endif %}
                 <th class="px-4 py-3 w-10"></th>

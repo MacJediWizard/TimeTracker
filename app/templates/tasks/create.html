@@ -4,9 +4,9 @@
 {% block title %}{{ _('Create Task') }} - Time Tracker{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="https://uicdn.toast.com/editor/latest/toastui-editor.min.css">
-<link rel="stylesheet" href="https://uicdn.toast.com/editor/latest/theme/toastui-editor-dark.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@simonwep/pickr/dist/themes/classic.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/toastui/toastui-editor.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/toastui/theme/toastui-editor-dark.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/pickr/themes/classic.min.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -44,7 +44,9 @@
                         <!-- Project Selection -->
                         <div class="mb-4">
                             <label for="project_id" class="form-label">{{ _('Project') }} *</label>
-                            <select id="project_id" name="project_id" required class="form-input">
+                            <select id="project_id" name="project_id" required class="form-input"
+                                    data-searchable-select="project"
+                                    data-search-placeholder="{{ _('Type to search projects…') }}">
                                 <option value="">{{ _('Select a project') }}</option>
                                 {% for project in projects %}
                                 <option value="{{ project.id }}" {% if request.form.get('project_id')|int == project.id or request.args.get('project_id')|int == project.id %}selected{% endif %}>{{ project.name }} ({{ project.client }})</option>
@@ -339,9 +341,9 @@
 </style>
 
 <!-- Toast UI Editor -->
-<script src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js"></script>
+<script src="{{ url_for('static', filename='vendor/toastui/toastui-editor.js') }}"></script>
 
-<script>
+<script nonce="{{ csp_nonce() }}">
 // Form validation and enhancement
 document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('createTaskForm');
@@ -497,6 +499,6 @@ document.addEventListener('DOMContentLoaded', function() {
 {% endblock %}
 
 {% block scripts_extra %}
-<script src="https://cdn.jsdelivr.net/npm/@simonwep/pickr/dist/pickr.min.js"></script>
+<script src="{{ url_for('static', filename='vendor/pickr/pickr.min.js') }}"></script>
 <script src="{{ url_for('static', filename='js/gantt-color-picker.js') }}"></script>
 {% endblock %}

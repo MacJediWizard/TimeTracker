@@ -88,7 +88,16 @@ class InstallationConfig:
         return self.get_install_id()
 
     def is_setup_complete(self) -> bool:
-        """Check if initial setup is complete"""
+        """Check if initial setup is complete.
+
+        A truthy SETUP_COMPLETE environment variable forces completion. This is
+        for headless/automated deployments (and the E2E container) that provision
+        the admin out-of-band via ADMIN_USERNAMES and cannot run the interactive
+        wizard; it is read every call so it needs no restart and never overwrites
+        the on-disk flag. Unset (the default) preserves the normal first-run gate.
+        """
+        if os.environ.get("SETUP_COMPLETE", "").strip().lower() in ("1", "true", "yes", "on"):
+            return True
         return self._config.get("setup_complete", False)
 
     def mark_setup_complete(self, telemetry_enabled: bool = False):

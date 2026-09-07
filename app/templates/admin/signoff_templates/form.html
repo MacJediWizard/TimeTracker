@@ -291,7 +291,7 @@
   </div>
 </form>
 
-<script>
+<script nonce="{{ csp_nonce() }}">
 // Sync color picker → readonly text mirror so the hex is visible
 document.addEventListener('DOMContentLoaded', () => {
   for (const pair of [['primary_color_hex', 'primary_color_hex_text'], ['accent_color_hex', 'accent_color_hex_text']]) {

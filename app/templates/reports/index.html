@@ -88,8 +88,8 @@
             <div class="mt-3">
                 <label class="form-label">{{ _('Custom Range') }}</label>
                 <div class="flex gap-2">
-                    <input type="date" id="startDate" class="form-input user-date-input flex-1">
-                    <input type="date" id="endDate" class="form-input user-date-input flex-1">
+                    <input type="date" id="startDate" class="form-input user-date-input flex-1" aria-label="{{ _('Start date') }}">
+                    <input type="date" id="endDate" class="form-input user-date-input flex-1" aria-label="{{ _('End date') }}">
                     <button type="button" onclick="applyCustomDateRange()" class="btn btn-primary">
                         {{ _('Apply') }}
                     </button>
@@ -147,7 +147,7 @@
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div class="p-4 border border-border-light dark:border-border-dark rounded-lg">
             <h3 class="font-medium mb-2">{{ _('Export Format') }}</h3>
-            <select id="exportFormat" class="form-input w-full mb-3">
+            <select id="exportFormat" class="form-input w-full mb-3" aria-label="{{ _('Export format') }}">
                 <option value="csv">CSV</option>
                 <option value="excel">Excel</option>
             </select>
@@ -158,7 +158,7 @@
         <div class="p-4 border border-border-light dark:border-border-dark rounded-lg">
             <h3 class="font-medium mb-2">{{ _('Scheduled Reports') }}</h3>
             <p class="text-sm text-text-muted-light dark:text-text-muted-dark mb-3">Set up automatic report generation</p>
-            <button type="button" onclick="showScheduledReportsModal()" class="w-full bg-secondary text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors">
+            <button type="button" onclick="showScheduledReportsModal()" class="w-full bg-primary text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors">
                 <i class="fas fa-clock mr-2"></i>{{ _('Manage Scheduled Reports') }}
             </button>
         </div>
@@ -168,7 +168,7 @@
                 <a href="{{ url_for('reports.export_form', format='csv') }}" class="btn btn-secondary block w-full text-center">
                     <i class="fas fa-file-csv mr-2"></i>{{ _('CSV Export') }}
                 </a>
-                <a href="{{ url_for('reports.export_form', format='excel') }}" class="block w-full bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors text-center">
+                <a href="{{ url_for('reports.export_form', format='excel') }}" class="block w-full bg-green-700 text-white px-4 py-2 rounded-lg hover:bg-green-800 transition-colors text-center">
                     <i class="fas fa-file-excel mr-2"></i>{{ _('Excel Export') }}
                 </a>
             </div>
@@ -197,7 +197,10 @@
         <a href="{{ url_for('reports.unpaid_hours_report') }}" class="bg-primary text-white p-4 rounded-lg text-center hover:bg-primary/90 transition-colors">
             <i class="fas fa-money-bill-wave mr-2"></i>{{ _('Unpaid Hours Report') }}
         </a>
-        <a href="{{ url_for('custom_reports.report_builder') }}" class="bg-secondary text-white p-4 rounded-lg text-center hover:bg-secondary/90 transition-colors">
+        <a href="{{ url_for('reports.utilization_report') }}" class="bg-primary text-white p-4 rounded-lg text-center hover:bg-primary/90 transition-colors">
+            <i class="fas fa-percentage mr-2"></i>{{ _('Utilization Report') }}
+        </a>
+        <a href="{{ url_for('custom_reports.report_builder') }}" class="bg-primary text-white p-4 rounded-lg text-center hover:bg-primary/90 transition-colors">
             <i class="fas fa-magic mr-2"></i>{{ _('Report Builder') }}
         </a>
     </div>
@@ -279,7 +282,7 @@
 {% endblock %}
 
 {% block scripts_extra %}
-<script>
+<script nonce="{{ csp_nonce() }}">
 // Date range presets
 function setDateRange(preset) {
     const today = new Date();
@@ -397,8 +400,12 @@ function loadScheduledReports() {
         .then(data => {
             if (data.schedules && data.schedules.length > 0) {
                 listContainer.innerHTML = data.schedules.map(schedule => {
-                    const nextRun = schedule.next_run_at ? new Date(schedule.next_run_at).toLocaleString() : 'Not scheduled';
-                    const lastRun = schedule.last_run_at ? new Date(schedule.last_run_at).toLocaleString() : 'Never';
+                    const nextRun = schedule.next_run_at
+                        ? (window.formatUserDateTime ? window.formatUserDateTime(new Date(schedule.next_run_at)) : new Date(schedule.next_run_at).toLocaleString())
+                        : 'Not scheduled';
+                    const lastRun = schedule.last_run_at
+                        ? (window.formatUserDateTime ? window.formatUserDateTime(new Date(schedule.last_run_at)) : new Date(schedule.last_run_at).toLocaleString())
+                        : 'Never';
                     const statusBadge = schedule.active 
                         ? '<span class="px-2 py-1 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded text-xs">Active</span>'
                         : '<span class="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300 rounded text-xs">Inactive</span>';

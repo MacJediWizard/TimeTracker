@@ -4,7 +4,7 @@ TimeTracker exposes a **REST API** for programmatic access to time tracking, pro
 
 ## Overview
 
-Use the API to integrate with external tools, build custom dashboards, or drive the mobile and desktop apps. All endpoints require authentication via an API token (Bearer or `X-API-Key` header) unless noted. Pagination, filtering, and error responses are described in the full reference.
+Use the API to integrate with external tools, build custom dashboards, or drive the mobile, desktop, and [browser extension](../browser-extension/README.md) clients. All endpoints require authentication via an API token (Bearer or `X-API-Key` header) unless noted. Pagination, filtering, and error responses are described in the full reference.
 
 ## Getting an API Token
 
@@ -39,7 +39,7 @@ curl -H "X-API-Key: YOUR_API_TOKEN" \
 |------|----------------------|-------------|
 | **Projects** | `/api/v1/projects` | List, create, get, update, delete projects |
 | **Time entries** | `/api/v1/time-entries` | List, create, get, update, delete time entries; timer start/stop |
-| **Tasks** | `/api/v1/tasks` | List, create, get, update, delete tasks |
+| **Tasks** | `/api/v1/tasks` | List, create, get, update, delete tasks. List supports `project_id`, `status` (`todo`, `in_progress`, `review`, `done`, `cancelled`, custom Kanban keys, or aliases `active` / `open` for non-closed tasks; comma-separated for multiple), `page`, `per_page` |
 | **Clients** | `/api/v1/clients` | List, create, get, update, delete clients |
 | **Reports** | `/api/v1/reports` | Run reports and export data |
 | **Deals & leads** | `/api/v1/deals`, `/api/v1/leads` | CRM deals and leads |

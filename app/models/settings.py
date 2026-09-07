@@ -60,15 +60,22 @@ class Settings(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     timezone = db.Column(db.String(50), default="Europe/Rome", nullable=False)
+    app_base_url = db.Column(db.String(500), default="", nullable=True)
     date_format = db.Column(
         db.String(20), default="YYYY-MM-DD", nullable=False
     )  # YYYY-MM-DD, MM/DD/YYYY, DD/MM/YYYY, DD.MM.YYYY
     time_format = db.Column(db.String(10), default="24h", nullable=False)  # 24h or 12h
     currency = db.Column(db.String(3), default="EUR", nullable=False)
     rounding_minutes = db.Column(db.Integer, default=1, nullable=False)
+    rounding_method = db.Column(db.String(10), default="nearest", nullable=False)
+    rounding_minimum_minutes = db.Column(db.Integer, default=0, nullable=False)
+    rounding_enforce_global = db.Column(db.Boolean, default=False, nullable=False)
     single_active_timer = db.Column(db.Boolean, default=True, nullable=False)
     allow_self_register = db.Column(db.Boolean, default=True, nullable=False)
     idle_timeout_minutes = db.Column(db.Integer, default=30, nullable=False)
+    # Safety cap: auto-stop a running timer flagged for review after N hours
+    # unanswered (credited back to last activity). 0 disables the cap.
+    idle_auto_stop_hours = db.Column(db.Integer, default=0, nullable=False)
     backup_retention_days = db.Column(db.Integer, default=30, nullable=False)
     backup_time = db.Column(db.String(5), default="02:00", nullable=False)  # HH:MM format
     export_delimiter = db.Column(db.String(1), default=",", nullable=False)
@@ -193,6 +200,10 @@ class Settings(db.Model):
     compliance_standard_weekly_hours = db.Column(db.Float, default=38.0, nullable=False)
     compliance_break_after_hours = db.Column(db.Float, default=6.0, nullable=False)
     compliance_min_break_minutes = db.Column(db.Integer, default=15, nullable=False)
+    # Auto-deduct break on clock-out when work exceeds threshold and no sufficient break logged
+    auto_break_enabled = db.Column(db.Boolean, default=False, nullable=False)
+    auto_break_after_hours = db.Column(db.Float, default=6.0, nullable=False)
+    auto_break_duration_minutes = db.Column(db.Integer, default=30, nullable=False)
     compliance_min_daily_rest_hours = db.Column(db.Float, default=11.0, nullable=False)
     compliance_attendance_retention_years = db.Column(db.Integer, default=10, nullable=False)
     compliance_require_workday_registration = db.Column(db.Boolean, default=False, nullable=False)
@@ -265,13 +276,22 @@ class Settings(db.Model):
     def __init__(self, **kwargs):
         # Set defaults from config
         self.timezone = kwargs.get("timezone", Config.TZ)
+        self.app_base_url = kwargs.get("app_base_url", "")
         self.date_format = kwargs.get("date_format", "YYYY-MM-DD")
         self.time_format = kwargs.get("time_format", "24h")
         self.currency = kwargs.get("currency", Config.CURRENCY)
         self.rounding_minutes = kwargs.get("rounding_minutes", Config.ROUNDING_MINUTES)
+        self.rounding_method = kwargs.get("rounding_method", getattr(Config, "ROUNDING_METHOD", "nearest"))
+        self.rounding_minimum_minutes = kwargs.get(
+            "rounding_minimum_minutes", getattr(Config, "ROUNDING_MINIMUM_MINUTES", 0)
+        )
+        self.rounding_enforce_global = kwargs.get(
+            "rounding_enforce_global", getattr(Config, "ROUNDING_ENFORCE_GLOBAL", False)
+        )
         self.single_active_timer = kwargs.get("single_active_timer", Config.SINGLE_ACTIVE_TIMER)
         self.allow_self_register = kwargs.get("allow_self_register", Config.ALLOW_SELF_REGISTER)
         self.idle_timeout_minutes = kwargs.get("idle_timeout_minutes", Config.IDLE_TIMEOUT_MINUTES)
+        self.idle_auto_stop_hours = kwargs.get("idle_auto_stop_hours", 0)
         self.backup_retention_days = kwargs.get("backup_retention_days", Config.BACKUP_RETENTION_DAYS)
         self.backup_time = kwargs.get("backup_time", Config.BACKUP_TIME)
         self.export_delimiter = kwargs.get("export_delimiter", ",")
@@ -647,13 +667,18 @@ class Settings(db.Model):
         return {
             "id": self.id,
             "timezone": self.timezone,
+            "app_base_url": getattr(self, "app_base_url", "") or "",
             "date_format": self.date_format,
             "time_format": self.time_format,
             "currency": self.currency,
             "rounding_minutes": self.rounding_minutes,
+            "rounding_method": getattr(self, "rounding_method", "nearest"),
+            "rounding_minimum_minutes": getattr(self, "rounding_minimum_minutes", 0),
+            "rounding_enforce_global": getattr(self, "rounding_enforce_global", False),
             "single_active_timer": self.single_active_timer,
             "allow_self_register": self.allow_self_register,
             "idle_timeout_minutes": self.idle_timeout_minutes,
+            "idle_auto_stop_hours": getattr(self, "idle_auto_stop_hours", 0),
             "backup_retention_days": self.backup_retention_days,
             "backup_time": self.backup_time,
             "export_delimiter": self.export_delimiter,
@@ -953,13 +978,18 @@ class Settings(db.Model):
         # Map environment variable names to Settings model attributes
         env_mapping = {
             "TZ": "timezone",
+            "APP_BASE_URL": "app_base_url",
             "DATE_FORMAT": "date_format",
             "TIME_FORMAT": "time_format",
             "CURRENCY": "currency",
             "ROUNDING_MINUTES": "rounding_minutes",
+            "ROUNDING_METHOD": "rounding_method",
+            "ROUNDING_MINIMUM_MINUTES": "rounding_minimum_minutes",
+            "ROUNDING_ENFORCE_GLOBAL": "rounding_enforce_global",
             "SINGLE_ACTIVE_TIMER": "single_active_timer",
             "ALLOW_SELF_REGISTER": "allow_self_register",
             "IDLE_TIMEOUT_MINUTES": "idle_timeout_minutes",
+            "IDLE_AUTO_STOP_HOURS": "idle_auto_stop_hours",
             "BACKUP_RETENTION_DAYS": "backup_retention_days",
             "BACKUP_TIME": "backup_time",
             "DEFAULT_DAILY_WORKING_HOURS": "default_daily_working_hours",

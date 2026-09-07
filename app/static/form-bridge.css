@@ -60,8 +60,10 @@ textarea.form-control { min-height: 6rem; resize: vertical; }
    Minimal tokens (fallbacks)
    ============================= */
 :root {
-  --color-primary: #3B82F6;
-  --color-primary-600: #2563EB;
+  /* Match the Tailwind primary token (indigo). The old #3B82F6 blue on white
+     failed WCAG AA on .btn-primary (3.67:1); #4F46E5 gives ~6.3:1. */
+  --color-primary: #4F46E5;
+  --color-primary-600: #4338CA;
   --color-bg: #F7F9FB;
   --color-card: #FFFFFF;
   --color-border: #E2E8F0;
@@ -80,7 +82,7 @@ textarea.form-control { min-height: 6rem; resize: vertical; }
    Buttons
    ============================= */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.5rem 0.875rem; border-radius: var(--radius-md); border: 1px solid transparent; font-weight: 600; line-height: 1.25; cursor: pointer; }
-.btn:focus { outline: none; box-shadow: 0 0 0 3px rgba(59,130,246,0.35); }
+.btn:focus { outline: none; box-shadow: 0 0 0 3px rgba(79,70,229,0.35); }
 .btn-primary { color: #fff; background-color: var(--color-primary); border-color: var(--color-primary); }
 .btn-primary:hover { background-color: var(--color-primary-600); border-color: var(--color-primary-600); }
 .btn-secondary { color: var(--color-text); background-color: var(--color-card); border-color: var(--color-border); }

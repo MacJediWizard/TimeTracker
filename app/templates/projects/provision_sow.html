@@ -114,7 +114,7 @@
     </tr>
 </template>
 
-<script>
+<script nonce="{{ csp_nonce() }}">
 document.addEventListener('DOMContentLoaded', function () {
     const csrf = () => document.querySelector('meta[name="csrf-token"]')?.content || '';
     const $ = (sel, root) => (root || document).querySelector(sel);

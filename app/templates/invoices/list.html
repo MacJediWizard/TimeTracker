@@ -15,7 +15,7 @@
     actions_html=''
         + '<div class="flex gap-2">'
         +   '<a href="' + url_for("recurring_invoices.list_recurring_invoices") + '" class="btn bg-purple-600 text-white hover:bg-purple-700"><i class="fas fa-sync-alt mr-2"></i>Recurring Invoices</a>'
-        +   '<a href="' + url_for("invoices.export_invoices_excel") + '" class="btn bg-green-600 text-white hover:bg-green-700"><i class="fas fa-file-excel mr-2"></i>Export to Excel</a>'
+        +   '<a href="' + url_for("invoices.export_invoices_excel") + '" class="btn bg-green-700 text-white hover:bg-green-800"><i class="fas fa-file-excel mr-2"></i>Export to Excel</a>'
         +   '<a href="' + url_for("invoices.create_invoice") + '" class="btn btn-primary"><i class="fas fa-plus mr-2"></i>Create Invoice</a>'
         + '</div>'
 ) }}
@@ -193,7 +193,7 @@
     border-color: currentColor;
 }
 </style>
-<script>
+<script nonce="{{ csp_nonce() }}">
 // Status filter function
 function filterByStatus(status) {
     document.getElementById('statusFilter').value = status;

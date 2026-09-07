@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:timetracker_mobile/data/models/project.dart';
+import 'package:timetracker_mobile/data/models/time_entry.dart';
 import 'package:timetracker_mobile/core/theme/app_tokens.dart';
 import '../providers/attendance_provider.dart';
 import '../providers/timer_provider.dart';
@@ -15,6 +16,7 @@ import 'projects_screen.dart';
 import 'time_entries_screen.dart';
 import 'settings_screen.dart';
 import 'finance_workforce_screen.dart';
+import 'more_hub_screen.dart';
 import 'dart:async';
 
 class HomeScreen extends StatefulWidget {
@@ -32,6 +34,7 @@ class _HomeScreenState extends State<HomeScreen> {
     const ProjectsScreen(),
     const TimeEntriesScreen(),
     const FinanceWorkforceScreen(),
+    const MoreHubScreen(),
     const SettingsScreen(),
   ];
 
@@ -69,6 +72,11 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: Icon(Icons.account_balance_wallet_outlined),
             selectedIcon: Icon(Icons.account_balance_wallet),
             label: 'Finance',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.more_horiz),
+            selectedIcon: Icon(Icons.more_horiz),
+            label: 'More',
           ),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),
@@ -133,14 +141,15 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
     super.dispose();
   }
 
-  String _projectName(int? projectId, List<Project> projects) {
-    if (projectId == null) return 'Unknown project';
-    try {
-      final p = projects.firstWhere((p) => p.id == projectId);
-      return p.name;
-    } catch (_) {
-      return 'Unknown project';
+  String _entryLabel(TimeEntry entry, List<Project> projects) {
+    if (entry.projectId != null) {
+      try {
+        return projects.firstWhere((p) => p.id == entry.projectId).name;
+      } catch (_) {
+        /* fall through */
+      }
     }
+    return entry.displayLabel == 'Time entry' ? 'Unknown project' : entry.displayLabel;
   }
 
   @override
@@ -272,7 +281,7 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
               )
             else
               ...entriesState.entries.take(5).map((entry) {
-                final projectName = _projectName(entry.projectId, projectsState.projects);
+                final projectName = _entryLabel(entry, projectsState.projects);
                 final subtitle = (entry.notes != null && entry.notes!.trim().isNotEmpty)
                     ? entry.notes!.trim()
                     : formatDateRange(

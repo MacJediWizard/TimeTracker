@@ -211,3 +211,49 @@ def test_upload_rejects_invalid_kind(client, admin_user):
         content_type="multipart/form-data",
     )
     assert resp.status_code == 400
+
+
+# --- CSRF token presence -----------------------------------------------------
+# These admin forms POST back to the app, which runs CSRFProtect under the
+# default/production config. If the rendered form omits the hidden csrf_token
+# field, Save/Archive/Restore are rejected with a "session expired" flash and
+# the action silently does nothing — which breaks the whole signoff feature
+# end-to-end (no template can be created). The unit-test config disables CSRF,
+# so these assert the token is actually EMITTED into the HTML.
+
+
+def test_new_form_includes_csrf_token(client, admin_user):
+    _login_admin(client, admin_user)
+    resp = client.get("/admin/signoff-templates/new")
+    assert resp.status_code == 200
+    assert b'name="csrf_token"' in resp.data
+
+
+def test_edit_form_includes_csrf_token(app, client, admin_user):
+    with app.app_context():
+        row = TimesheetSignoffTemplate(name="edit-me", columns_to_show=["time"])
+        db.session.add(row)
+        db.session.commit()
+        template_id = row.id
+
+    _login_admin(client, admin_user)
+    resp = client.get(f"/admin/signoff-templates/{template_id}")
+    assert resp.status_code == 200
+    assert b'name="csrf_token"' in resp.data
+
+
+def test_list_archive_and_restore_forms_include_csrf_token(app, client, admin_user):
+    with app.app_context():
+        active = TimesheetSignoffTemplate(name="active-one", columns_to_show=["time"])
+        archived = TimesheetSignoffTemplate(name="archived-one", columns_to_show=["time"])
+        db.session.add_all([active, archived])
+        db.session.commit()
+        archived.archived_at = db.func.now()
+        db.session.commit()
+
+    _login_admin(client, admin_user)
+    resp = client.get("/admin/signoff-templates")
+    assert resp.status_code == 200
+    # Both the Archive (active row) and Restore (archived row) POST forms must
+    # carry a token; there should be at least two occurrences on the page.
+    assert resp.data.count(b'name="csrf_token"') >= 2

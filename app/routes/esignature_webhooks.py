@@ -64,6 +64,22 @@ def _as_utc(dt):
     return dt.astimezone(timezone.utc)
 
 
+def _last_event_at(esig_req):
+    """Return the occurred_at of the most recent provider event applied to this
+    request, or None if none has landed yet.
+
+    ``apply_webhook_event`` stamps ``viewed_at``/``signed_at``/``declined_at``
+    (and ``sent_at`` at send time) with the provider event's ``occurred_at``, so
+    the greatest of these is the correct reference for the out-of-order guard.
+    Comparing an incoming event against ``updated_at`` instead would use OUR
+    processing time — a delayed/retried earlier event bumps ``updated_at`` to
+    "now" and would then wrongly reject a genuine later transition.
+    """
+    stamps = [esig_req.sent_at, esig_req.viewed_at, esig_req.signed_at, esig_req.declined_at]
+    stamps = [_as_utc(s) for s in stamps if s is not None]
+    return max(stamps) if stamps else None
+
+
 @esignature_webhooks_bp.post("/webhooks/esignature/<int:integration_id>")
 @csrf.exempt
 def esignature_webhook(integration_id: int):
@@ -117,9 +133,10 @@ def esignature_webhook(integration_id: int):
     if esig_req.status in _TERMINAL_STATUSES and event.status == esig_req.status:
         return "", 200
 
-    if event.occurred_at and esig_req.updated_at and _as_utc(event.occurred_at) < _as_utc(esig_req.updated_at):
+    last_event_at = _last_event_at(esig_req)
+    if event.occurred_at and last_event_at and _as_utc(event.occurred_at) < last_event_at:
         _log.info(
-            "Webhook event is older than local state (esig %s); skipping",
+            "Webhook event is older than the last applied provider event (esig %s); skipping",
             esig_req.id,
         )
         return "", 200

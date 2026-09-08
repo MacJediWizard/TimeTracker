@@ -100,3 +100,41 @@ def test_empty_entries_renders_pdf():
     pdf_bytes, sig = build_signoff_pdf(data, default_preview_template())
     assert pdf_bytes.startswith(b"%PDF-")
     assert sig.page_index >= 0
+
+
+def test_markup_chars_in_identity_fields_render_without_crash():
+    """Identity fields flow into ReportLab's mini-HTML markup. A value with
+    ``<``/``&``/``>`` (e.g. a client named ``Acme <TBD``) must be escaped, not
+    passed through raw — otherwise paraparser raises and the whole e-signature
+    send aborts. Regression guard for the header card + signature-block intro."""
+    monday = date(2026, 5, 4)
+    data = SignoffData(
+        my_company_name="Me & Co <Ltd>",
+        client_name="Acme <TBD & Sons>",
+        engineer_name="Bob <the> Builder & Co",
+        engagement_name="Q2 <scope> & renewal",
+        period_start=monday,
+        period_end=monday + timedelta(days=4),
+        entries=[
+            SimpleNamespace(
+                start_time=datetime.combine(monday, datetime.min.time()).replace(hour=9),
+                end_time=datetime.combine(monday, datetime.min.time()).replace(hour=17),
+                duration_seconds=8 * 3600,
+                project=SimpleNamespace(name="Project <A> & B"),
+                task=SimpleNamespace(name="Task <1>"),
+                notes="Notes with <b> & ampersand",
+                billable=True,
+            )
+        ],
+    )
+    template = SignoffTemplate(
+        primary_color_hex="#c41e3a",
+        accent_color_hex="#1a1a1a",
+        signature_block_label="Approved by <Manager> & Co",
+        columns_to_show=["time", "duration", "project", "task", "notes"],
+    )
+    # Must not raise; must produce a valid PDF.
+    pdf_bytes, sig = build_signoff_pdf(data, template)
+    assert pdf_bytes.startswith(b"%PDF-")
+    assert len(pdf_bytes) > 1000
+    assert sig.page_index >= 0

@@ -204,21 +204,25 @@ def test_aware_occurred_at_does_not_500_against_naive_updated_at(client, app, do
 
 
 def test_older_aware_event_is_skipped_without_error(client, app, docuseal_integration):
-    """An aware occurred_at that predates our naive updated_at is a stale
-    replay: skip it (200, service not called) — and do so without the
-    aware/naive TypeError."""
+    """An event whose occurred_at predates the last applied provider event is a
+    stale replay: skip it (200, service not called) — and do so without the
+    aware/naive TypeError. The reference is the last event's own time (here
+    ``viewed_at``), NOT our processing clock."""
+    recent_view = datetime.now(timezone.utc)
     with app.app_context():
         esig = ESignatureRequest(
             integration_id=docuseal_integration,
             target_type="TimesheetSignoffRequest",
             target_id="1",
             external_id="stale-1",
-            status=ESignatureStatus.SENT,
+            status=ESignatureStatus.VIEWED,
+            sent_at=recent_view - timedelta(minutes=1),
+            viewed_at=recent_view,
         )
         db.session.add(esig)
         db.session.commit()
 
-    older = datetime.now(timezone.utc) - timedelta(days=1)
+    older = recent_view - timedelta(days=1)
     with (
         patch("app.services.integration_service.IntegrationService.get_connector") as mock_get,
         patch("app.services.timesheet_signoff_service.TimesheetSignoffService.apply_webhook_event") as mock_apply,
@@ -234,3 +238,44 @@ def test_older_aware_event_is_skipped_without_error(client, app, docuseal_integr
         )
     assert resp.status_code == 200
     mock_apply.assert_not_called()
+
+
+def test_late_processed_prior_event_does_not_drop_a_genuine_signed(client, app, docuseal_integration):
+    """Regression: the out-of-order guard used to compare against ``updated_at``
+    (our processing time). If an earlier event was processed late, ``updated_at``
+    jumped to "now", and a genuine SIGNED event whose occurred_at was before that
+    processing time — but AFTER the real prior event — got silently dropped.
+
+    Here viewed_at is 10 min ago while updated_at is "now" (late processing). A
+    SIGNED event that occurred 5 min ago is newer than the real prior event and
+    MUST be applied, even though it predates updated_at."""
+    now = datetime.now(timezone.utc)
+    with app.app_context():
+        esig = ESignatureRequest(
+            integration_id=docuseal_integration,
+            target_type="TimesheetSignoffRequest",
+            target_id="1",
+            external_id="late-1",
+            status=ESignatureStatus.VIEWED,
+            sent_at=now - timedelta(minutes=20),
+            viewed_at=now - timedelta(minutes=10),
+        )
+        db.session.add(esig)
+        db.session.commit()  # updated_at is stamped ~now (later than viewed_at)
+
+    signed_at = now - timedelta(minutes=5)  # after viewed_at, before updated_at
+    with (
+        patch("app.services.integration_service.IntegrationService.get_connector") as mock_get,
+        patch("app.services.timesheet_signoff_service.TimesheetSignoffService.apply_webhook_event") as mock_apply,
+    ):
+        mock_get.return_value = SimpleNamespace(
+            verify_webhook=lambda body, headers: True,
+            parse_webhook=lambda body: _event("late-1", ESignatureStatus.SIGNED, signed_at),
+        )
+        resp = client.post(
+            f"/webhooks/esignature/{docuseal_integration}",
+            data=b"{}",
+            headers={"X-Docuseal-Signature": "fake"},
+        )
+    assert resp.status_code == 200
+    mock_apply.assert_called_once()

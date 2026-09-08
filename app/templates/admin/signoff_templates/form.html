@@ -41,6 +41,7 @@
 ) }}
 
 <form method="post" action="{{ form_action }}" id="signoff-template-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
@@ -292,6 +293,8 @@
 </form>
 
 <script nonce="{{ csp_nonce() }}">
+const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
 // Sync color picker → readonly text mirror so the hex is visible
 document.addEventListener('DOMContentLoaded', () => {
   for (const pair of [['primary_color_hex', 'primary_color_hex_text'], ['accent_color_hex', 'accent_color_hex_text']]) {
@@ -314,14 +317,21 @@ async function uploadAsset(kind, inputId, selectName) {
   fd.append('file', input.files[0]);
   fd.append('name', input.files[0].name.replace(/\.[^.]+$/, ''));
   const resp = await fetch("{{ url_for('signoff_templates.upload_branding_asset') }}", {
-    method: 'POST', body: fd, credentials: 'same-origin'
+    method: 'POST', body: fd, credentials: 'same-origin',
+    headers: { 'X-CSRFToken': CSRF_TOKEN }
   });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({error: 'upload failed'}));
     alert(`Upload failed: ${err.error || resp.status}`);
     return;
   }
-  const data = await resp.json();
+  let data;
+  try {
+    data = await resp.json();
+  } catch (e) {
+    alert("Upload failed: the server returned an unexpected response.");
+    return;
+  }
   // Insert into the matching select(s) and select it
   const selects = selectName === 'logo_asset_id'
     ? [document.querySelector(`select[name="${selectName}"]`)]
@@ -351,14 +361,21 @@ async function uploadFont() {
   fd.append('file', fileInput.files[0]);
   fd.append('name', nameInput.value || fileInput.files[0].name.replace(/\.[^.]+$/, ''));
   const resp = await fetch("{{ url_for('signoff_templates.upload_branding_asset') }}", {
-    method: 'POST', body: fd, credentials: 'same-origin'
+    method: 'POST', body: fd, credentials: 'same-origin',
+    headers: { 'X-CSRFToken': CSRF_TOKEN }
   });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({error: 'upload failed'}));
     alert(`Upload failed: ${err.error || resp.status}`);
     return;
   }
-  const data = await resp.json();
+  let data;
+  try {
+    data = await resp.json();
+  } catch (e) {
+    alert("Upload failed: the server returned an unexpected response.");
+    return;
+  }
   for (const sel of document.querySelectorAll('.font-variant-select')) {
     const opt = document.createElement('option');
     opt.value = data.id;
@@ -373,9 +390,11 @@ async function uploadFont() {
 function previewInline() {
   const form = document.getElementById('signoff-template-form');
   const fd = new FormData(form);
-  // POST to preview URL — server renders PDF with current form state
+  // POST to preview URL — server renders PDF with current form state.
+  // fd already carries the hidden csrf_token field; the header is belt-and-suspenders.
   fetch("{{ preview_action }}", {
-    method: 'POST', body: fd, credentials: 'same-origin'
+    method: 'POST', body: fd, credentials: 'same-origin',
+    headers: { 'X-CSRFToken': CSRF_TOKEN }
   }).then(async (resp) => {
     if (!resp.ok) {
       alert(`Preview failed: ${resp.status}`);

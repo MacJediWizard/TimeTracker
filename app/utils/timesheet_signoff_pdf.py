@@ -287,6 +287,17 @@ def _safe(value, fallback: str = "") -> str:
     return s if s else fallback
 
 
+def _esc(value, fallback: str = "") -> str:
+    """Escape a value for safe interpolation into ReportLab's mini-HTML markup.
+
+    ReportLab parses Paragraph text as mini-HTML, so an identity field
+    containing ``<``/``&``/``>`` (e.g. a client named ``Acme <TBD``) otherwise
+    raises a paraparser error and aborts the whole PDF/e-signature send. Mirrors
+    the escaping already applied to table body cells in ``_wrap_cell``.
+    """
+    return _safe(value, fallback).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def _wrap_cell(text, theme: _Theme):
     s = _safe(text)
     if not s:
@@ -387,7 +398,7 @@ def _build_top_bar(data: SignoffData, template: SignoffTemplate, theme: _Theme) 
     )
 
     logo = _logo_flowable(template)
-    wordmark = Paragraph(data.my_company_name, company_style)
+    wordmark = Paragraph(_esc(data.my_company_name), company_style)
     if logo is not None:
         left_cell = Table(
             [[logo, wordmark]],
@@ -476,9 +487,9 @@ def _build_engagement_card(data: SignoffData, theme: _Theme) -> list:
             Paragraph("TOTAL HOURS", label_style),
         ],
         [
-            Paragraph(data.engineer_name, value_style),
-            Paragraph(data.client_name, value_style),
-            Paragraph(data.engagement_name or "—", value_style),
+            Paragraph(_esc(data.engineer_name), value_style),
+            Paragraph(_esc(data.client_name), value_style),
+            Paragraph(_esc(data.engagement_name) or "—", value_style),
             Paragraph(_duration_hhmm(total_seconds), total_value_style),
         ],
     ]
@@ -703,14 +714,14 @@ def _build_signature_block(data: SignoffData, template: SignoffTemplate, theme: 
 
     story = []
     story.append(Spacer(1, 30))
-    story.append(Paragraph(template.signature_block_label, title_style))
+    story.append(Paragraph(_esc(template.signature_block_label), title_style))
     story.append(Spacer(1, 12))
 
     intro_text = (
         f"By signing below I, as authorised approver for "
-        f'<font name="{theme.body_bold}" color="{template.primary_color_hex}">{data.client_name}</font>, '
+        f'<font name="{theme.body_bold}" color="{template.primary_color_hex}">{_esc(data.client_name)}</font>, '
         f"confirm that the time entries above accurately reflect work performed by "
-        f'<font name="{theme.body_bold}" color="{template.accent_color_hex}">{data.engineer_name}</font> '
+        f'<font name="{theme.body_bold}" color="{template.accent_color_hex}">{_esc(data.engineer_name)}</font> '
         f"during the period "
         f'<font name="{theme.body_bold}" color="{template.accent_color_hex}">'
         f"{_fmt_date(data.period_start)} to {_fmt_date(data.period_end)}</font>."

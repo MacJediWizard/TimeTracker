@@ -1599,9 +1599,7 @@ def oidc_callback():
                     settings = Settings.get_settings()
                     user.standard_hours_per_day = float(getattr(settings, "default_daily_working_hours", 8.0) or 8.0)
                 except Exception:
-                    current_app.logger.debug(
-                        "Could not apply default daily working hours for OIDC user", exc_info=True
-                    )
+                    current_app.logger.debug("Could not apply default daily working hours for OIDC user", exc_info=True)
 
                 # Assign role from the new Role system
                 from app.models import Role

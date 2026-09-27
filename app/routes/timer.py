@@ -905,11 +905,7 @@ def set_timer_start():
         flash(_("No active timer to adjust"), "error")
         return redirect(url_for("main.dashboard"))
 
-    raw = (
-        request.form.get("start_time")
-        or (request.get_json(silent=True) or {}).get("start_time")
-        or ""
-    )
+    raw = request.form.get("start_time") or (request.get_json(silent=True) or {}).get("start_time") or ""
     from app.models.time_entry import local_now
 
     now_local = local_now()

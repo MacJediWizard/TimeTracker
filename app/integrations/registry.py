@@ -7,8 +7,8 @@ from app.integrations.activitywatch import ActivityWatchConnector
 from app.integrations.adp import AdpConnector
 from app.integrations.asana import AsanaConnector
 from app.integrations.caldav_calendar import CalDAVCalendarConnector
-from app.integrations.esignature.docuseal import DocuSealConnector
 from app.integrations.datev import DatevConnector
+from app.integrations.esignature.docuseal import DocuSealConnector
 from app.integrations.github import GitHubConnector
 from app.integrations.gitlab import GitLabConnector
 from app.integrations.gmail import GmailConnector

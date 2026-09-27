@@ -2169,7 +2169,10 @@ def create_recurring_project_cost(project_id):
     )
     db.session.add(recurring)
     db.session.commit()
-    return jsonify({"message": "Recurring project cost created successfully", "recurring_cost": recurring.to_dict()}), 201
+    return (
+        jsonify({"message": "Recurring project cost created successfully", "recurring_cost": recurring.to_dict()}),
+        201,
+    )
 
 
 @api_v1_bp.route("/projects/<int:project_id>/recurring-costs/<int:rid>", methods=["GET"])
@@ -2268,13 +2271,16 @@ def create_shared_report_link(view_id):
     )
     db.session.commit()
     url = service.get_public_url(link)
-    return jsonify(
-        {
-            "message": "Share link created successfully",
-            "link": link.to_dict(include_url=True),
-            "url": url,
-        }
-    ), 201
+    return (
+        jsonify(
+            {
+                "message": "Share link created successfully",
+                "link": link.to_dict(include_url=True),
+                "url": url,
+            }
+        ),
+        201,
+    )
 
 
 @api_v1_bp.route("/reports/saved/<int:view_id>/share/<token>", methods=["DELETE"])

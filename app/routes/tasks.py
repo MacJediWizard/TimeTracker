@@ -821,9 +821,7 @@ def update_task_status(task_id):
             try:
                 from app.services.gamification_service import GamificationService
 
-                GamificationService().check_and_award_badges(
-                    current_user.id, "task_completed", {"task_id": task.id}
-                )
+                GamificationService().check_and_award_badges(current_user.id, "task_completed", {"task_id": task.id})
             except Exception:
                 current_app.logger.debug("Gamification task hook failed", exc_info=True)
             db.session.add(

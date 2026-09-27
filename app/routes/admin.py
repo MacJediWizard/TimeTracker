@@ -6162,8 +6162,8 @@ def delete_payroll_template(template_id):
 @login_required
 @admin_or_permission_required("access_admin")
 def geofences():
-    from app.models.geofence import Geofence, GeofencePolicy
     from app.models import Project
+    from app.models.geofence import Geofence, GeofencePolicy
 
     if request.method == "POST":
         name = (request.form.get("name") or "").strip()
@@ -6223,8 +6223,8 @@ def geofences():
 @login_required
 @admin_or_permission_required("access_admin")
 def edit_geofence(geofence_id):
-    from app.models.geofence import Geofence, GeofencePolicy
     from app.models import Project
+    from app.models.geofence import Geofence, GeofencePolicy
 
     geofence = Geofence.query.get_or_404(geofence_id)
     projects = Project.query.filter_by(status="active").order_by(Project.name.asc()).all()

@@ -17,6 +17,7 @@ depends_on = None
 def upgrade():
     bind = op.get_bind()
     inspector = inspect(bind)
+    is_sqlite = bind.dialect.name == "sqlite"
     tables = inspector.get_table_names()
 
     if "geofences" not in tables:
@@ -44,14 +45,27 @@ def upgrade():
     if "accuracy_m" not in ws_cols:
         op.add_column("workday_sessions", sa.Column("accuracy_m", sa.Float(), nullable=True))
     if "geofence_id" not in ws_cols:
-        op.add_column("workday_sessions", sa.Column("geofence_id", sa.Integer(), nullable=True))
-        op.create_foreign_key(
-            "fk_workday_sessions_geofence_id",
-            "workday_sessions",
-            "geofences",
-            ["geofence_id"],
-            ["id"],
-        )
+        # SQLite has no ALTER ADD CONSTRAINT; add the column with an inline FK via
+        # batch (copy-and-move). Other dialects add the column then the named FK.
+        if is_sqlite:
+            with op.batch_alter_table("workday_sessions") as batch_op:
+                batch_op.add_column(
+                    sa.Column(
+                        "geofence_id",
+                        sa.Integer(),
+                        sa.ForeignKey("geofences.id", name="fk_workday_sessions_geofence_id"),
+                        nullable=True,
+                    )
+                )
+        else:
+            op.add_column("workday_sessions", sa.Column("geofence_id", sa.Integer(), nullable=True))
+            op.create_foreign_key(
+                "fk_workday_sessions_geofence_id",
+                "workday_sessions",
+                "geofences",
+                ["geofence_id"],
+                ["id"],
+            )
     if "geofence_status" not in ws_cols:
         op.add_column("workday_sessions", sa.Column("geofence_status", sa.String(20), nullable=True))
 
@@ -59,13 +73,18 @@ def upgrade():
 def downgrade():
     bind = op.get_bind()
     inspector = inspect(bind)
+    is_sqlite = bind.dialect.name == "sqlite"
     ws_cols = {c["name"] for c in inspector.get_columns("workday_sessions")}
 
     if "geofence_status" in ws_cols:
         op.drop_column("workday_sessions", "geofence_status")
     if "geofence_id" in ws_cols:
-        op.drop_constraint("fk_workday_sessions_geofence_id", "workday_sessions", type_="foreignkey")
-        op.drop_column("workday_sessions", "geofence_id")
+        if is_sqlite:
+            with op.batch_alter_table("workday_sessions") as batch_op:
+                batch_op.drop_column("geofence_id")
+        else:
+            op.drop_constraint("fk_workday_sessions_geofence_id", "workday_sessions", type_="foreignkey")
+            op.drop_column("workday_sessions", "geofence_id")
     if "accuracy_m" in ws_cols:
         op.drop_column("workday_sessions", "accuracy_m")
     if "longitude" in ws_cols:

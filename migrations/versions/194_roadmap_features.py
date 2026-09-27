@@ -24,6 +24,7 @@ def _has_column(inspector, table_name: str, column_name: str) -> bool:
 def upgrade():
     bind = op.get_bind()
     inspector = inspect(bind)
+    is_sqlite = bind.dialect.name == "sqlite"
     tables = set(inspector.get_table_names())
 
     if "client_messages" not in tables:
@@ -86,7 +87,9 @@ def upgrade():
             "payroll_sync_logs",
             sa.Column("id", sa.Integer(), primary_key=True),
             sa.Column("provider", sa.String(length=40), nullable=False),
-            sa.Column("integration_id", sa.Integer(), sa.ForeignKey("integrations.id", ondelete="SET NULL"), nullable=True),
+            sa.Column(
+                "integration_id", sa.Integer(), sa.ForeignKey("integrations.id", ondelete="SET NULL"), nullable=True
+            ),
             sa.Column("period_start", sa.Date(), nullable=False),
             sa.Column("period_end", sa.Date(), nullable=False),
             sa.Column("status", sa.String(length=40), nullable=False, server_default="pending"),
@@ -101,18 +104,34 @@ def upgrade():
         )
 
     if "api_tokens" in tables and not _has_column(inspector, "api_tokens", "client_id"):
-        op.add_column("api_tokens", sa.Column("client_id", sa.Integer(), sa.ForeignKey("clients.id", ondelete="CASCADE"), nullable=True))
+        # SQLite has no ALTER ADD COLUMN ... REFERENCES; add the FK column via batch.
+        client_fk = sa.Column(
+            "client_id",
+            sa.Integer(),
+            sa.ForeignKey("clients.id", ondelete="CASCADE", name="fk_api_tokens_client_id_clients"),
+            nullable=True,
+        )
+        if is_sqlite:
+            with op.batch_alter_table("api_tokens") as batch_op:
+                batch_op.add_column(client_fk)
+        else:
+            op.add_column("api_tokens", client_fk)
         op.create_index("ix_api_tokens_client_id", "api_tokens", ["client_id"])
 
 
 def downgrade():
     bind = op.get_bind()
     inspector = inspect(bind)
+    is_sqlite = bind.dialect.name == "sqlite"
     tables = set(inspector.get_table_names())
 
     if "api_tokens" in tables and _has_column(inspector, "api_tokens", "client_id"):
         op.drop_index("ix_api_tokens_client_id", table_name="api_tokens")
-        op.drop_column("api_tokens", "client_id")
+        if is_sqlite:
+            with op.batch_alter_table("api_tokens") as batch_op:
+                batch_op.drop_column("client_id")
+        else:
+            op.drop_column("api_tokens", "client_id")
 
     if "payroll_sync_logs" in tables:
         op.drop_table("payroll_sync_logs")

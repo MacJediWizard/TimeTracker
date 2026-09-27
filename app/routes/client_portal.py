@@ -1710,7 +1710,6 @@ def survey_response(token):
     return render_template("client_portal/survey.html", survey=survey, client=client or Client(name="Client"))
 
 
-
 @client_portal_bp.route("/client-portal/messages")
 def portal_messages():
     """Client portal communication hub."""
@@ -1785,7 +1784,7 @@ def portal_messages_stream():
     def generate():
         service = ClientMessageService()
         last_id = request.args.get("after_id", type=int) or 0
-        for _ in range(60):
+        for _i in range(60):
             messages = service.list_messages(client.id, after_id=last_id, limit=50)
             if messages:
                 last_id = messages[-1].id

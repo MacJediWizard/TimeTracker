@@ -246,9 +246,12 @@
     <script src="{{ url_for('static', filename='vendor/animejs/anime.min.js') }}"></script>
     <script src="{{ url_for('static', filename='vendor/flatpickr/flatpickr.min.js') }}"></script>
     <script src="{{ asset_url('core-a1') }}"></script>
-    {# Source fallbacks when dist bundles are not rebuilt yet (confirm/unsaved live in core-a1 after build). #}
+    {# Source fallbacks only when the core-a1 bundle is not built; once built it already
+       contains confirm-dialog.js and unsaved-changes.js, so loading them again is redundant. #}
+    {% if not asset_built('core-a1') %}
     <script src="{{ static_url('js/confirm-dialog.js') }}"></script>
     <script src="{{ static_url('js/unsaved-changes.js') }}"></script>
+    {% endif %}
     {% if current_user.is_authenticated and support_ui_json %}
     <script src="{{ asset_url('core-support') }}"></script>
     {% endif %}

@@ -1237,6 +1237,37 @@ def _reset_opentelemetry_after_test():
         pass
 
 
+@pytest.fixture(autouse=True)
+def _restore_global_rate_limits():
+    """Heal the process-global Flask-Limiter default limits after every test.
+
+    ``limiter`` is a module-level singleton shared across every app the suite
+    builds. test_polling_ratelimit_exempt / test_health_ratelimit_exempt force a
+    strict default (``3 per hour``) into it via ``set_default_limits`` and never
+    restore it; re-creating an app does NOT reset the limit manager, so that
+    strict limit leaks into any later test in the same worker and causes spurious
+    429s (test_multiple_concurrent_requests, test_complete_archive_unarchive_workflow).
+    Which tests share a worker depends on pytest-split ordering, which is why the
+    failures look flaky. Restoring the configured default after each test — for
+    all tests, regardless of which local ``app`` fixture they use — makes the
+    suite deterministic. Setting these singleton attributes needs no app context.
+    """
+    yield
+    try:
+        from flask_limiter.wrappers import LimitGroup
+
+        from app import limiter
+
+        raw = os.getenv("RATELIMIT_DEFAULT", "5000 per day;1000 per hour")
+        configured = [p.strip() for p in raw.replace(",", ";").split(";") if p.strip()]
+        limiter._default_limits = configured
+        limiter.limit_manager.set_default_limits(
+            [LimitGroup(limit_provider=raw, key_function=limiter._key_func)] if configured else []
+        )
+    except Exception:
+        pass
+
+
 # ============================================================================
 # Pytest Markers
 # ============================================================================

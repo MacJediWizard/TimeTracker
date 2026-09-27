@@ -200,7 +200,7 @@ def _finalize_login_after_verification(user: User, *, log_auth_method: str):
         try:
             track_event(user.id, "auth.login", {"auth_method": log_auth_method})
         except Exception:
-            pass
+            current_app.logger.debug("Async track_event auth.login failed", exc_info=True)
 
     threading.Thread(target=track_login_async, daemon=True).start()
 
@@ -291,8 +291,8 @@ def forgot_password():
                 )
                 log_event("auth.password_reset_requested", user_id=user.id)
             except Exception:
-                # Never leak details; logging handled by email util.
-                pass
+                # Never leak details to the user; log at debug for operators.
+                current_app.logger.debug("Password reset email send failed", exc_info=True)
 
         return redirect(url_for("auth.login"))
 
@@ -360,7 +360,7 @@ def login():
                 request.headers.get("X-Forwarded-For") or request.remote_addr,
             )
         except Exception:
-            pass
+            current_app.logger.debug("Failed to log GET /login request", exc_info=True)
 
     if current_user.is_authenticated:
         if getattr(current_user, "portal_only", False) and current_user.is_client_portal_user:
@@ -519,7 +519,9 @@ def login():
                             getattr(settings, "default_daily_working_hours", 8.0) or 8.0
                         )
                     except Exception:
-                        pass
+                        current_app.logger.debug(
+                            "Could not apply default daily working hours on self-register", exc_info=True
+                        )
 
                     # Assign role from the new Role system
                     from app.models import Role
@@ -890,7 +892,7 @@ def logout():
             # Best-effort cleanup: token should not linger after logout.
             cache.delete(cache_key)
         except Exception:
-            pass
+            current_app.logger.debug("OIDC id_token cache cleanup on logout failed", exc_info=True)
     is_portal_user = getattr(current_user, "portal_only", False) or getattr(
         current_user, "is_client_portal_user", False
     )
@@ -901,7 +903,7 @@ def logout():
         session.pop("user_id", None)
         session.pop("client_portal_id", None)
     except Exception:
-        pass
+        current_app.logger.debug("Session key cleanup on logout failed", exc_info=True)
     flash(_("Goodbye, %(username)s!", username=username), "info")
 
     if auth_includes_oidc(auth_method):
@@ -923,7 +925,7 @@ def logout():
 
                         return redirect(f"{end_session_endpoint}?{urlencode(params)}")
                 except Exception:
-                    pass
+                    current_app.logger.debug("OIDC end-session redirect failed", exc_info=True)
 
     if is_portal_user:
         return redirect(url_for("client_portal.login"))
@@ -1045,9 +1047,9 @@ def edit_profile():
                         try:
                             os.remove(old_path)
                         except OSError:
-                            pass
+                            current_app.logger.debug("Could not remove old avatar file", exc_info=True)
             except Exception:
-                pass
+                current_app.logger.debug("Old avatar cleanup failed", exc_info=True)
 
             current_user.avatar_filename = unique_name
         try:
@@ -1128,7 +1130,7 @@ def remove_avatar():
                 try:
                     os.remove(path)
                 except OSError:
-                    pass
+                    current_app.logger.debug("Could not remove avatar file", exc_info=True)
         current_user.avatar_filename = None
         db.session.commit()
         flash(_("Avatar removed"), "success")
@@ -1490,7 +1492,7 @@ def oidc_callback():
                 if unverified.get("iss"):
                     issuer = (unverified.get("iss") or "").strip()
             except Exception:
-                pass
+                current_app.logger.debug("Could not read iss from id_token without verification", exc_info=True)
 
         username_claim = getattr(Config, "OIDC_USERNAME_CLAIM", "preferred_username")
         full_name_claim = getattr(Config, "OIDC_FULL_NAME_CLAIM", "name")
@@ -1597,7 +1599,7 @@ def oidc_callback():
                     settings = Settings.get_settings()
                     user.standard_hours_per_day = float(getattr(settings, "default_daily_working_hours", 8.0) or 8.0)
                 except Exception:
-                    pass
+                    current_app.logger.debug("Could not apply default daily working hours for OIDC user", exc_info=True)
 
                 # Assign role from the new Role system
                 from app.models import Role
@@ -1663,7 +1665,7 @@ def oidc_callback():
                 if not safe_commit("oidc_promote_admin", {"user_id": user.id}):
                     current_app.logger.warning("DB commit failed promoting user to admin from OIDC; continuing")
         except Exception:
-            pass
+            current_app.logger.warning("OIDC admin role mapping failed", exc_info=True)
 
         # OIDC group -> RBAC Role mapping (additive by default).
         # When OIDC_ROLE_GROUP_MAP is configured, sync user.roles based on the
@@ -1761,7 +1763,7 @@ def oidc_callback():
                 # Backwards compatibility cleanup
                 session.pop("oidc_id_token", None)
         except Exception:
-            pass
+            current_app.logger.debug("Could not cache OIDC id_token server-side", exc_info=True)
 
         from app.telemetry.otel_setup import business_span
 
@@ -1782,7 +1784,7 @@ def oidc_callback():
             try:
                 user.update_last_login()
             except Exception:
-                pass
+                current_app.logger.debug("update_last_login failed after OIDC login", exc_info=True)
 
             # Track successful OIDC login (log_event is fast, track_event is deferred to avoid blocking)
             log_event("auth.login", user_id=user.id, auth_method="oidc")
@@ -1793,7 +1795,7 @@ def oidc_callback():
             try:
                 track_event(user.id, "auth.login", {"auth_method": "oidc"})
             except Exception:
-                pass  # Don't let analytics errors affect login
+                current_app.logger.debug("Async track_event OIDC auth.login failed", exc_info=True)
 
         threading.Thread(target=track_login_async, daemon=True).start()
 

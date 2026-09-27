@@ -1379,7 +1379,11 @@ def test_create_notification_emits_to_client_room(app, test_client):
                 message="Test message",
                 send_email=False,
             )
-            mock_socketio.emit.assert_called_once()
-            call_args = mock_socketio.emit.call_args
-            assert call_args[0][0] == "client_notification"
-            assert call_args[1]["room"] == f"client_portal_{test_client.id}"
+            # create_notification emits two events to the client room: the
+            # notification itself plus a portal_refresh companion (both are
+            # handled in client_portal/base.html). Assert the notification emit
+            # went to the right room rather than pinning an exact call count.
+            assert mock_socketio.emit.called
+            notif_calls = [c for c in mock_socketio.emit.call_args_list if c[0][0] == "client_notification"]
+            assert len(notif_calls) == 1
+            assert notif_calls[0][1]["room"] == f"client_portal_{test_client.id}"

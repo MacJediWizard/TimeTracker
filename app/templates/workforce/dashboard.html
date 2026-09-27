@@ -19,7 +19,7 @@
     <form method="get" class="card p-4 flex gap-2 items-end">
         <div>
             <label class="text-xs text-text-muted-light dark:text-text-muted-dark">{{ _('User') }}</label>
-            <select name="user_id" class="form-select">
+            <select name="user_id" class="form-input">
                 {% for u in users %}
                     <option value="{{ u.id }}" {% if u.id == selected_user_id %}selected{% endif %}>{{ u.username }}</option>
                 {% endfor %}
@@ -42,8 +42,24 @@
         <h2 class="text-lg font-semibold">{{ _('Exports') }}</h2>
         <p class="text-sm text-text-muted-light dark:text-text-muted-dark">{{ _('Download payroll, capacity, and compliance exports') }}</p>
     </div>
-    <div class="flex flex-wrap gap-2">
-        <a class="btn btn-secondary" href="{{ url_for('workforce.payroll_export_csv', start_date=cap_start.isoformat(), end_date=cap_end.isoformat(), user_id=selected_user_id) }}">{{ _('Payroll CSV') }}</a>
+    <div class="flex flex-wrap gap-2 items-center">
+        <form class="flex flex-wrap gap-2 items-center" method="GET" action="{{ url_for('workforce.payroll_export_csv') }}">
+            <input type="hidden" name="start_date" value="{{ cap_start.isoformat() }}">
+            <input type="hidden" name="end_date" value="{{ cap_end.isoformat() }}">
+            <input type="hidden" name="user_id" value="{{ selected_user_id }}">
+            <select name="template_id" class="form-input text-sm">
+                {% for t in payroll_templates|default([]) %}
+                <option value="{{ t.id }}" {% if default_payroll_template and t.id == default_payroll_template.id %}selected{% endif %}>{{ t.name }} ({{ t.format }})</option>
+                {% else %}
+                <option value="">{{ _('Generic Payroll') }}</option>
+                {% endfor %}
+            </select>
+            <button class="btn btn-secondary" type="submit">{{ _('Payroll CSV') }}</button>
+        </form>
+        <a class="btn btn-secondary" href="{{ url_for('workforce.payroll_export_xlsx', start_date=cap_start.isoformat(), end_date=cap_end.isoformat(), user_id=selected_user_id, template_id=(default_payroll_template.id if default_payroll_template else none)) }}">{{ _('Payroll XLSX') }}</a>
+        {% if current_user.is_admin %}
+        <a class="btn btn-secondary" href="{{ url_for('admin.payroll_templates') }}">{{ _('Templates') }}</a>
+        {% endif %}
         <a class="btn btn-secondary" href="{{ url_for('workforce.capacity_export_csv', start_date=cap_start.isoformat(), end_date=cap_end.isoformat()) }}">{{ _('Capacity CSV') }}</a>
         {% if can_approve %}
         <a class="btn btn-secondary" href="{{ url_for('workforce.locked_periods_export_csv', start_date=cap_start.isoformat(), end_date=cap_end.isoformat()) }}">{{ _('Locked Periods CSV') }}</a>
@@ -53,6 +69,65 @@
         {% endif %}
     </div>
 </div>
+
+{% if current_user.is_admin %}
+<div class="card p-4 space-y-3" id="payroll-sync">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+        <div>
+            <h2 class="text-lg font-semibold">{{ _('Payroll connectors') }}</h2>
+            <p class="text-sm text-text-muted-light dark:text-text-muted-dark">{{ _('Push hours for this period to Gusto or ADP') }}</p>
+        </div>
+    </div>
+    <form method="post" action="{{ url_for('workforce.payroll_sync_push') }}" class="flex flex-wrap gap-2 items-end">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div>
+            <label class="text-xs text-text-muted-light dark:text-text-muted-dark">{{ _('Provider') }}</label>
+            <select name="provider" class="form-input">
+                <option value="gusto">Gusto</option>
+                <option value="adp">ADP</option>
+            </select>
+        </div>
+        <div>
+            <label class="text-xs text-text-muted-light dark:text-text-muted-dark">{{ _('Start') }}</label>
+            <input type="date" name="start_date" value="{{ cap_start.isoformat() }}" class="form-input" required>
+        </div>
+        <div>
+            <label class="text-xs text-text-muted-light dark:text-text-muted-dark">{{ _('End') }}</label>
+            <input type="date" name="end_date" value="{{ cap_end.isoformat() }}" class="form-input" required>
+        </div>
+        <button class="btn btn-primary" type="submit">{{ _('Push payroll') }}</button>
+        <a class="btn btn-secondary" href="{{ url_for('integrations.list_integrations') }}">{{ _('Configure') }}</a>
+    </form>
+    {% if payroll_sync_logs %}
+    <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+            <thead>
+                <tr class="text-left text-text-muted-light dark:text-text-muted-dark">
+                    <th class="py-1 pr-3">{{ _('When') }}</th>
+                    <th class="py-1 pr-3">{{ _('Provider') }}</th>
+                    <th class="py-1 pr-3">{{ _('Period') }}</th>
+                    <th class="py-1 pr-3">{{ _('Status') }}</th>
+                    <th class="py-1 pr-3">{{ _('Employees') }}</th>
+                    <th class="py-1">{{ _('Hours') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in payroll_sync_logs %}
+                <tr class="border-t border-border-light dark:border-border-dark">
+                    <td class="py-1 pr-3">{{ log.created_at.strftime('%Y-%m-%d %H:%M') if log.created_at else '' }}</td>
+                    <td class="py-1 pr-3 uppercase">{{ log.provider }}</td>
+                    <td class="py-1 pr-3">{{ log.period_start }} – {{ log.period_end }}</td>
+                    <td class="py-1 pr-3">{{ log.status }}</td>
+                    <td class="py-1 pr-3">{{ log.employee_count }}</td>
+                    <td class="py-1">{{ '%.2f'|format(log.hours_total or 0) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
 
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <section class="card p-4">
@@ -150,7 +225,7 @@
             <h2 class="text-lg font-semibold">{{ _('Time-Off Requests') }}</h2>
             <form id="time-off-request-form" method="post" action="{{ url_for('workforce.create_time_off_request') }}" class="grid grid-cols-1 md:grid-cols-2 gap-2">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <select name="leave_type_id" class="form-select js-leave-type-select" required>
+                <select name="leave_type_id" class="form-input js-leave-type-select" required>
                     <option value="">{{ _('Select leave type') }}</option>
                     {% for lt in leave_types %}
                         {% if lt.enabled %}

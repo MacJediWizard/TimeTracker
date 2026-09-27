@@ -109,6 +109,38 @@ TimeTracker has been continuously enhanced with powerful new features! Here's wh
 
 - 🪄 **SOW auto-provisioning (Claude API)** — Paste or upload a Statement of Work (text/PDF/DOCX); Claude parses it into a structured plan that you review and edit, then provisions a **Client, Project, Kanban board, and Tasks** in one step. Includes a dedicated Claude provider in **Settings → Claude / SOW** with selectable model and effort. ([docs](docs/features/SOW_AUTO_PROVISIONING.md))
 
+### ✨ Highlights of v5.17.2
+
+**Patch (5.17.2):** **Idle dashboard no longer hits 429 (#767)** — higher per-user rate limit default, exempt timer/notification polling, and client back-off on 429. **OpenTelemetry opt-in** — export to the shared telemetry backend now requires the telemetry opt-in; operator-configured `OTEL_EXPORTER_OTLP_*` backends are unaffected. See [CHANGELOG.md](CHANGELOG.md#5172---2026-09-25).
+
+### ✨ Highlights of v5.17.1
+
+**Patch (5.17.1):** **Health probes exempt from rate limiting** — `/_health`, `/_ready`, and the API health endpoints no longer return 429 under frequent liveness checks, fixing Render restart loops and 502s. See [CHANGELOG.md](CHANGELOG.md#5171---2026-09-23).
+
+### ✨ Highlights of v5.17.0
+
+**Minor (5.17.0):** **Factur-X / ZUGFeRD (#433)** — structured addresses, VAT categories, PDF/A-3 embed, and EN 16931 CII fixes. **Idle unanswered action (#722)** — admin choice of review vs auto-stop when Still working? expires. **Phase 4 gap roadmap** — GDPR erasure, weekly goals / recurring tasks / project templates API, estimates vs actuals report, multi-level timesheet approval, XRechnung helper, Mollie skeleton. **Phase 5 foundations** — OAuth app models, SCIM Users stub, AI summarize-entries, Teams bot stub, and design docs. **UI / hygiene** — shared confirm dialogs, empty states, command palette expansion, security rate limits, and dead-code cleanup. See [CHANGELOG.md](CHANGELOG.md#5170---2026-09-23).
+
+### ✨ Highlights of v5.16.0
+
+**Minor (5.16.0):** **Client–team messaging** — bidirectional in-portal messaging between team and client contacts with thread UI on both sides. **Gmail & Outlook sync** — email threads pulled from Gmail API and Microsoft Graph and linked to CRM clients, leads, and deals. **Payroll sync (Gusto & ADP)** — time entries aggregated into payroll batches and pushed to Gusto and ADP Workforce Now. **DATEV export** — EXTF Buchungsstapel CSV generator for direct DATEV import. **Sage integration** — invoices, contacts, and payments synced with Sage Business Cloud. **Integration wizards** — guided setup wizards for ADP, DATEV, Gmail, Gusto, Outlook Email, and Sage. **Visual workflow builder** — drag-and-drop canvas for building automation workflows. **Portal custom domains** — white-label client portal host resolution. **Client Portal API** — new authenticated REST blueprint for portal sessions and data access. See [CHANGELOG.md](CHANGELOG.md#5160---2026-09-18).
+
+### ✨ Highlights of v5.15.0
+
+**Minor (5.15.0):** **Timer start override (#760)** — start or adjust a running timer at a custom time. **Pomodoro sessions** — focus blocks tracked via timer API and UI. **Expense lifecycle** — full mobile/desktop expense CRUD. **Payroll templates** — configurable export templates. **QuickBooks & Xero** — deeper accounting sync. **ActivityWatch inbox** — rules, merge filters, and sync-error review. **Gamification** — badges, leaderboards, and award hooks. **Calendar DnD** — drag-to-move and resize events. **Recurring costs** — automatic recurring project cost engine. **Shareable reports** — public tokenized report links. **Geofencing** — location-based attendance clock-in policies. See [CHANGELOG.md](CHANGELOG.md#5150---2026-09-16).
+
+### ✨ Highlights of v5.14.1
+
+**Patch (5.14.1):** **Docker base images** — Node 20 and Python Bookworm replace expired Bullseye bases so fresh CI/image builds succeed. See [CHANGELOG.md](CHANGELOG.md#5141---2026-09-09).
+
+### ✨ Highlights of v5.14.0
+
+**Minor (5.14.0):** **OrcaRouter AI provider** — `orcarouter` is now a named AI provider option (OpenAI-compatible endpoint, Bearer-token auth). Select it in System Settings → AI Helper or set `AI_PROVIDER=orcarouter` with `AI_BASE_URL=https://api.orcarouter.ai`. See [CHANGELOG.md](CHANGELOG.md#5140---2026-09-09).
+
+### ✨ Highlights of v5.13.5
+
+**Patch (5.13.5):** **Timezone `local_date`** — date-only values (e.g. task due dates) no longer crash the dashboard filter. **Idle skip paused (#752)** — paused timers are excluded from idle notify / needs-review / auto-stop. **Manual entry single-client (#753)** — restores the readonly pre-filled client lock when the org has one client. See [CHANGELOG.md](CHANGELOG.md#5135---2026-09-08).
+
 ### ✨ Highlights of v5.13.4
 
 **Patch (5.13.4):** **Alembic multiple heads** — merge migration `184_merge_183_heads` rejoins the parallel `183` device-token and idle needs-review branches so `flask db upgrade` has a single head. See [CHANGELOG.md](CHANGELOG.md#5134---2026-09-04).

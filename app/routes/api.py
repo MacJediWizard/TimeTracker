@@ -11,8 +11,19 @@ from flask_socketio import join_room, leave_room
 from sqlalchemy import func, or_
 from werkzeug.utils import secure_filename
 
-from app import db, socketio
-from app.models import FocusSession, Project, RecurringBlock, SavedFilter, Task, TimeEntry, User
+from app import db, limiter, socketio
+from app.models import (
+    Client,
+    FocusSession,
+    Project,
+    RateOverride,
+    RecurringBlock,
+    SavedFilter,
+    Settings,
+    Task,
+    TimeEntry,
+    User,
+)
 from app.models.time_entry import local_now
 from app.services.ai_suggestion_service import AISuggestionService
 from app.services.claude_service import ClaudeService
@@ -34,6 +45,7 @@ def _ai_error_response(exc: AIServiceError):
 
 
 @api_bp.route("/api/health")
+@limiter.exempt
 @deprecated_session_api("/api/v1/health")
 def health_check():
     """Health check endpoint for monitoring and error handling"""
@@ -425,6 +437,7 @@ def _effective_user_for_version_api():
 
 
 @api_bp.route("/api/version/check")
+@limiter.limit("30 per minute")
 def api_version_check():
     """Admin only: compare installed version to latest GitHub release (cached)."""
     user = _effective_user_for_version_api()
@@ -438,6 +451,7 @@ def api_version_check():
 
 
 @api_bp.route("/api/version/dismiss", methods=["POST"])
+@limiter.limit("20 per minute")
 def api_version_dismiss():
     """Admin only: remember not to show update popup for this normalized release version."""
     user = _effective_user_for_version_api()
@@ -469,13 +483,30 @@ def api_version_dismiss():
 
 @api_bp.route("/api/timer/status")
 @login_required
+@limiter.exempt
 @deprecated_session_api("/api/v1/timer/status")
 def timer_status():
     """Get current timer status"""
+    from app.models import Settings
+
+    settings = Settings.get_settings()
+    idle_timeout_minutes = getattr(settings, "idle_timeout_minutes", 30) or 30
+    idle_unanswered_action = getattr(settings, "idle_unanswered_action", "review") or "review"
+    if idle_unanswered_action not in ("review", "auto_stop"):
+        idle_unanswered_action = "review"
+
     active_timer = current_user.active_timer
 
     if not active_timer:
-        return jsonify({"active": False, "timer": None})
+        return jsonify(
+            {
+                "active": False,
+                "timer": None,
+                "idle_timeout_minutes": idle_timeout_minutes,
+                "idle_unanswered_action": idle_unanswered_action,
+                "idle_notified": False,
+            }
+        )
 
     return jsonify(
         {
@@ -494,6 +525,10 @@ def timer_status():
                     active_timer.last_heartbeat_at.isoformat() if active_timer.last_heartbeat_at else None
                 ),
             },
+            "idle_timeout_minutes": idle_timeout_minutes,
+            "idle_unanswered_action": idle_unanswered_action,
+            "idle_notified": bool(active_timer.idle_notified_at),
+            "needs_review": bool(active_timer.idle_flagged_at),
         }
     )
 
@@ -531,6 +566,7 @@ def timer_notes_suggestions():
 
 @api_bp.route("/api/timer/heartbeat", methods=["POST"])
 @login_required
+@limiter.exempt
 @deprecated_session_api("/api/v1/timer/heartbeat")
 def api_timer_heartbeat():
     """Record activity for the active timer (idle timeout safety net)."""
@@ -593,13 +629,7 @@ def api_timer_review():
         elif action == "trim":
             settings = Settings.get_settings()
             idle_minutes = max(1, min(480, int(getattr(settings, "idle_timeout_minutes", 30) or 30)))
-            last_active = active_timer.last_heartbeat_at or active_timer.start_time
-            if getattr(last_active, "tzinfo", None) is not None:
-                last_active = last_active.replace(tzinfo=None)
-            stop_at = last_active + timedelta(minutes=idle_minutes)
-            now = local_now()
-            if stop_at > now:
-                stop_at = now
+            stop_at = active_timer.idle_credited_stop_time(idle_minutes)
             active_timer.stop_timer(end_time=stop_at)
         else:  # keep at now
             active_timer.stop_timer()
@@ -1213,39 +1243,35 @@ def project_forecast(project_id):
 @api_bp.route("/api/focus-sessions/start", methods=["POST"])
 @login_required
 def start_focus_session():
+    from app.services.pomodoro_service import PomodoroService
+
     data = request.get_json() or {}
-    project_id = data.get("project_id")
-    task_id = data.get("task_id")
-    pomodoro_length = int(data.get("pomodoro_length") or 25)
-    short_break_length = int(data.get("short_break_length") or 5)
-    long_break_length = int(data.get("long_break_length") or 15)
-    long_break_interval = int(data.get("long_break_interval") or 4)
-    link_active_timer = bool(data.get("link_active_timer", True))
-
-    time_entry_id = None
-    if link_active_timer and current_user.active_timer:
-        time_entry_id = current_user.active_timer.id
-
-    fs = FocusSession(
+    service = PomodoroService()
+    result = service.start_session(
         user_id=current_user.id,
-        project_id=project_id,
-        task_id=task_id,
-        time_entry_id=time_entry_id,
-        pomodoro_length=pomodoro_length,
-        short_break_length=short_break_length,
-        long_break_length=long_break_length,
-        long_break_interval=long_break_interval,
+        project_id=data.get("project_id"),
+        task_id=data.get("task_id"),
+        pomodoro_length=int(data.get("pomodoro_length") or getattr(current_user, "pomodoro_length", None) or 25),
+        short_break_length=int(
+            data.get("short_break_length") or getattr(current_user, "pomodoro_short_break", None) or 5
+        ),
+        long_break_length=int(
+            data.get("long_break_length") or getattr(current_user, "pomodoro_long_break", None) or 15
+        ),
+        long_break_interval=int(
+            data.get("long_break_interval") or getattr(current_user, "pomodoro_long_break_interval", None) or 4
+        ),
     )
-    db.session.add(fs)
-    if not safe_commit("start_focus_session", {"user_id": current_user.id}):
-        return jsonify({"error": "Database error while starting focus session"}), 500
-
-    return jsonify({"success": True, "session": fs.to_dict()})
+    if not result.get("success"):
+        return jsonify(result), 409
+    return jsonify(result)
 
 
 @api_bp.route("/api/focus-sessions/finish", methods=["POST"])
 @login_required
 def finish_focus_session():
+    from app.services.pomodoro_service import PomodoroService
+
     data = request.get_json() or {}
     session_id = data.get("session_id")
     if not session_id:
@@ -1254,32 +1280,62 @@ def finish_focus_session():
     if fs.user_id != current_user.id and not current_user.is_admin:
         return jsonify({"error": "Access denied"}), 403
 
-    fs.ended_at = datetime.utcnow()
-    fs.cycles_completed = int(data.get("cycles_completed") or 0)
-    fs.interruptions = int(data.get("interruptions") or 0)
-    notes = (data.get("notes") or "").strip()
-    fs.notes = notes or fs.notes
-    if not safe_commit("finish_focus_session", {"session_id": fs.id}):
-        return jsonify({"error": "Database error while finishing focus session"}), 500
-    return jsonify({"success": True, "session": fs.to_dict()})
+    result = PomodoroService().end_session(session_id=session_id, notes=(data.get("notes") or "").strip() or None)
+    return jsonify(result)
+
+
+@api_bp.route("/api/focus-sessions/active", methods=["GET"])
+@login_required
+def active_focus_session():
+    from app.services.pomodoro_service import PomodoroService
+
+    session = PomodoroService().get_active_session(current_user.id)
+    return jsonify({"session": session.to_dict() if session else None})
+
+
+@api_bp.route("/api/focus-sessions/<int:session_id>/cycle", methods=["POST"])
+@login_required
+def complete_focus_cycle(session_id):
+    from app.services.pomodoro_service import PomodoroService
+
+    fs = FocusSession.query.get_or_404(session_id)
+    if fs.user_id != current_user.id and not current_user.is_admin:
+        return jsonify({"error": "Access denied"}), 403
+    if fs.ended_at:
+        return jsonify({"error": "Session already ended"}), 400
+    return jsonify(PomodoroService().complete_cycle(session_id))
+
+
+@api_bp.route("/api/focus-sessions/<int:session_id>/interrupt", methods=["POST"])
+@login_required
+def interrupt_focus_session(session_id):
+    from app.services.pomodoro_service import PomodoroService
+
+    data = request.get_json() or {}
+    fs = FocusSession.query.get_or_404(session_id)
+    if fs.user_id != current_user.id and not current_user.is_admin:
+        return jsonify({"error": "Access denied"}), 403
+    if fs.ended_at:
+        return jsonify({"error": "Session already ended"}), 400
+    return jsonify(PomodoroService().log_interruption(session_id, reason=data.get("reason")))
 
 
 @api_bp.route("/api/focus-sessions/summary")
 @login_required
 def focus_sessions_summary():
-    """Return simple summary counts for recent focus sessions for the current user."""
+    """Return Pomodoro session statistics for the current user."""
+    from app.services.pomodoro_service import PomodoroService
+
     days = int(request.args.get("days", 7))
-    since = datetime.utcnow() - timedelta(days=days)
-    q = FocusSession.query.filter(FocusSession.user_id == current_user.id, FocusSession.started_at >= since)
-    sessions = q.order_by(FocusSession.started_at.desc()).all()
-    total = len(sessions)
-    cycles = sum(s.cycles_completed or 0 for s in sessions)
-    interrupts = sum(s.interruptions or 0 for s in sessions)
+    stats = PomodoroService().get_session_stats(current_user.id, days=days)
     return jsonify(
         {
-            "total_sessions": total,
-            "cycles_completed": cycles,
-            "interruptions": interrupts,
+            "total_sessions": stats["total_sessions"],
+            "cycles_completed": stats["total_cycles"],
+            "interruptions": stats["total_interruptions"],
+            "total_minutes": stats["total_minutes"],
+            "average_cycles_per_session": stats["average_cycles_per_session"],
+            "average_minutes_per_session": stats["average_minutes_per_session"],
         }
     )
 
@@ -2666,6 +2722,7 @@ def summary_today():
 
 @api_bp.route("/api/notifications")
 @login_required
+@limiter.exempt
 def api_smart_notifications():
     """Smart in-app notification candidates (respects preferences, dismissals, caps)."""
     from app.services.notification_service import NotificationService

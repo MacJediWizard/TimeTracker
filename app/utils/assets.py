@@ -95,6 +95,16 @@ def asset_url(name: str, fallback: Optional[str] = None) -> str:
     return url_for("static", filename=path)
 
 
+def asset_built(name: str) -> bool:
+    """Return True when a logical bundle has a built entry in the manifest.
+
+    Lets templates load source fallbacks (e.g. confirm-dialog.js) only when the
+    dist bundle that already contains them has not been built, avoiding a
+    redundant double-load once ``npm run build:js`` has run.
+    """
+    return load_manifest().get(name) is not None
+
+
 def static_url(filename: str) -> str:
     """Cache-busted URL for source-controlled static files.
 
@@ -116,4 +126,5 @@ def static_url(filename: str) -> str:
 def register_asset_helpers(app) -> None:
     """Expose ``asset_url`` / ``static_url`` to templates."""
     app.jinja_env.globals["asset_url"] = asset_url
+    app.jinja_env.globals["asset_built"] = asset_built
     app.jinja_env.globals["static_url"] = static_url

@@ -22,6 +22,12 @@ class Client(db.Model):
     email = db.Column(db.String(200), nullable=True)
     phone = db.Column(db.String(50), nullable=True)
     address = db.Column(db.Text, nullable=True)
+    # Structured address for e-invoicing (EN 16931 / Factur-X)
+    street = db.Column(db.String(255), nullable=True)
+    postcode = db.Column(db.String(32), nullable=True)
+    city = db.Column(db.String(100), nullable=True)
+    country = db.Column(db.String(2), nullable=True)  # ISO 3166-1 alpha-2
+    vat_id = db.Column(db.String(50), nullable=True)
     default_hourly_rate = db.Column(db.Numeric(9, 2), nullable=True)
     status = db.Column(db.String(20), default="active", nullable=False)  # 'active' or 'inactive'
     prepaid_hours_monthly = db.Column(db.Numeric(7, 2), nullable=True)
@@ -39,6 +45,7 @@ class Client(db.Model):
     portal_issues_enabled = db.Column(
         db.Boolean, default=True, nullable=False
     )  # Enable/disable issue reporting in portal
+    custom_domain = db.Column(db.String(255), unique=True, nullable=True, index=True)  # e.g. portal.client.com
 
     # Custom fields for flexible data storage (e.g., debtor_number, ERP IDs, etc.)
     custom_fields = db.Column(db.JSON, nullable=True)
@@ -63,6 +70,11 @@ class Client(db.Model):
         email=None,
         phone=None,
         address=None,
+        street=None,
+        postcode=None,
+        city=None,
+        country=None,
+        vat_id=None,
         default_hourly_rate=None,
         company=None,
         prepaid_hours_monthly=None,
@@ -81,6 +93,11 @@ class Client(db.Model):
         self.email = email.strip() if email else None
         self.phone = phone.strip() if phone else None
         self.address = address.strip() if address else None
+        self.street = street.strip() if street else None
+        self.postcode = postcode.strip() if postcode else None
+        self.city = city.strip() if city else None
+        self.country = country.strip().upper()[:2] if country else None
+        self.vat_id = vat_id.strip() if vat_id else None
         self.default_hourly_rate = Decimal(str(default_hourly_rate)) if default_hourly_rate else None
         self.prepaid_hours_monthly = (
             Decimal(str(prepaid_hours_monthly)) if prepaid_hours_monthly not in (None, "") else None
@@ -279,6 +296,11 @@ class Client(db.Model):
             "email": self.email,
             "phone": self.phone,
             "address": self.address,
+            "street": getattr(self, "street", None),
+            "postcode": getattr(self, "postcode", None),
+            "city": getattr(self, "city", None),
+            "country": getattr(self, "country", None),
+            "vat_id": getattr(self, "vat_id", None),
             "default_hourly_rate": str(self.default_hourly_rate) if self.default_hourly_rate else None,
             "status": self.status,
             "is_active": self.is_active,

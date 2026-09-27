@@ -72,19 +72,25 @@
                             <p class="text-xs text-amber-700 dark:text-amber-300" id="bannerMessage">
                                 {{ _('Become a Supporter or buy a coffee — every contribution helps keep TimeTracker free for everyone.') }}
                             </p>
+                            <p class="text-xs text-amber-600/80 dark:text-amber-400/80 mt-0.5" id="bannerSubtitle">
+                                {{ _('One-time key — pay once, never see this again.') }}
+                            </p>
                         </div>
                     </div>
                     <div class="flex items-center gap-2 flex-wrap">
-                        <a href="{{ url_for('main.donate') }}" 
+                        <a href="{{ support_purchase_url }}"
+                           target="_blank"
+                           rel="noopener noreferrer"
+                           onclick="trackDonationClick('banner_key')"
                            class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition-colors">
-                            {{ _('Become a Supporter') }}
+                            {{ _('Remove prompts forever (€25)') }}
                         </a>
                         <a href="https://buymeacoffee.com/DryTrix?utm_source=timetracker&utm_medium=banner&utm_campaign=support" 
                            target="_blank" 
                            rel="noopener noreferrer"
                            onclick="trackDonationClick('banner_bmc')"
-                           class="px-3 py-1.5 bg-white hover:bg-amber-50 text-amber-600 text-sm font-medium rounded-lg transition-colors border border-amber-600">
-                            <i class="fas fa-mug-saucer mr-1"></i>{{ _('Buy Me a Coffee') }}
+                           class="px-3 py-1.5 bg-white hover:bg-amber-50 text-amber-600 text-sm font-semibold rounded-lg transition-colors border-2 border-amber-600 shadow-sm">
+                            <i class="fas fa-mug-saucer mr-1"></i>{{ _('Buy me a coffee') }}
                         </a>
                         <a href="https://www.paypal.com/donate/?hosted_button_id=KZB27X5LNGU3J" 
                            target="_blank" 
@@ -119,6 +125,7 @@
 
         {% if current_user.is_authenticated %}
         <meta name="idle-timeout-minutes" content="{{ settings.idle_timeout_minutes if settings else 30 }}">
+        <meta name="idle-unanswered-action" content="{{ settings.idle_unanswered_action if settings and settings.idle_unanswered_action else 'review' }}">
         <meta name="vapid-public-key" content="{{ config.VAPID_PUBLIC_KEY if config.VAPID_PUBLIC_KEY else '' }}">
         <meta name="long-entry-threshold-hours" content="8">
         {% endif %}
@@ -239,6 +246,12 @@
     <script src="{{ url_for('static', filename='vendor/animejs/anime.min.js') }}"></script>
     <script src="{{ url_for('static', filename='vendor/flatpickr/flatpickr.min.js') }}"></script>
     <script src="{{ asset_url('core-a1') }}"></script>
+    {# Source fallbacks only when the core-a1 bundle is not built; once built it already
+       contains confirm-dialog.js and unsaved-changes.js, so loading them again is redundant. #}
+    {% if not asset_built('core-a1') %}
+    <script src="{{ static_url('js/confirm-dialog.js') }}"></script>
+    <script src="{{ static_url('js/unsaved-changes.js') }}"></script>
+    {% endif %}
     {% if current_user.is_authenticated and support_ui_json %}
     <script src="{{ asset_url('core-support') }}"></script>
     {% endif %}
@@ -289,6 +302,18 @@
                 // flagged for review — show the review banner in any open tab.
                 socket.on('timer_needs_review', function(data){
                     try { window.__ttShowNeedsReview && window.__ttShowNeedsReview(); } catch (e) {}
+                });
+                // Server auto-stopped due to unanswered idle prompt (auto_stop mode).
+                socket.on('timer_stopped', function(data){
+                    try {
+                        if (data && data.reason === 'idle_auto_stop') {
+                            if (window.__ttOnIdleAutoStop) window.__ttOnIdleAutoStop();
+                            var msg = (data && data.message) || (window.i18n && window.i18n.messages && window.i18n.messages.timerStoppedInactivity) || 'Timer stopped due to inactivity';
+                            if (window.toastManager && window.toastManager.warning) {
+                                window.toastManager.warning(msg, '', 5000);
+                            }
+                        }
+                    } catch (e) {}
                 });
             } catch (e) {
                 console.error('Mention socket init failed', e);
@@ -1031,65 +1056,7 @@
     <script src="{{ asset_url('core-e') }}"></script>
     
     <script nonce="{{ csp_nonce() }}">
-        // Global helpers for bulk menus and confirmation using custom modal (no native confirm)
-        window.showConfirm = function(message, opts){
-            try {
-                const options = Object.assign({
-                    title: '',
-                    confirmText: 'Confirm',
-                    cancelText: 'Cancel',
-                    variant: 'primary' // 'primary' | 'danger' | 'warning'
-                }, opts || {});
-                return new Promise((resolve) => {
-                    // Build overlay
-                    const overlay = document.createElement('div');
-                    overlay.className = 'fixed inset-0 z-[2000] flex items-center justify-center';
-                    overlay.innerHTML = `
-                        <div class="absolute inset-0 bg-black/50" data-close></div>
-                        <div class="relative bg-card-light dark:bg-card-dark text-text-light dark:text-text-dark rounded-lg shadow-xl w-full max-w-md mx-4">
-                            <div class="p-6">
-                                <div class="flex items-start gap-3">
-                                    <div class="w-12 h-12 rounded-full ${options.variant==='danger' ? 'bg-rose-100 dark:bg-rose-900/30' : (options.variant==='warning' ? 'bg-amber-100 dark:bg-amber-900/30' : 'bg-sky-100 dark:bg-sky-900/30')} flex items-center justify-center flex-shrink-0">
-                                        <i class="fas fa-exclamation-triangle ${options.variant==='danger' ? 'text-rose-600 dark:text-rose-400' : (options.variant==='warning' ? 'text-amber-600 dark:text-amber-400' : 'text-sky-600 dark:text-sky-400')}"></i>
-                                    </div>
-                                    <div class="flex-1">
-                                        ${options.title ? `<h3 class="text-lg font-semibold mb-1">${options.title}</h3>` : ''}
-                                        <p class="text-sm">${message || ''}</p>
-                                    </div>
-                                </div>
-                                <div class="mt-6 flex justify-end gap-3">
-                                    <button type="button" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg" data-cancel>${options.cancelText}</button>
-                                    <button type="button" class="px-4 py-2 ${options.variant==='danger' ? 'bg-rose-600 hover:bg-rose-700' : (options.variant==='warning' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-primary hover:bg-primary/90')} text-white rounded-lg" data-confirm>${options.confirmText}</button>
-                                </div>
-                            </div>
-                        </div>`;
-
-                    function cleanup(result){
-                        try { document.body.removeChild(overlay); } catch(_) {}
-                        resolve(result);
-                    }
-
-                    overlay.addEventListener('click', (e) => {
-                        if (e.target.hasAttribute('data-close')) cleanup(false);
-                        if (e.target.hasAttribute('data-cancel')) cleanup(false);
-                        if (e.target.hasAttribute('data-confirm')) cleanup(true);
-                    });
-                    document.addEventListener('keydown', function onKey(e){
-                        if (e.key === 'Escape'){ cleanup(false); document.removeEventListener('keydown', onKey); }
-                        if (e.key === 'Enter'){ cleanup(true); document.removeEventListener('keydown', onKey); }
-                    });
-                    document.body.appendChild(overlay);
-                    // Focus confirm button
-                    setTimeout(() => { try { overlay.querySelector('[data-confirm]').focus(); } catch(_) {} }, 0);
-                });
-            } catch(_) {
-                // Absolute fallback if anything goes wrong
-                try { return Promise.resolve(window.confirm(message)); } catch(__) { return Promise.resolve(false); }
-            }
-        };
-        window.showAlert = window.showAlert || function(message){
-            try { window.alert(message); } catch(_) {}
-        };
+        // ttConfirm / ttAlert loaded from confirm-dialog.js (core-a1 bundle).
         function closeAllMenus(){
             try { document.querySelectorAll('.bulk-menu').forEach(m => m.classList.add('hidden')); } catch(_) {}
         }
@@ -1136,7 +1103,7 @@
             if (banner) {
                 banner.classList.add('opacity-0', 'invisible', 'max-h-0', 'overflow-hidden');
                 banner.classList.remove('opacity-100', 'visible', 'max-h-[100px]');
-                // Store dismissal timestamp (show again after 30 days)
+                // Store dismissal timestamp (show again after 14 days)
                 try {
                     localStorage.setItem('supportBannerDismissed', Date.now().toString());
                     // Track dismissal
@@ -1193,22 +1160,22 @@ function trackBannerImpression(source) {
         
         function shouldShowSupportBanner() {
             try {
-                // Check if dismissed recently (30 days)
+                // Check if dismissed recently (14 days)
                 const dismissed = localStorage.getItem('supportBannerDismissed');
                 if (dismissed) {
                     const dismissedTime = parseInt(dismissed);
-                    const thirtyDays = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
-                    if ((Date.now() - dismissedTime) < thirtyDays) {
+                    const fourteenDays = 14 * 24 * 60 * 60 * 1000;
+                    if ((Date.now() - dismissedTime) < fourteenDays) {
                         return false;
                     }
                 }
                 
-                // Check if user clicked donation link recently (30 days)
+                // Check if user clicked donation link recently (14 days)
                 const lastClick = localStorage.getItem('donationLinkClicked');
                 if (lastClick) {
                     const clickTime = parseInt(lastClick);
-                    const thirtyDays = 30 * 24 * 60 * 60 * 1000;
-                    if ((Date.now() - clickTime) < thirtyDays) {
+                    const fourteenDays = 14 * 24 * 60 * 60 * 1000;
+                    if ((Date.now() - clickTime) < fourteenDays) {
                         return false;
                     }
                 }
@@ -1218,34 +1185,60 @@ function trackBannerImpression(source) {
                 return true; // Show by default if localStorage fails
             }
         }
+
+        function getSupportBannerSeenCount() {
+            try {
+                return parseInt(localStorage.getItem('supportBannerSeenCount') || '0', 10) || 0;
+            } catch (e) {
+                return 0;
+            }
+        }
+
+        function incrementSupportBannerSeenCount() {
+            try {
+                const next = getSupportBannerSeenCount() + 1;
+                localStorage.setItem('supportBannerSeenCount', String(next));
+                return next;
+            } catch (e) {
+                return 1;
+            }
+        }
         
-        function updateBannerMessage() {
-            // Get user stats from page if available
+        function updateBannerMessage(seenCount) {
             const bannerTitle = document.getElementById('bannerTitle');
             const bannerMessage = document.getElementById('bannerMessage');
             
             if (!bannerTitle || !bannerMessage) return;
-            
-            // Try to get user stats from data attributes or API
+
+            const count = typeof seenCount === 'number' ? seenCount : getSupportBannerSeenCount();
             const userStats = window.userStats || {};
             const daysSinceSignup = userStats.days_since_signup || 0;
             const timeEntriesCount = userStats.time_entries_count || 0;
             const totalHours = userStats.total_hours || 0;
-            
-            // Smart messaging based on milestones
+
+            // Escalating copy based on how often the banner has been shown
+            if (count >= 5) {
+                bannerTitle.textContent = '{{ _("Still here?") }}';
+                bannerMessage.textContent = '{{ _("Buy a key — it removes all prompts permanently.") }}';
+                return;
+            }
+            if (count >= 3) {
+                bannerTitle.textContent = {{ _("You've seen this %(n)s times.")|tojson }}.replace('%(n)s', String(count));
+                bannerMessage.textContent = '{{ _("A one-time key removes it forever.") }}';
+                return;
+            }
+
+            // Smart messaging based on milestones (first 1–2 impressions)
             if (totalHours >= 100) {
                 bannerTitle.textContent = '{{ _("Amazing! You\'ve tracked over 100 hours") }}';
-                bannerMessage.textContent = '{{ _("Support updates and new features — or remove prompts with a key") }} ☕';
             } else if (timeEntriesCount >= 50) {
                 bannerTitle.textContent = '{{ _("Great progress! You\'ve logged 50+ entries") }}';
-                bannerMessage.textContent = '{{ _("Support updates and new features — or remove prompts with a key") }} ☕';
             } else if (daysSinceSignup >= 7) {
                 bannerTitle.textContent = '{{ _("Thanks for using TimeTracker!") }}';
-                bannerMessage.textContent = '{{ _("Support updates and new features — or remove prompts with a key") }} ☕';
             } else {
                 bannerTitle.textContent = '{{ _("Enjoying TimeTracker?") }}';
-                bannerMessage.textContent = '{{ _("Support updates and new features — or remove prompts with a key") }} ☕';
             }
+            bannerMessage.textContent = '{{ _("Support its development — or remove prompts forever with a key.") }}';
         }
         
 // Show support banner if conditions are met
@@ -1253,12 +1246,12 @@ function trackBannerImpression(source) {
         (function() {
             const banner = document.getElementById('supportBanner');
             if (!banner) return;
-            // Server-side suppression: don't show if user clicked a support CTA in last 30 days
+            // Server-side suppression: don't show if user clicked a support CTA recently
             if ({{ 'true' if support_banner_suppressed else 'false' }}) { return; }
 
             if (shouldShowSupportBanner()) {
-                // Update banner message based on user stats
-                updateBannerMessage();
+                const seenCount = incrementSupportBannerSeenCount();
+                updateBannerMessage(seenCount);
                 
                 // Reserve space immediately by removing height constraints
                 // This prevents layout shift when banner becomes visible

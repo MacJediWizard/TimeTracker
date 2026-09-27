@@ -1,4 +1,5 @@
 from .activity import Activity
+from .activitywatch_rule import ActivityWatchRule, PendingActivity
 from .api_idempotency_key import ApiIdempotencyKey
 from .api_token import ApiToken
 from .attendance_compliance import (
@@ -18,11 +19,13 @@ from .calendar_integration import CalendarIntegration, CalendarSyncEvent
 from .claude_usage import ClaudeUsageLog
 from .client import Client
 from .client_attachment import ClientAttachment
+from .client_message import ClientMessage
 from .client_note import ClientNote
 from .client_notification import ClientNotification, ClientNotificationPreferences, NotificationType
 from .client_portal_customization import ClientPortalCustomization
 from .client_portal_dashboard_preference import DEFAULT_WIDGET_ORDER, VALID_WIDGET_IDS, ClientPortalDashboardPreference
 from .client_prepaid_consumption import ClientPrepaidConsumption
+from .client_survey import ClientSurvey
 from .client_time_approval import ClientApprovalPolicy, ClientApprovalStatus, ClientTimeApproval
 from .comment import Comment
 from .comment_attachment import CommentAttachment
@@ -35,6 +38,7 @@ from .deal import Deal
 from .deal_activity import DealActivity
 from .deleted_username import DeletedUsername
 from .donation_interaction import DonationInteraction
+from .email_thread import EmailMessage, EmailThread
 from .esignature_request import ESignatureRequest, ESignatureStatus
 from .expense import Expense
 from .expense_category import ExpenseCategory
@@ -42,9 +46,11 @@ from .expense_gps import MileageTrack
 from .extra_good import ExtraGood
 from .focus_session import FocusSession
 from .gamification import Badge, Leaderboard, LeaderboardEntry, UserBadge
+from .geofence import Geofence, GeofencePolicy
 from .import_export import DataExport, DataImport
 from .integration import Integration, IntegrationCredential, IntegrationEvent
 from .integration_external_event_link import IntegrationExternalEventLink
+from .integration_sync_error import IntegrationSyncError
 from .invoice import Invoice, InvoiceItem
 from .invoice_approval import InvoiceApproval
 from .invoice_email import InvoiceEmail
@@ -60,8 +66,11 @@ from .lead_activity import LeadActivity
 from .link_template import LinkTemplate
 from .mileage import Mileage
 from .milestone import Milestone
+from .oauth_app import OAuthApplication, OAuthAuthorizationCode
 from .payment_gateway import PaymentGateway, PaymentTransaction
 from .payments import CreditNote, InvoiceReminderSchedule, Payment
+from .payroll_export_template import PayrollExportTemplate
+from .payroll_sync_log import PayrollSyncLog
 from .per_diem import PerDiem, PerDiemRate
 from .permission import Permission, Role
 from .project import Project
@@ -79,11 +88,13 @@ from .quote_version import QuoteVersion
 from .rate_override import RateOverride
 from .recurring_block import RecurringBlock
 from .recurring_invoice import RecurringInvoice
+from .recurring_project_cost import RecurringProjectCost
 from .recurring_task import RecurringTask
 from .reporting import ReportEmailSchedule, SavedReportView
 from .salesman_email_mapping import SalesmanEmailMapping
 from .saved_filter import SavedFilter
 from .settings import Settings
+from .shared_report_link import SharedReportLink
 from .stock_item import StockItem
 from .stock_lot import StockLot, StockLotAllocation
 from .stock_movement import StockMovement
@@ -133,6 +144,8 @@ __all__ = [
     "TaskChecklistItem",
     "Comment",
     "FocusSession",
+    "Geofence",
+    "GeofencePolicy",
     "RecurringBlock",
     "RateOverride",
     "SavedFilter",
@@ -142,17 +155,23 @@ __all__ = [
     "ExchangeRate",
     "TaxRule",
     "Payment",
+    "PayrollExportTemplate",
+    "PayrollSyncLog",
     "CreditNote",
     "InvoiceReminderSchedule",
     "SavedReportView",
+    "SharedReportLink",
     "ReportEmailSchedule",
     "KanbanColumn",
     "KanbanBoardTemplate",
     "TimeEntryTemplate",
     "Activity",
+    "ActivityWatchRule",
+    "PendingActivity",
     "UserFavoriteProject",
     "UserClient",
     "ClientNote",
+    "ClientMessage",
     "WeeklyTimeGoal",
     "WorkdaySession",
     "WorkingTimeViolation",
@@ -168,6 +187,8 @@ __all__ = [
     "Role",
     "ApiIdempotencyKey",
     "ApiToken",
+    "OAuthApplication",
+    "OAuthAuthorizationCode",
     "CalendarEvent",
     "BudgetAlert",
     "DataImport",
@@ -176,6 +197,7 @@ __all__ = [
     "ClientPrepaidConsumption",
     "AuditLog",
     "RecurringInvoice",
+    "RecurringProjectCost",
     "InvoiceEmail",
     "InvoicePeppolTransmission",
     "Webhook",
@@ -217,6 +239,7 @@ __all__ = [
     "CalendarIntegration",
     "CalendarSyncEvent",
     "Integration",
+    "IntegrationSyncError",
     "IntegrationCredential",
     "IntegrationEvent",
     "IntegrationExternalEventLink",
@@ -265,4 +288,7 @@ __all__ = [
     "ClientNotification",
     "ClientNotificationPreferences",
     "NotificationType",
+    "ClientSurvey",
+    "EmailThread",
+    "EmailMessage",
 ]

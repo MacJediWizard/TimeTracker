@@ -45,6 +45,25 @@ class PathExemptCSRFProtect(CSRFProtect):
         return super().protect()
 
 
+def _rate_limit_key():
+    """Key rate limits per authenticated user; fall back to IP for anonymous.
+
+    Logged-in users behind a shared NAT/proxy get separate buckets so one
+    colleague's dashboard polling cannot exhaust another's limit (Issue #767).
+    Unauthenticated routes (login, etc.) still key by IP.
+    """
+    try:
+        from flask_login import current_user
+
+        if current_user is not None and getattr(current_user, "is_authenticated", False):
+            user_id = getattr(current_user, "id", None)
+            if user_id is not None:
+                return f"user:{user_id}"
+    except Exception:
+        pass
+    return get_remote_address()
+
+
 # Initialize extensions
 db = SQLAlchemy()
 migrate = Migrate()
@@ -52,7 +71,7 @@ login_manager = LoginManager()
 socketio = SocketIO()
 babel = Babel()
 csrf = PathExemptCSRFProtect()
-limiter = Limiter(key_func=get_remote_address, default_limits=[])
+limiter = Limiter(key_func=_rate_limit_key, default_limits=[])
 oauth = OAuth()
 
 # Initialize Mail (will be configured in create_app)
@@ -84,7 +103,7 @@ def log_event(name: str, **kwargs):
             if is_otel_tracing_active():
                 extra.update(get_trace_context_for_logs())
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("Could not attach trace context to log_event", exc_info=True)
         json_logger.info(name, extra=extra)
     except Exception as e:
         logging.getLogger(__name__).debug("Structured log_event failed: %s", e)
@@ -113,7 +132,7 @@ def track_event(user_id, event_name, properties=None):
 
         send_analytics_event(user_id, event_name, properties)
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("Telemetry track_event failed", exc_info=True)
 
 
 def track_page_view(page_name, user_id=None, properties=None):
@@ -218,7 +237,7 @@ def create_app(config=None):
                 try:
                     os.environ.pop(var, None)
                 except Exception:
-                    pass
+                    logger.debug("Could not unset env var during test setup", exc_info=True)
         db_uri = str(app.config.get("SQLALCHEMY_DATABASE_URI", "") or "")
         if (
             app.config.get("TESTING")
@@ -240,7 +259,7 @@ def create_app(config=None):
             app.config["SQLALCHEMY_SESSION_OPTIONS"] = session_opts
     except Exception:
         # Do not fail app creation for engine option tweaks
-        pass
+        logger.debug("Test SQLite engine/session option tweaks failed", exc_info=True)
 
     # All templates live in app/templates (legacy root templates/ was merged in)
 
@@ -291,7 +310,7 @@ def create_app(config=None):
             # Ensure all model tables are registered in SQLAlchemy metadata
             from . import models as _models  # noqa: F401
         except Exception:
-            pass
+            logger.debug("Could not import models during migrate bootstrap", exc_info=True)
         return app
 
     # Initialize audit logging - register event listeners AFTER db.init_app()
@@ -342,7 +361,7 @@ def create_app(config=None):
         _listen_once(SignallingSession, "after_flush", audit.receive_after_flush)
         logger.info("Registered audit logging with Flask-SQLAlchemy SignallingSession")
     except (ImportError, AttributeError):
-        pass
+        logger.debug("SignallingSession audit registration skipped", exc_info=True)
 
     logger.info("Audit logging event listeners registered")
 
@@ -390,7 +409,7 @@ def create_app(config=None):
 
                     send_base_first_seen()
                 except Exception:
-                    pass
+                    logger.debug("send_base_first_seen failed", exc_info=True)
 
     # Only initialize CSRF protection if enabled
     if app.config.get("WTF_CSRF_ENABLED"):
@@ -434,7 +453,7 @@ def create_app(config=None):
             for d in abs_dirs:
                 ensure_translations_compiled(d)
     except Exception:
-        pass
+        logger.debug("Babel translation directory setup failed", exc_info=True)
 
     # Internationalization: locale selector compatible with Flask-Babel v4+
     def _select_locale():
@@ -492,7 +511,7 @@ def create_app(config=None):
 
         app.jinja_env.globals.update(_=_gettext, ngettext=_ngettext)
     except Exception:
-        pass
+        logger.debug("Could not register gettext in Jinja globals", exc_info=True)
 
     # Add Python built-ins that are useful in templates
     app.jinja_env.globals.update(getattr=getattr)
@@ -534,6 +553,25 @@ def create_app(config=None):
 
         g.csp_nonce = secrets.token_urlsafe(16)
 
+    # White-label client portal: resolve Host to a Client.custom_domain when enabled.
+    @app.before_request
+    def _resolve_portal_custom_domain():
+        try:
+            from app.utils.portal_domain import bind_portal_client_to_g
+
+            bind_portal_client_to_g()
+        except Exception:
+            g.portal_client = None
+
+        # On a custom portal hostname, send bare "/" to the client portal.
+        try:
+            if getattr(g, "portal_client", None) is not None and request.path in ("/", ""):
+                from flask import redirect, url_for
+
+                return redirect(url_for("client_portal.login"))
+        except Exception:
+            app.logger.debug("Portal custom domain root redirect failed", exc_info=True)
+
     # Remember the public base URL from real requests so background jobs can build
     # absolute links without SERVER_NAME (see app.utils.urls).
     @app.before_request
@@ -543,7 +581,7 @@ def create_app(config=None):
 
             remember_request_base_url()
         except Exception:
-            pass
+            app.logger.debug("remember_request_base_url failed", exc_info=True)
 
     # Registered as a Jinja *global*, not a context processor: macro files such as
     # components/multi_select.html contain inline <script> blocks and are imported with
@@ -569,7 +607,7 @@ def create_app(config=None):
                     session["user_id"] = uid_str
         except Exception:
             # Do not block request processing on any session edge case
-            pass
+            app.logger.debug("Session login key harmonization failed", exc_info=True)
 
     # In testing, ensure that if a session user id is present but current_user
     # isn't populated yet, we proactively authenticate the user for this request.
@@ -599,7 +637,7 @@ def create_app(config=None):
                             login_user(user, remember=True)
         except Exception:
             # Never fail the request due to this helper
-            pass
+            app.logger.debug("Test auth bootstrap helper failed", exc_info=True)
 
     # Register user loader
     @login_manager.user_loader
@@ -653,7 +691,7 @@ def create_app(config=None):
 
             return redirect(url_for("client_portal.dashboard"))
         except Exception:
-            pass
+            app.logger.debug("restrict_portal_only_users failed", exc_info=True)
 
     @app.before_request
     def restrict_native_client_portal_sessions():
@@ -667,7 +705,7 @@ def create_app(config=None):
             if should_redirect_native_client_portal_session():
                 return redirect_native_client_to_portal()
         except Exception:
-            pass
+            app.logger.debug("restrict_native_client_portal_sessions failed", exc_info=True)
 
     # Check if initial setup is required (skip for certain routes)
     @app.before_request
@@ -707,7 +745,7 @@ def create_app(config=None):
             if not installation_config.is_setup_complete():
                 return redirect(url_for("setup.initial_setup"))
         except Exception:
-            pass
+            app.logger.debug("check_setup_required failed", exc_info=True)
 
     # Attach request ID for tracing
     @app.before_request
@@ -715,7 +753,7 @@ def create_app(config=None):
         try:
             g.request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
         except Exception:
-            pass
+            app.logger.debug("attach_request_id failed", exc_info=True)
 
     @app.before_request
     def handle_api_cors_preflight():
@@ -733,7 +771,7 @@ def create_app(config=None):
         try:
             g._start_time = time.time()
         except Exception:
-            pass
+            app.logger.debug("prom_start_timer failed", exc_info=True)
 
     # Request logging for /login to trace POSTs reaching the app
     @app.before_request
@@ -748,7 +786,7 @@ def create_app(config=None):
                     request.headers.get("User-Agent"),
                 )
         except Exception:
-            pass
+            app.logger.debug("log_login_requests failed", exc_info=True)
 
     # Record Prometheus metrics and log write operations
     @app.after_request
@@ -764,7 +802,7 @@ def create_app(config=None):
                 http_status=response.status_code,
             ).inc()
         except Exception:
-            pass
+            app.logger.debug("Prometheus request metrics recording failed", exc_info=True)
 
         try:
             from app.telemetry.otel_setup import inject_traceparent_headers, record_http_server_metrics
@@ -773,7 +811,7 @@ def create_app(config=None):
             record_http_server_metrics(request.method, route, response.status_code, latency)
             response = inject_traceparent_headers(response)
         except Exception:
-            pass
+            app.logger.debug("OpenTelemetry HTTP metrics/trace headers failed", exc_info=True)
 
         try:
             # Log write operations
@@ -786,7 +824,7 @@ def create_app(config=None):
                     request.headers.get("X-Forwarded-For") or request.remote_addr,
                 )
         except Exception:
-            pass
+            app.logger.debug("Write-operation request logging failed", exc_info=True)
         return response
 
     # Configure session
@@ -937,7 +975,7 @@ def create_app(config=None):
             if not response.headers.get("Permissions-Policy"):
                 response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
         except Exception:
-            pass
+            app.logger.debug("Security headers application failed", exc_info=True)
 
         # CSRF cookie/token handling
         # If CSRF is enabled, ensure CSRF cookie exists for HTML GET responses
@@ -949,7 +987,7 @@ def create_app(config=None):
                 response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
                 response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, Accept, X-Request-ID"
         except Exception:
-            pass
+            app.logger.debug("API CORS response headers failed", exc_info=True)
 
         if app.config.get("WTF_CSRF_ENABLED"):
             try:
@@ -992,7 +1030,7 @@ def create_app(config=None):
                                 path=cookie_path,
                             )
             except Exception:
-                pass
+                app.logger.debug("CSRF cookie set on HTML GET failed", exc_info=True)
         else:
             try:
                 cookie_name = app.config.get("CSRF_COOKIE_NAME", "XSRF-TOKEN")
@@ -1015,7 +1053,7 @@ def create_app(config=None):
                         samesite=app.config.get("CSRF_COOKIE_SAMESITE", "Lax"),
                     )
             except Exception:
-                pass
+                app.logger.debug("CSRF cookie clear failed", exc_info=True)
         return response
 
     # CSRF error handler with HTML-friendly fallback
@@ -1050,7 +1088,7 @@ def create_app(config=None):
                 getattr(e, "description", ""),
             )
         except Exception:
-            pass
+            app.logger.debug("CSRF failure diagnostic logging failed", exc_info=True)
 
         if request.method == "POST" and (is_classic_form or (request.form and not request.is_json)):
             try:
@@ -1074,7 +1112,7 @@ def create_app(config=None):
                     if ref_host and ref_host == cur_host:
                         dest = ref
             except Exception:
-                pass
+                app.logger.debug("CSRF redirect referrer parse failed", exc_info=True)
             return redirect(dest)
 
         # JSON/XHR fall-through
@@ -1110,7 +1148,7 @@ def create_app(config=None):
                 if ref_host and ref_host == cur_host:
                     dest = ref
         except Exception:
-            pass
+            app.logger.debug("CSRF redirect referrer parse failed", exc_info=True)
         return redirect(dest)
 
     # Expose csrf_token() in Jinja templates even without FlaskForm
@@ -1149,7 +1187,7 @@ def create_app(config=None):
         try:
             resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         except Exception:
-            pass
+            app.logger.debug("Could not set Cache-Control on csrf-token response", exc_info=True)
         # Also set/update a CSRF cookie for double-submit pattern and SPA helpers
         try:
             cookie_name = app.config.get("CSRF_COOKIE_NAME", "XSRF-TOKEN")
@@ -1179,7 +1217,7 @@ def create_app(config=None):
                 path=cookie_path,
             )
         except Exception:
-            pass
+            app.logger.debug("Could not set CSRF cookie on csrf-token response", exc_info=True)
         return resp
 
     # Register blueprints (centralized in blueprint_registry)
@@ -1462,7 +1500,7 @@ def create_app(config=None):
             try:
                 db.session.rollback()
             except Exception:
-                pass
+                app.logger.debug("Rollback after admin promotion failed", exc_info=True)
 
     # Initialize database on first request
     def initialize_database():

@@ -1,7 +1,7 @@
 name: timetracker_mobile
 description: TimeTracker mobile app for Android and iOS
 publish_to: 'none'
-version: 5.13.4+1
+version: 5.17.2+1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -47,6 +47,7 @@ dependencies:
   package_info_plus: ^8.0.0
   google_fonts: ^8.0.0
   share_plus: ^10.0.0
+  geolocator: ^13.0.2
 
   # OpenTelemetry OTLP/HTTP traces (same env names as server: OTEL_EXPORTER_OTLP_* via --dart-define)
   opentelemetry: ^0.18.11

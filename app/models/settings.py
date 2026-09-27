@@ -73,8 +73,13 @@ class Settings(db.Model):
     single_active_timer = db.Column(db.Boolean, default=True, nullable=False)
     allow_self_register = db.Column(db.Boolean, default=True, nullable=False)
     idle_timeout_minutes = db.Column(db.Integer, default=30, nullable=False)
+    # What happens when the "Still working?" grace window expires unanswered:
+    # "review" = keep running and flag for review (default); "auto_stop" =
+    # stop credited to last_active + idle_timeout (Issue #722).
+    idle_unanswered_action = db.Column(db.String(16), default="review", nullable=False)
     # Safety cap: auto-stop a running timer flagged for review after N hours
     # unanswered (credited back to last activity). 0 disables the cap.
+    # Only applies when idle_unanswered_action == "review".
     idle_auto_stop_hours = db.Column(db.Integer, default=0, nullable=False)
     backup_retention_days = db.Column(db.Integer, default=30, nullable=False)
     backup_time = db.Column(db.String(5), default="02:00", nullable=False)  # HH:MM format
@@ -89,6 +94,13 @@ class Settings(db.Model):
     company_logo_filename = db.Column(db.String(255), default="", nullable=True)  # Changed from company_logo_path
     company_tax_id = db.Column(db.String(100), default="", nullable=True)
     company_bank_info = db.Column(db.Text, default="", nullable=True)
+    # Structured company address for e-invoicing (EN 16931 / Factur-X)
+    company_street = db.Column(db.String(255), default="", nullable=True)
+    company_postcode = db.Column(db.String(32), default="", nullable=True)
+    company_city = db.Column(db.String(100), default="", nullable=True)
+    company_country = db.Column(db.String(2), default="", nullable=True)  # ISO 3166-1 alpha-2
+    company_iban = db.Column(db.String(34), default="", nullable=True)
+    company_bic = db.Column(db.String(11), default="", nullable=True)
 
     # PDF template customization
     invoice_pdf_template_html = db.Column(db.Text, default="", nullable=True)
@@ -136,6 +148,10 @@ class Settings(db.Model):
     # Optional: run veraPDF after export and show summary (does not block export)
     invoices_validate_export = db.Column(db.Boolean, default=False, nullable=False)
     invoices_verapdf_path = db.Column(db.String(500), default="", nullable=True)
+    # Default VAT category for Factur-X / ZUGFeRD (S, Z, E, AE, K, G, O)
+    invoices_default_vat_category = db.Column(db.String(5), default="S", nullable=False)
+    invoices_default_vat_exemption_reason = db.Column(db.Text, default="", nullable=True)
+    invoices_default_vat_exemption_code = db.Column(db.String(50), default="", nullable=True)
 
     # Privacy and analytics settings
     allow_analytics = db.Column(db.Boolean, default=True, nullable=False)  # Controls system info sharing for analytics
@@ -170,6 +186,8 @@ class Settings(db.Model):
     ai_base_url = db.Column(db.String(500), default="", nullable=True)
     ai_model = db.Column(db.String(120), default="", nullable=True)
     ai_api_key = db.Column(db.String(500), default="", nullable=True)
+    ai_routing_strategy = db.Column(db.String(20), default="", nullable=True)
+    portal_allowed_custom_domains = db.Column(db.Boolean, default=False, nullable=True)
     ai_timeout_seconds = db.Column(db.Integer, default=None, nullable=True)
     ai_context_limit = db.Column(db.Integer, default=None, nullable=True)
     ai_system_prompt = db.Column(db.Text, default="", nullable=True)
@@ -291,6 +309,9 @@ class Settings(db.Model):
         self.single_active_timer = kwargs.get("single_active_timer", Config.SINGLE_ACTIVE_TIMER)
         self.allow_self_register = kwargs.get("allow_self_register", Config.ALLOW_SELF_REGISTER)
         self.idle_timeout_minutes = kwargs.get("idle_timeout_minutes", Config.IDLE_TIMEOUT_MINUTES)
+        self.idle_unanswered_action = kwargs.get(
+            "idle_unanswered_action", getattr(Config, "IDLE_UNANSWERED_ACTION", "review")
+        )
         self.idle_auto_stop_hours = kwargs.get("idle_auto_stop_hours", 0)
         self.backup_retention_days = kwargs.get("backup_retention_days", Config.BACKUP_RETENTION_DAYS)
         self.backup_time = kwargs.get("backup_time", Config.BACKUP_TIME)
@@ -305,6 +326,12 @@ class Settings(db.Model):
         self.company_logo_filename = kwargs.get("company_logo_filename", "")
         self.company_tax_id = kwargs.get("company_tax_id", "")
         self.company_bank_info = kwargs.get("company_bank_info", "")
+        self.company_street = kwargs.get("company_street", "")
+        self.company_postcode = kwargs.get("company_postcode", "")
+        self.company_city = kwargs.get("company_city", "")
+        self.company_country = kwargs.get("company_country", "")
+        self.company_iban = kwargs.get("company_iban", "")
+        self.company_bic = kwargs.get("company_bic", "")
 
         # PDF template customization
         self.invoice_pdf_template_html = kwargs.get("invoice_pdf_template_html", "")
@@ -342,6 +369,9 @@ class Settings(db.Model):
         self.invoices_pdfa3_compliant = kwargs.get("invoices_pdfa3_compliant", False)
         self.invoices_validate_export = kwargs.get("invoices_validate_export", False)
         self.invoices_verapdf_path = kwargs.get("invoices_verapdf_path", "")
+        self.invoices_default_vat_category = kwargs.get("invoices_default_vat_category", "S")
+        self.invoices_default_vat_exemption_reason = kwargs.get("invoices_default_vat_exemption_reason", "")
+        self.invoices_default_vat_exemption_code = kwargs.get("invoices_default_vat_exemption_code", "")
 
         # Kiosk mode defaults
         self.kiosk_mode_enabled = kwargs.get("kiosk_mode_enabled", False)
@@ -367,6 +397,7 @@ class Settings(db.Model):
         self.ai_base_url = kwargs.get("ai_base_url", "")
         self.ai_model = kwargs.get("ai_model", "")
         self.ai_api_key = kwargs.get("ai_api_key", "")
+        self.ai_routing_strategy = kwargs.get("ai_routing_strategy", "")
         self.ai_timeout_seconds = kwargs.get("ai_timeout_seconds", None)
         self.ai_context_limit = kwargs.get("ai_context_limit", None)
         self.ai_system_prompt = kwargs.get("ai_system_prompt", "")
@@ -464,8 +495,23 @@ class Settings(db.Model):
                 return getattr(Config, name, default)
 
         provider = (getattr(self, "ai_provider", "") or cfg("AI_PROVIDER", "ollama") or "ollama").strip().lower()
-        base_url = (getattr(self, "ai_base_url", "") or cfg("AI_BASE_URL", "http://127.0.0.1:11434") or "").strip()
-        model = (getattr(self, "ai_model", "") or cfg("AI_MODEL", "llama3.1") or "").strip()
+        if provider == "custom":
+            provider = "openai_compatible"
+
+        from app.services.llm_service import NAMED_PROVIDERS, PROVIDER_PRESETS, ROUTING_STRATEGIES
+
+        if provider not in NAMED_PROVIDERS:
+            provider = "ollama"
+
+        preset = PROVIDER_PRESETS.get(provider) or {}
+        stored_base = (getattr(self, "ai_base_url", "") or "").strip()
+        env_base = (cfg("AI_BASE_URL", "") or "").strip()
+        base_url = stored_base or env_base or (preset.get("base_url") or "http://127.0.0.1:11434")
+
+        stored_model = (getattr(self, "ai_model", "") or "").strip()
+        env_model = (cfg("AI_MODEL", "") or "").strip()
+        model = stored_model or env_model or (preset.get("default_model") or "llama3.1")
+
         timeout = getattr(self, "ai_timeout_seconds", None) or cfg("AI_TIMEOUT_SECONDS", 30)
         context_limit = getattr(self, "ai_context_limit", None) or cfg("AI_CONTEXT_LIMIT", 40)
         system_prompt = (getattr(self, "ai_system_prompt", "") or cfg("AI_SYSTEM_PROMPT", "") or "").strip()
@@ -474,6 +520,12 @@ class Settings(db.Model):
         enabled = getattr(self, "ai_enabled", None)
         if enabled is None:
             enabled = bool(cfg("AI_ENABLED", False))
+
+        routing_strategy = (
+            (getattr(self, "ai_routing_strategy", "") or cfg("AI_ROUTING_STRATEGY", "") or "").strip().lower()
+        )
+        if routing_strategy not in ROUTING_STRATEGIES:
+            routing_strategy = ""
 
         try:
             timeout = max(1, int(timeout))
@@ -486,7 +538,7 @@ class Settings(db.Model):
 
         return {
             "enabled": bool(enabled),
-            "provider": provider if provider in {"ollama", "openai_compatible"} else "ollama",
+            "provider": provider,
             "base_url": base_url.rstrip("/"),
             "model": model,
             "api_key": api_key if include_secrets else "",
@@ -494,6 +546,10 @@ class Settings(db.Model):
             "timeout_seconds": timeout,
             "context_limit": context_limit,
             "system_prompt": system_prompt,
+            "routing_strategy": routing_strategy,
+            "suggested_models": list(preset.get("suggested_models") or []),
+            "requires_key": bool(preset.get("requires_key")),
+            "preset_base_url": (preset.get("base_url") or ""),
         }
 
     def get_claude_config(self, *, include_secrets: bool = False) -> dict:
@@ -678,6 +734,7 @@ class Settings(db.Model):
             "single_active_timer": self.single_active_timer,
             "allow_self_register": self.allow_self_register,
             "idle_timeout_minutes": self.idle_timeout_minutes,
+            "idle_unanswered_action": getattr(self, "idle_unanswered_action", "review") or "review",
             "idle_auto_stop_hours": getattr(self, "idle_auto_stop_hours", 0),
             "backup_retention_days": self.backup_retention_days,
             "backup_time": self.backup_time,
@@ -692,6 +749,12 @@ class Settings(db.Model):
             "has_logo": self.has_logo(),
             "company_tax_id": self.company_tax_id,
             "company_bank_info": self.company_bank_info,
+            "company_street": getattr(self, "company_street", "") or "",
+            "company_postcode": getattr(self, "company_postcode", "") or "",
+            "company_city": getattr(self, "company_city", "") or "",
+            "company_country": getattr(self, "company_country", "") or "",
+            "company_iban": getattr(self, "company_iban", "") or "",
+            "company_bic": getattr(self, "company_bic", "") or "",
             "invoice_prefix": self.invoice_prefix,
             "invoice_number_pattern": self.invoice_number_pattern,
             "invoice_start_number": self.invoice_start_number,
@@ -718,6 +781,9 @@ class Settings(db.Model):
             "invoices_pdfa3_compliant": getattr(self, "invoices_pdfa3_compliant", False),
             "invoices_validate_export": getattr(self, "invoices_validate_export", False),
             "invoices_verapdf_path": getattr(self, "invoices_verapdf_path", "") or "",
+            "invoices_default_vat_category": getattr(self, "invoices_default_vat_category", "S") or "S",
+            "invoices_default_vat_exemption_reason": getattr(self, "invoices_default_vat_exemption_reason", "") or "",
+            "invoices_default_vat_exemption_code": getattr(self, "invoices_default_vat_exemption_code", "") or "",
             "invoice_pdf_template_html": self.invoice_pdf_template_html,
             "invoice_pdf_template_css": self.invoice_pdf_template_css,
             "invoice_pdf_design_json": self.invoice_pdf_design_json,
@@ -766,6 +832,7 @@ class Settings(db.Model):
             "ai_provider": getattr(self, "ai_provider", "") or "",
             "ai_base_url": getattr(self, "ai_base_url", "") or "",
             "ai_model": getattr(self, "ai_model", "") or "",
+            "ai_routing_strategy": getattr(self, "ai_routing_strategy", "") or "",
             "ai_api_key_set": bool(getattr(self, "ai_api_key", "")),
             "ai_timeout_seconds": getattr(self, "ai_timeout_seconds", None),
             "ai_context_limit": getattr(self, "ai_context_limit", None),
@@ -989,6 +1056,7 @@ class Settings(db.Model):
             "SINGLE_ACTIVE_TIMER": "single_active_timer",
             "ALLOW_SELF_REGISTER": "allow_self_register",
             "IDLE_TIMEOUT_MINUTES": "idle_timeout_minutes",
+            "IDLE_UNANSWERED_ACTION": "idle_unanswered_action",
             "IDLE_AUTO_STOP_HOURS": "idle_auto_stop_hours",
             "BACKUP_RETENTION_DAYS": "backup_retention_days",
             "BACKUP_TIME": "backup_time",

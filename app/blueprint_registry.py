@@ -57,8 +57,11 @@ def register_all_blueprints(app, logger=None):
     from app.routes.api_v1 import api_v1_bp
 
     import_module("app.routes.api_v1_workday")
+    import_module("app.routes.api_v1_geofences")
     import_module("app.routes.api_v1_attendance")
+    import_module("app.routes.api_v1_audit_logs")
     from app.routes.api_v1_ai import api_v1_ai_bp
+    from app.routes.api_v1_client_portal import api_v1_client_portal_bp
     from app.routes.api_v1_clients import api_v1_clients_bp
     from app.routes.api_v1_contacts import api_v1_contacts_bp
     from app.routes.api_v1_deals import api_v1_deals_bp
@@ -68,9 +71,12 @@ def register_all_blueprints(app, logger=None):
     from app.routes.api_v1_leads import api_v1_leads_bp
     from app.routes.api_v1_mileage import api_v1_mileage_bp
     from app.routes.api_v1_payments import api_v1_payments_bp
+    from app.routes.api_v1_project_templates import api_v1_project_templates_bp
     from app.routes.api_v1_projects import api_v1_projects_bp
+    from app.routes.api_v1_recurring_tasks import api_v1_recurring_tasks_bp
     from app.routes.api_v1_tasks import api_v1_tasks_bp
     from app.routes.api_v1_time_entries import api_v1_time_entries_bp
+    from app.routes.api_v1_weekly_goals import api_v1_weekly_goals_bp
     from app.routes.auth import auth_bp
     from app.routes.budget_alerts import budget_alerts_bp
     from app.routes.calendar import calendar_bp
@@ -85,6 +91,7 @@ def register_all_blueprints(app, logger=None):
     from app.routes.esignature_webhooks import esignature_webhooks_bp
     from app.routes.expense_categories import expense_categories_bp
     from app.routes.expenses import expenses_bp
+    from app.routes.gamification import gamification_bp
     from app.routes.import_export import import_export_bp
     from app.routes.inventory import inventory_bp
     from app.routes.invoices import invoices_bp
@@ -171,9 +178,23 @@ def register_all_blueprints(app, logger=None):
     app.register_blueprint(api_bp)
     app.register_blueprint(api_v1_bp)
     app.register_blueprint(api_v1_ai_bp)
+    if app.config.get("SCIM_ENABLED"):
+        from app.routes.api_scim import api_scim_bp
+
+        app.register_blueprint(api_scim_bp)
+        _record_blueprint_status(
+            app,
+            kind="special",
+            module_path="app.routes.api_scim",
+            blueprint_attr="api_scim_bp",
+            ok=True,
+        )
     app.register_blueprint(api_v1_time_entries_bp)
     app.register_blueprint(api_v1_projects_bp)
     app.register_blueprint(api_v1_tasks_bp)
+    app.register_blueprint(api_v1_weekly_goals_bp)
+    app.register_blueprint(api_v1_recurring_tasks_bp)
+    app.register_blueprint(api_v1_project_templates_bp)
     app.register_blueprint(api_v1_clients_bp)
     app.register_blueprint(api_v1_invoices_bp)
     app.register_blueprint(api_v1_expenses_bp)
@@ -183,6 +204,7 @@ def register_all_blueprints(app, logger=None):
     app.register_blueprint(api_v1_leads_bp)
     app.register_blueprint(api_v1_contacts_bp)
     app.register_blueprint(api_v1_issues_bp)
+    app.register_blueprint(api_v1_client_portal_bp)
     app.register_blueprint(api_docs_bp)
     app.register_blueprint(swaggerui_blueprint)
     app.register_blueprint(analytics_bp)
@@ -205,6 +227,7 @@ def register_all_blueprints(app, logger=None):
     app.register_blueprint(expenses_bp)
     app.register_blueprint(permissions_bp)
     app.register_blueprint(calendar_bp)
+    app.register_blueprint(gamification_bp)
     app.register_blueprint(expense_categories_bp)
     app.register_blueprint(mileage_bp)
     app.register_blueprint(per_diem_bp)

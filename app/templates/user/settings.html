@@ -18,7 +18,7 @@
                 </span>
                 {% endif %}
             </h2>
-            <i class="fas fa-chevron-down text-gray-400 transition-transform group-open:rotate-180 md:hidden"></i>
+            <i class="fas fa-chevron-down text-gray-400 dark:text-gray-500 transition-transform group-open:rotate-180 md:hidden" aria-hidden="true"></i>
         </summary>
         <div class="px-6 pb-6 space-y-4 text-sm text-text-light dark:text-text-dark">
             <p class="text-text-muted-light dark:text-text-muted-dark">{{ _('TimeTracker is free and open source. Funding comes from optional donations and supporter licenses — never from locking features.') }}</p>
@@ -44,7 +44,7 @@
                 <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
                     <i class="fas fa-user mr-2"></i>{{ _('Profile Information') }}
                 </h2>
-                <i class="fas fa-chevron-down text-gray-400 transition-transform group-open:rotate-180 md:hidden"></i>
+                <i class="fas fa-chevron-down text-gray-400 dark:text-gray-500 transition-transform group-open:rotate-180 md:hidden" aria-hidden="true"></i>
             </summary>
             <div class="px-6 pb-6">
             
@@ -97,7 +97,7 @@
                 <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
                     <i class="fas fa-bell mr-2"></i>{{ _('Notification Preferences') }}
                 </h2>
-                <i class="fas fa-chevron-down text-gray-400 transition-transform group-open:rotate-180 md:hidden"></i>
+                <i class="fas fa-chevron-down text-gray-400 dark:text-gray-500 transition-transform group-open:rotate-180 md:hidden" aria-hidden="true"></i>
             </summary>
             <div class="px-6 pb-6">
             
@@ -269,7 +269,7 @@
                 <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
                     <i class="fas fa-palette mr-2"></i>{{ _('Display Preferences') }}
                 </h2>
-                <i class="fas fa-chevron-down text-gray-400 transition-transform group-open:rotate-180 md:hidden"></i>
+                <i class="fas fa-chevron-down text-gray-400 dark:text-gray-500 transition-transform group-open:rotate-180 md:hidden" aria-hidden="true"></i>
             </summary>
             <div class="px-6 pb-6">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -301,18 +301,58 @@
             </div>
         </details>
 
+        <!-- Pomodoro / Focus defaults -->
+        <details class="bg-card-light dark:bg-card-dark rounded-lg shadow-md group" open>
+            <summary class="flex items-center justify-between p-6 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
+                    <i class="fas fa-brain mr-2"></i>{{ _('Focus / Pomodoro Defaults') }}
+                </h2>
+                <i class="fas fa-chevron-down text-gray-400 dark:text-gray-500 transition-transform group-open:rotate-180 md:hidden" aria-hidden="true"></i>
+            </summary>
+            <div class="px-6 pb-6">
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                {{ _('Default lengths used when starting a focus session from the Timer page.') }}
+            </p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label for="pomodoro_length" class="form-label">{{ _('Focus length (minutes)') }}</label>
+                    <input type="number" id="pomodoro_length" name="pomodoro_length" min="5" max="120"
+                           value="{{ user.pomodoro_length or 25 }}"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                </div>
+                <div>
+                    <label for="pomodoro_short_break" class="form-label">{{ _('Short break (minutes)') }}</label>
+                    <input type="number" id="pomodoro_short_break" name="pomodoro_short_break" min="1" max="60"
+                           value="{{ user.pomodoro_short_break or 5 }}"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                </div>
+                <div>
+                    <label for="pomodoro_long_break" class="form-label">{{ _('Long break (minutes)') }}</label>
+                    <input type="number" id="pomodoro_long_break" name="pomodoro_long_break" min="5" max="60"
+                           value="{{ user.pomodoro_long_break or 15 }}"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                </div>
+                <div>
+                    <label for="pomodoro_long_break_interval" class="form-label">{{ _('Long break every N cycles') }}</label>
+                    <input type="number" id="pomodoro_long_break_interval" name="pomodoro_long_break_interval" min="2" max="10"
+                           value="{{ user.pomodoro_long_break_interval or 4 }}"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                </div>
+            </div>
+            </div>
+        </details>
+
         {# Custom theme picker. Self-contained: persists via /api/user/theme
            rather than the surrounding form, so the rest of this form keeps
            working unchanged. #}
         {% include 'components/theme_picker.html' %}
-
         <!-- Time Rounding Preferences -->
         <details class="bg-card-light dark:bg-card-dark rounded-lg shadow-md group" open>
             <summary class="flex items-center justify-between p-6 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
                 <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
                     <i class="fas fa-clock mr-2"></i>{{ _('Time Rounding Preferences') }}
                 </h2>
-                <i class="fas fa-chevron-down text-gray-400 transition-transform group-open:rotate-180 md:hidden"></i>
+                <i class="fas fa-chevron-down text-gray-400 dark:text-gray-500 transition-transform group-open:rotate-180 md:hidden" aria-hidden="true"></i>
             </summary>
             <div class="px-6 pb-6">
             <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
@@ -405,7 +445,7 @@
                 <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
                     <i class="fas fa-business-time mr-2"></i>{{ _('Overtime Settings') }}
                 </h2>
-                <i class="fas fa-chevron-down text-gray-400 transition-transform group-open:rotate-180 md:hidden"></i>
+                <i class="fas fa-chevron-down text-gray-400 dark:text-gray-500 transition-transform group-open:rotate-180 md:hidden" aria-hidden="true"></i>
             </summary>
             <div class="px-6 pb-6">
             <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
@@ -539,7 +579,7 @@
                 <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
                     <i class="fas fa-globe mr-2"></i>{{ _('Regional Settings') }}
                 </h2>
-                <i class="fas fa-chevron-down text-gray-400 transition-transform group-open:rotate-180 md:hidden"></i>
+                <i class="fas fa-chevron-down text-gray-400 dark:text-gray-500 transition-transform group-open:rotate-180 md:hidden" aria-hidden="true"></i>
             </summary>
             <div class="px-6 pb-6">
             

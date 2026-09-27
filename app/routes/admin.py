@@ -1,6 +1,5 @@
 import os
-import shutil
-import threading
+import time
 import uuid
 from datetime import datetime
 
@@ -28,9 +27,8 @@ from app import db, limiter
 from app.config.analytics_defaults import get_analytics_config
 from app.models import DonationInteraction, Invoice, Project, Quote, Role, Settings, TimeEntry, User, UserClient
 from app.utils.auth_method import auth_includes_ldap, auth_includes_oidc, normalize_auth_method
-from app.utils.backup import create_backup, get_backup_root_dir, restore_backup
 from app.utils.db import safe_commit
-from app.utils.error_handling import safe_file_remove, safe_log
+from app.utils.error_handling import safe_log
 from app.utils.installation import get_installation_config
 from app.utils.invoice_numbering import sanitize_invoice_pattern, sanitize_invoice_prefix, validate_invoice_pattern
 from app.utils.permissions import admin_or_permission_required
@@ -100,9 +98,6 @@ def _ldap_admin_display():
 def _inject_ldap_admin_display():
     return {"ldap_settings": _ldap_admin_display()}
 
-
-# In-memory restore progress tracking (simple, per-process)
-RESTORE_PROGRESS = {}
 
 # Allowed file extensions for logos
 # Avoid SVG due to XSS risk unless sanitized server-side
@@ -858,6 +853,26 @@ def admin_dashboard_alias():
     return redirect(url_for("admin.admin_dashboard"))
 
 
+@admin_bp.route("/admin/client-surveys")
+@login_required
+@admin_or_permission_required("access_admin")
+def client_surveys():
+    """Admin view of client NPS / satisfaction survey responses."""
+    from sqlalchemy import func
+
+    from app.models.client_survey import ClientSurvey
+
+    surveys = ClientSurvey.query.order_by(ClientSurvey.sent_at.desc()).limit(200).all()
+    completed = [s for s in surveys if s.nps_score is not None]
+    responses = len(completed)
+    avg_score = (sum(s.nps_score for s in completed) / responses) if responses else None
+    promoters = sum(1 for s in completed if s.nps_score >= 9)
+    detractors = sum(1 for s in completed if s.nps_score <= 6)
+    nps = int(round(((promoters - detractors) / responses) * 100)) if responses else None
+    stats = {"responses": responses, "avg_score": avg_score, "nps": nps}
+    return render_template("admin/client_surveys.html", surveys=surveys, stats=stats)
+
+
 @admin_bp.route("/admin/users")
 @login_required
 @admin_or_permission_required("view_users")
@@ -1138,6 +1153,30 @@ def edit_user(user_id):
     )
 
 
+@admin_bp.route("/admin/users/<int:user_id>/erase", methods=["POST"])
+@login_required
+@admin_or_permission_required("delete_users")
+def erase_user_gdpr(user_id):
+    """GDPR anonymize/erase a user while retaining historical time entries."""
+    from app.services.user_gdpr_service import UserGdprService
+
+    if user_id == current_user.id:
+        flash(_("Use account settings or the API to erase your own account"), "error")
+        return redirect(url_for("admin.list_users"))
+
+    result = UserGdprService().anonymize_user(
+        user_id=user_id,
+        actor_id=current_user.id,
+        reason=(request.form.get("reason") or "").strip() or None,
+    )
+    if not result.get("success"):
+        flash(_(result.get("message", "Could not anonymize user")), "error")
+        return redirect(url_for("admin.list_users"))
+
+    flash(_("User anonymized successfully (GDPR erasure)"), "success")
+    return redirect(url_for("admin.list_users"))
+
+
 @admin_bp.route("/admin/users/<int:user_id>/delete", methods=["POST"])
 @login_required
 @admin_or_permission_required("delete_users")
@@ -1304,6 +1343,22 @@ def manage_modules():
             modules_by_category[cat] = mods
 
     if request.method == "POST":
+        preset_action = (request.form.get("apply_module_preset") or "").strip()
+        if preset_action:
+            from app.utils.module_registry import ModulePreset
+
+            if preset_action not in {p.value for p in ModulePreset}:
+                flash(_("Unknown module preset"), "error")
+            elif hasattr(settings_obj, "disabled_module_ids"):
+                settings_obj.disabled_module_ids = ModuleRegistry.get_disabled_ids_for_preset(preset_action)
+                if settings_obj not in db.session:
+                    db.session.add(settings_obj)
+                if safe_commit("admin_apply_module_preset"):
+                    flash(_("Module preset applied successfully"), "success")
+                else:
+                    flash(_("Could not apply module preset due to a database error."), "error")
+            return redirect(url_for("admin.manage_modules"))
+
         # Locked client: allow admin to lock the instance to a single client
         locked_client_id_raw = (request.form.get("locked_client_id") or "").strip()
         if locked_client_id_raw:
@@ -1498,6 +1553,8 @@ def settings():
         settings_obj.single_active_timer = request.form.get("single_active_timer") == "on"
         settings_obj.allow_self_register = request.form.get("allow_self_register") == "on"
         settings_obj.idle_timeout_minutes = int(request.form.get("idle_timeout_minutes", 30))
+        unanswered = (request.form.get("idle_unanswered_action") or "review").strip().lower()
+        settings_obj.idle_unanswered_action = unanswered if unanswered in ("review", "auto_stop") else "review"
         try:
             settings_obj.idle_auto_stop_hours = max(0, min(168, int(request.form.get("idle_auto_stop_hours", 0) or 0)))
         except (TypeError, ValueError):
@@ -1514,6 +1571,16 @@ def settings():
         settings_obj.company_website = request.form.get("company_website", "www.yourcompany.com")
         settings_obj.company_tax_id = request.form.get("company_tax_id", "")
         settings_obj.company_bank_info = request.form.get("company_bank_info", "")
+        try:
+            settings_obj.company_street = (request.form.get("company_street", "") or "").strip()
+            settings_obj.company_postcode = (request.form.get("company_postcode", "") or "").strip()
+            settings_obj.company_city = (request.form.get("company_city", "") or "").strip()
+            country = (request.form.get("company_country", "") or "").strip().upper()[:2]
+            settings_obj.company_country = country
+            settings_obj.company_iban = (request.form.get("company_iban", "") or "").strip().replace(" ", "")
+            settings_obj.company_bic = (request.form.get("company_bic", "") or "").strip().replace(" ", "")
+        except AttributeError:
+            current_app.logger.debug("Company structured address columns not available", exc_info=True)
 
         # Update invoice defaults
         invoice_prefix_form = sanitize_invoice_prefix(request.form.get("invoice_prefix", ""))
@@ -1612,9 +1679,18 @@ def settings():
             settings_obj.invoices_pdfa3_compliant = request.form.get("invoices_pdfa3_compliant") == "on"
             settings_obj.invoices_validate_export = request.form.get("invoices_validate_export") == "on"
             settings_obj.invoices_verapdf_path = (request.form.get("invoices_verapdf_path", "") or "").strip()
+            vat_cat = (request.form.get("invoices_default_vat_category", "S") or "S").strip().upper()
+            if vat_cat not in ("S", "Z", "E", "AE", "K", "G", "O", "L", "M"):
+                vat_cat = "S"
+            settings_obj.invoices_default_vat_category = vat_cat
+            settings_obj.invoices_default_vat_exemption_reason = (
+                request.form.get("invoices_default_vat_exemption_reason", "") or ""
+            ).strip()
+            settings_obj.invoices_default_vat_exemption_code = (
+                request.form.get("invoices_default_vat_exemption_code", "") or ""
+            ).strip()
         except AttributeError:
-            # Peppol columns don't exist yet (migration not run)
-            pass
+            current_app.logger.debug("Peppol settings columns not available (migration not run)", exc_info=True)
 
         # Update kiosk mode settings (if columns exist)
         try:
@@ -1626,8 +1702,7 @@ def settings():
             )
             settings_obj.kiosk_default_movement_type = request.form.get("kiosk_default_movement_type", "adjustment")
         except AttributeError:
-            # Kiosk columns don't exist yet (migration not run)
-            pass
+            current_app.logger.debug("Kiosk settings columns not available (migration not run)", exc_info=True)
 
         # Update time entry requirements (if columns exist)
         try:
@@ -1636,7 +1711,7 @@ def settings():
             min_len = int(request.form.get("time_entry_description_min_length", 20))
             settings_obj.time_entry_description_min_length = max(1, min(500, min_len))
         except AttributeError:
-            pass
+            current_app.logger.debug("Time entry requirement columns not available", exc_info=True)
 
         # Update default daily working hours (overtime) for new users
         try:
@@ -1644,7 +1719,7 @@ def settings():
             if val is not None and 0.5 <= val <= 24:
                 settings_obj.default_daily_working_hours = val
         except (AttributeError, ValueError, TypeError):
-            pass
+            current_app.logger.debug("Could not update default daily working hours setting", exc_info=True)
 
         # Working time limits
         try:
@@ -1713,11 +1788,20 @@ def settings():
                 settings_obj.ai_enabled = None
 
             ai_provider = (request.form.get("ai_provider") or "ollama").strip().lower()
-            if ai_provider not in ("ollama", "openai_compatible"):
+            if ai_provider == "custom":
+                ai_provider = "openai_compatible"
+            from app.services.llm_service import NAMED_PROVIDERS, PROVIDER_PRESETS, ROUTING_STRATEGIES
+
+            if ai_provider not in NAMED_PROVIDERS:
                 ai_provider = "ollama"
             settings_obj.ai_provider = ai_provider
             settings_obj.ai_base_url = (request.form.get("ai_base_url") or "").strip()
+            # If base URL left blank for a named preset, store the preset default so runtime is explicit.
+            if not settings_obj.ai_base_url and PROVIDER_PRESETS.get(ai_provider, {}).get("base_url"):
+                settings_obj.ai_base_url = PROVIDER_PRESETS[ai_provider]["base_url"]
             settings_obj.ai_model = (request.form.get("ai_model") or "").strip()
+            routing = (request.form.get("ai_routing_strategy") or "").strip().lower()
+            settings_obj.ai_routing_strategy = routing if routing in ROUTING_STRATEGIES else ""
             if request.form.get("ai_clear_api_key") == "on":
                 settings_obj.set_secret("ai_api_key", "")
             else:
@@ -1734,7 +1818,7 @@ def settings():
                 settings_obj.ai_context_limit = None
             settings_obj.ai_system_prompt = (request.form.get("ai_system_prompt") or "").strip()
         except AttributeError:
-            pass
+            current_app.logger.debug("AI settings columns not available", exc_info=True)
 
         # Update Claude API provider settings (SOW auto-provisioning; key stays server-side)
         try:
@@ -1770,6 +1854,7 @@ def settings():
         allow_analytics = request.form.get("allow_analytics") == "on"
         old_analytics_state = settings_obj.allow_analytics
         settings_obj.allow_analytics = allow_analytics
+        settings_obj.portal_allowed_custom_domains = request.form.get("portal_allowed_custom_domains") == "on"
 
         # Also update the installation config (used by telemetry system)
         # This ensures the telemetry system sees the updated preference
@@ -3200,7 +3285,7 @@ def pdf_layout_preview():
         try:
             setattr(invoice_wrapper, attr, getattr(invoice, attr))
         except AttributeError:
-            pass
+            current_app.logger.debug("Invoice preview wrapper missing attribute %s", attr, exc_info=True)
 
     # Copy relationship attributes (project, client)
     _invoice_id = getattr(invoice, "id", None)
@@ -3919,7 +4004,7 @@ def quote_pdf_layout_preview():
         try:
             setattr(quote_wrapper, attr, getattr(quote, attr))
         except AttributeError:
-            pass
+            current_app.logger.debug("Quote preview wrapper missing attribute %s", attr, exc_info=True)
 
     # Copy relationship attributes (project, client)
     try:
@@ -4502,7 +4587,7 @@ def upload_logo():
                 try:
                     os.remove(old_logo_path)
                 except OSError:
-                    pass  # Ignore errors when removing old file
+                    current_app.logger.debug("Could not remove old company logo file", exc_info=True)
 
         settings_obj.company_logo_filename = unique_filename
         if not safe_commit("admin_upload_logo"):
@@ -4541,7 +4626,7 @@ def remove_logo():
             try:
                 os.remove(logo_path)
             except OSError:
-                pass  # Ignore errors when removing file
+                current_app.logger.debug("Could not remove company logo file", exc_info=True)
 
         # Clear filename from database
         settings_obj.company_logo_filename = ""
@@ -4650,199 +4735,6 @@ def serve_uploaded_logo(filename):
     except Exception as e:
         current_app.logger.error(f"Error serving logo {filename}: {str(e)}")
         return "Error serving logo", 500
-
-
-@admin_bp.route("/admin/backups")
-@login_required
-@admin_or_permission_required("manage_backups")
-def backups_management():
-    """Backups management page"""
-    # Get list of existing backups
-    backups_dir = get_backup_root_dir(current_app)
-    backups = []
-
-    if os.path.exists(backups_dir):
-        for filename in os.listdir(backups_dir):
-            if filename.endswith(".zip") and not filename.startswith("restore_"):
-                filepath = os.path.join(backups_dir, filename)
-                stat = os.stat(filepath)
-                backups.append(
-                    {
-                        "filename": filename,
-                        "size": stat.st_size,
-                        "created": datetime.fromtimestamp(stat.st_mtime),
-                        "size_mb": round(stat.st_size / (1024 * 1024), 2),
-                    }
-                )
-
-    # Sort by creation date (newest first)
-    backups.sort(key=lambda x: x["created"], reverse=True)
-
-    return render_template("admin/backups.html", backups=backups, backups_dir=backups_dir)
-
-
-@admin_bp.route("/admin/backup/create", methods=["POST"])
-@login_required
-@admin_or_permission_required("manage_backups")
-def create_backup_manual():
-    """Create manual backup and return the archive for download."""
-    try:
-        archive_path = create_backup(current_app)
-        if not archive_path or not os.path.exists(archive_path):
-            flash(_("Backup failed: archive not created"), "error")
-            return redirect(url_for("admin.backups_management"))
-        # Stream file to user
-        return send_file(archive_path, as_attachment=True)
-    except Exception as e:
-        flash(_("Backup failed: %(error)s", error=str(e)), "error")
-        return redirect(url_for("admin.backups_management"))
-
-
-@admin_bp.route("/admin/backup/download/<filename>")
-@login_required
-@admin_or_permission_required("manage_backups")
-def download_backup(filename):
-    """Download an existing backup file"""
-    # Security: only allow downloading .zip files, no path traversal
-    filename = secure_filename(filename)
-    if not filename.endswith(".zip"):
-        flash(_("Invalid file type"), "error")
-        return redirect(url_for("admin.backups_management"))
-
-    backups_dir = get_backup_root_dir(current_app)
-    filepath = os.path.join(backups_dir, filename)
-
-    if not os.path.exists(filepath):
-        flash(_("Backup file not found"), "error")
-        return redirect(url_for("admin.backups_management"))
-
-    return send_file(filepath, as_attachment=True)
-
-
-@admin_bp.route("/admin/backup/delete/<filename>", methods=["POST"])
-@login_required
-@admin_or_permission_required("manage_backups")
-def delete_backup(filename):
-    """Delete a backup file"""
-    # Security: only allow deleting .zip files, no path traversal
-    filename = secure_filename(filename)
-    if not filename.endswith(".zip"):
-        flash(_("Invalid file type"), "error")
-        return redirect(url_for("admin.backups_management"))
-
-    backups_dir = get_backup_root_dir(current_app)
-    filepath = os.path.join(backups_dir, filename)
-
-    try:
-        if os.path.exists(filepath):
-            os.remove(filepath)
-            flash(
-                _('Backup "%(filename)s" deleted successfully', filename=filename),
-                "success",
-            )
-        else:
-            flash(_("Backup file not found"), "error")
-    except Exception as e:
-        flash(_("Failed to delete backup: %(error)s", error=str(e)), "error")
-
-    return redirect(url_for("admin.backups_management"))
-
-
-@admin_bp.route("/admin/restore", methods=["GET", "POST"])
-@admin_bp.route("/admin/restore/<filename>", methods=["POST"])
-@limiter.limit("3 per minute", methods=["POST"])  # heavy operation
-@login_required
-@admin_or_permission_required("manage_backups")
-def restore(filename=None):
-    """Restore from an uploaded backup archive or existing backup file."""
-    if request.method == "POST":
-        backups_dir = get_backup_root_dir(current_app)
-
-        # If restoring from an existing backup file
-        if filename:
-            filename = secure_filename(filename)
-            if not filename.lower().endswith(".zip"):
-                flash(
-                    _("Invalid file type. Please select a .zip backup archive."),
-                    "error",
-                )
-                return redirect(url_for("admin.backups_management"))
-            temp_path = os.path.join(backups_dir, filename)
-            if not os.path.exists(temp_path):
-                flash(_("Backup file not found."), "error")
-                return redirect(url_for("admin.backups_management"))
-            # Copy to temp location for processing
-            actual_restore_path = os.path.join(backups_dir, f"restore_{uuid.uuid4().hex[:8]}_{filename}")
-            shutil.copy2(temp_path, actual_restore_path)
-            temp_path = actual_restore_path
-        # If uploading a new backup file
-        elif "backup_file" in request.files and request.files["backup_file"].filename != "":
-            file = request.files["backup_file"]
-            uploaded_filename = secure_filename(file.filename)
-            if not uploaded_filename.lower().endswith(".zip"):
-                flash(
-                    _("Invalid file type. Please upload a .zip backup archive."),
-                    "error",
-                )
-                return redirect(url_for("admin.restore"))
-            # Save temporarily under project backups
-            os.makedirs(backups_dir, exist_ok=True)
-            temp_path = os.path.join(backups_dir, f"restore_{uuid.uuid4().hex[:8]}_{uploaded_filename}")
-            file.save(temp_path)
-        else:
-            flash(_("No backup file provided"), "error")
-            return redirect(url_for("admin.restore"))
-
-        # Initialize progress state
-        token = uuid.uuid4().hex[:8]
-        RESTORE_PROGRESS[token] = {
-            "status": "starting",
-            "percent": 0,
-            "message": "Queued",
-        }
-
-        def progress_cb(label, percent):
-            RESTORE_PROGRESS[token] = {
-                "status": "running",
-                "percent": int(percent),
-                "message": label,
-            }
-
-        # Capture the real Flask app object for use in a background thread
-        app_obj = current_app._get_current_object()
-
-        def _do_restore():
-            try:
-                RESTORE_PROGRESS[token] = {
-                    "status": "running",
-                    "percent": 5,
-                    "message": "Starting restore",
-                }
-                success, message = restore_backup(app_obj, temp_path, progress_callback=progress_cb)
-                RESTORE_PROGRESS[token] = {
-                    "status": "done" if success else "error",
-                    "percent": 100 if success else RESTORE_PROGRESS[token].get("percent", 0),
-                    "message": message,
-                }
-            except Exception as e:
-                RESTORE_PROGRESS[token] = {
-                    "status": "error",
-                    "percent": RESTORE_PROGRESS[token].get("percent", 0),
-                    "message": str(e),
-                }
-            finally:
-                safe_file_remove(temp_path, app_obj.logger)
-
-        # Run restore in background to keep request responsive
-        t = threading.Thread(target=_do_restore, daemon=True)
-        t.start()
-
-        flash(_("Restore started. You can monitor progress on this page."), "info")
-        return redirect(url_for("admin.restore", token=token))
-    # GET
-    token = request.args.get("token")
-    progress = RESTORE_PROGRESS.get(token) if token else None
-    return render_template("admin/restore.html", progress=progress, token=token)
 
 
 @admin_bp.route("/admin/system")
@@ -5711,122 +5603,6 @@ def ldap_wizard_generate_config():
     )
 
 
-# ==================== API Token Management ====================
-
-
-@admin_bp.route("/admin/api-tokens")
-@login_required
-@admin_or_permission_required("manage_api_tokens")
-def api_tokens():
-    """API tokens management page"""
-    from app.models import ApiToken
-
-    tokens = ApiToken.query.order_by(ApiToken.created_at.desc()).all()
-    users = User.query.filter_by(is_active=True).order_by(User.username).all()
-
-    return render_template("admin/api_tokens.html", tokens=tokens, users=users, now=datetime.utcnow())
-
-
-@admin_bp.route("/admin/api-tokens", methods=["POST"])
-@login_required
-@admin_or_permission_required("manage_api_tokens")
-def create_api_token():
-    """Create a new API token"""
-    from app.models import ApiToken
-
-    data = request.get_json() or {}
-
-    # Validate input
-    if not data.get("name"):
-        return jsonify({"error": "Token name is required"}), 400
-    if not data.get("user_id"):
-        return jsonify({"error": "User ID is required"}), 400
-    if not data.get("scopes"):
-        return jsonify({"error": "At least one scope is required"}), 400
-
-    # Verify user exists
-    user = User.query.get(data["user_id"])
-    if not user:
-        return jsonify({"error": "User not found"}), 404
-    if not user:
-        return jsonify({"error": "Invalid user"}), 400
-
-    # Create token
-    try:
-        api_token, plain_token = ApiToken.create_token(
-            user_id=data["user_id"],
-            name=data["name"],
-            description=data.get("description", ""),
-            scopes=data["scopes"],
-            expires_days=data.get("expires_days"),
-        )
-
-        db.session.add(api_token)
-        db.session.commit()
-
-        current_app.logger.info(
-            f"API token '{data['name']}' created for user {user.username} by {current_user.username}"
-        )
-
-        return (
-            jsonify(
-                {
-                    "message": "API token created successfully",
-                    "token": plain_token,
-                    "token_id": api_token.id,
-                }
-            ),
-            201,
-        )
-
-    except Exception as e:
-        db.session.rollback()
-        current_app.logger.error(f"Failed to create API token: {e}")
-        return jsonify({"error": "Failed to create token"}), 500
-
-
-@admin_bp.route("/admin/api-tokens/<int:token_id>/toggle", methods=["POST"])
-@login_required
-@admin_or_permission_required("manage_api_tokens")
-def toggle_api_token(token_id):
-    """Toggle API token active status"""
-    from app.models import ApiToken
-
-    token = ApiToken.query.get_or_404(token_id)
-    token.is_active = not token.is_active
-
-    try:
-        db.session.commit()
-        status = "activated" if token.is_active else "deactivated"
-        current_app.logger.info(f"API token '{token.name}' {status} by {current_user.username}")
-        return jsonify({"message": f"Token {status} successfully"})
-    except Exception as e:
-        db.session.rollback()
-        current_app.logger.error(f"Failed to toggle API token: {e}")
-        return jsonify({"error": "Failed to update token"}), 500
-
-
-@admin_bp.route("/admin/api-tokens/<int:token_id>", methods=["DELETE"])
-@login_required
-@admin_or_permission_required("manage_api_tokens")
-def delete_api_token(token_id):
-    """Delete an API token"""
-    from app.models import ApiToken
-
-    token = ApiToken.query.get_or_404(token_id)
-    token_name = token.name
-
-    try:
-        db.session.delete(token)
-        db.session.commit()
-        current_app.logger.info(f"API token '{token_name}' deleted by {current_user.username}")
-        return jsonify({"message": "Token deleted successfully"})
-    except Exception as e:
-        db.session.rollback()
-        current_app.logger.error(f"Failed to delete API token: {e}")
-        return jsonify({"error": "Failed to delete token"}), 500
-
-
 # ==================== Email Configuration Management ====================
 
 
@@ -6267,3 +6043,267 @@ def list_integrations_admin():
 def integration_setup(provider):
     """Setup page for configuring integration OAuth credentials. Redirect to main integrations manage page."""
     return redirect(url_for("integrations.manage_integration", provider=provider))
+
+
+# ==================== Payroll Export Templates ====================
+
+
+@admin_bp.route("/admin/payroll-templates", methods=["GET", "POST"])
+@login_required
+@admin_or_permission_required("access_admin")
+def payroll_templates():
+    from app.models.payroll_export_template import PayrollExportTemplate
+
+    PayrollExportTemplate.ensure_builtin_defaults()
+
+    if request.method == "POST":
+        name = (request.form.get("name") or "").strip()
+        grouping = (request.form.get("grouping") or "week").strip()
+        fmt = (request.form.get("format") or "csv").strip()
+        delimiter = (request.form.get("delimiter") or ",").strip() or ","
+        columns_raw = (request.form.get("columns") or "").strip()
+        columns = [c.strip() for c in columns_raw.split(",") if c.strip()]
+        if not columns:
+            columns = list(PayrollExportTemplate.DEFAULT_COLUMNS)
+        is_default = "is_default" in request.form
+
+        if not name:
+            flash(_("Name is required"), "error")
+            return redirect(url_for("admin.payroll_templates"))
+
+        if is_default:
+            for t in PayrollExportTemplate.query.filter_by(is_default=True).all():
+                t.is_default = False
+
+        tmpl = PayrollExportTemplate(
+            name=name,
+            columns=columns,
+            grouping=grouping if grouping in ("week", "day", "project") else "week",
+            format=fmt if fmt in ("csv", "xlsx") else "csv",
+            delimiter=delimiter,
+            is_default=is_default,
+            is_builtin=False,
+        )
+        db.session.add(tmpl)
+        if safe_commit("create_payroll_template"):
+            flash(_("Payroll template created"), "success")
+        else:
+            flash(_("Could not create template"), "error")
+        return redirect(url_for("admin.payroll_templates"))
+
+    templates = PayrollExportTemplate.query.order_by(PayrollExportTemplate.name.asc()).all()
+    return render_template(
+        "admin/payroll_templates.html",
+        templates=templates,
+        default_columns=PayrollExportTemplate.DEFAULT_COLUMNS,
+    )
+
+
+@admin_bp.route("/admin/payroll-templates/<int:template_id>/edit", methods=["POST"])
+@login_required
+@admin_or_permission_required("access_admin")
+def edit_payroll_template(template_id):
+    from app.models.payroll_export_template import PayrollExportTemplate
+
+    tmpl = PayrollExportTemplate.query.get_or_404(template_id)
+    if not tmpl.is_builtin:
+        name = (request.form.get("name") or "").strip()
+        if name:
+            tmpl.name = name
+    grouping = (request.form.get("grouping") or tmpl.grouping).strip()
+    tmpl.grouping = grouping if grouping in ("week", "day", "project") else tmpl.grouping
+    fmt = (request.form.get("format") or tmpl.format).strip()
+    tmpl.format = fmt if fmt in ("csv", "xlsx") else tmpl.format
+    delimiter = (request.form.get("delimiter") or tmpl.delimiter).strip() or ","
+    tmpl.delimiter = delimiter
+    columns_raw = (request.form.get("columns") or "").strip()
+    if columns_raw:
+        tmpl.columns = [c.strip() for c in columns_raw.split(",") if c.strip()]
+    if "is_default" in request.form:
+        for t in PayrollExportTemplate.query.filter_by(is_default=True).all():
+            t.is_default = False
+        tmpl.is_default = True
+    if safe_commit("edit_payroll_template", {"template_id": template_id}):
+        flash(_("Template updated"), "success")
+    else:
+        flash(_("Could not update template"), "error")
+    return redirect(url_for("admin.payroll_templates"))
+
+
+@admin_bp.route("/admin/payroll-templates/<int:template_id>/delete", methods=["POST"])
+@login_required
+@admin_or_permission_required("access_admin")
+def delete_payroll_template(template_id):
+    from app.models.payroll_export_template import PayrollExportTemplate
+
+    tmpl = PayrollExportTemplate.query.get_or_404(template_id)
+    if tmpl.is_builtin:
+        flash(_("Cannot delete built-in templates"), "error")
+        return redirect(url_for("admin.payroll_templates"))
+    was_default = tmpl.is_default
+    db.session.delete(tmpl)
+    if safe_commit("delete_payroll_template", {"template_id": template_id}):
+        if was_default:
+            PayrollExportTemplate.ensure_builtin_defaults()
+            builtin = PayrollExportTemplate.query.filter_by(name="Generic Payroll").first()
+            if builtin:
+                builtin.is_default = True
+                safe_commit("reset_default_payroll_template")
+        flash(_("Template deleted"), "success")
+    else:
+        flash(_("Could not delete template"), "error")
+    return redirect(url_for("admin.payroll_templates"))
+
+
+# ==================== Geofences ====================
+
+
+@admin_bp.route("/admin/geofences", methods=["GET", "POST"])
+@login_required
+@admin_or_permission_required("access_admin")
+def geofences():
+    from app.models.geofence import Geofence, GeofencePolicy
+    from app.models import Project
+
+    if request.method == "POST":
+        name = (request.form.get("name") or "").strip()
+        lat = request.form.get("lat")
+        lng = request.form.get("lng")
+        radius_m = request.form.get("radius_m") or "100"
+        address = (request.form.get("address") or "").strip() or None
+        project_raw = (request.form.get("project_id") or "").strip()
+        policy = (request.form.get("policy") or GeofencePolicy.LOG).strip()
+        is_active = "is_active" in request.form
+
+        if not name:
+            flash(_("Name is required"), "error")
+            return redirect(url_for("admin.geofences"))
+
+        try:
+            lat_f = float(lat)
+            lng_f = float(lng)
+            radius_f = float(radius_m)
+        except (TypeError, ValueError):
+            flash(_("Valid latitude, longitude, and radius are required"), "error")
+            return redirect(url_for("admin.geofences"))
+
+        if policy not in GeofencePolicy.CHOICES:
+            policy = GeofencePolicy.LOG
+
+        project_id = int(project_raw) if project_raw.isdigit() else None
+
+        geofence = Geofence(
+            name=name,
+            lat=lat_f,
+            lng=lng_f,
+            radius_m=radius_f,
+            address=address,
+            project_id=project_id,
+            policy=policy,
+            is_active=is_active,
+        )
+        db.session.add(geofence)
+        if safe_commit("create_geofence"):
+            flash(_("Geofence created"), "success")
+        else:
+            flash(_("Could not create geofence"), "error")
+        return redirect(url_for("admin.geofences"))
+
+    geofence_list = Geofence.query.order_by(Geofence.name.asc()).all()
+    projects = Project.query.filter_by(status="active").order_by(Project.name.asc()).all()
+    return render_template(
+        "admin/geofences.html",
+        geofences=geofence_list,
+        projects=projects,
+        policies=GeofencePolicy.CHOICES,
+    )
+
+
+@admin_bp.route("/admin/geofences/<int:geofence_id>/edit", methods=["GET", "POST"])
+@login_required
+@admin_or_permission_required("access_admin")
+def edit_geofence(geofence_id):
+    from app.models.geofence import Geofence, GeofencePolicy
+    from app.models import Project
+
+    geofence = Geofence.query.get_or_404(geofence_id)
+    projects = Project.query.filter_by(status="active").order_by(Project.name.asc()).all()
+
+    if request.method == "POST":
+        name = (request.form.get("name") or "").strip()
+        lat = request.form.get("lat")
+        lng = request.form.get("lng")
+        radius_m = request.form.get("radius_m")
+        address = (request.form.get("address") or "").strip() or None
+        project_raw = (request.form.get("project_id") or "").strip()
+        policy = (request.form.get("policy") or geofence.policy).strip()
+        is_active = "is_active" in request.form
+
+        if not name:
+            flash(_("Name is required"), "error")
+            return render_template(
+                "admin/geofences.html",
+                geofences=Geofence.query.order_by(Geofence.name.asc()).all(),
+                projects=projects,
+                policies=GeofencePolicy.CHOICES,
+                editing_geofence=geofence,
+            )
+
+        try:
+            geofence.lat = float(lat)
+            geofence.lng = float(lng)
+            geofence.radius_m = float(radius_m)
+        except (TypeError, ValueError):
+            flash(_("Valid latitude, longitude, and radius are required"), "error")
+            return render_template(
+                "admin/geofences.html",
+                geofences=Geofence.query.order_by(Geofence.name.asc()).all(),
+                projects=projects,
+                policies=GeofencePolicy.CHOICES,
+                editing_geofence=geofence,
+            )
+
+        geofence.name = name
+        geofence.address = address
+        geofence.project_id = int(project_raw) if project_raw.isdigit() else None
+        geofence.policy = policy if policy in GeofencePolicy.CHOICES else geofence.policy
+        geofence.is_active = is_active
+
+        if safe_commit("edit_geofence", {"geofence_id": geofence_id}):
+            flash(_("Geofence updated"), "success")
+            return redirect(url_for("admin.geofences"))
+        flash(_("Could not update geofence"), "error")
+
+    return render_template(
+        "admin/geofences.html",
+        geofences=Geofence.query.order_by(Geofence.name.asc()).all(),
+        projects=projects,
+        policies=GeofencePolicy.CHOICES,
+        editing_geofence=geofence,
+    )
+
+
+@admin_bp.route("/admin/geofences/<int:geofence_id>/delete", methods=["POST"])
+@login_required
+@admin_or_permission_required("access_admin")
+def delete_geofence(geofence_id):
+    from app.models.geofence import Geofence
+
+    geofence = Geofence.query.get_or_404(geofence_id)
+    db.session.delete(geofence)
+    if safe_commit("delete_geofence", {"geofence_id": geofence_id}):
+        flash(_("Geofence deleted"), "success")
+    else:
+        flash(_("Could not delete geofence"), "error")
+    return redirect(url_for("admin.geofences"))
+
+
+def _register_admin_route_modules():
+    """Load admin route slices (same blueprint, side-effect registration)."""
+    from importlib import import_module
+
+    import_module("app.routes.admin_api_tokens")
+    import_module("app.routes.admin_backups")
+
+
+_register_admin_route_modules()

@@ -13,7 +13,6 @@ from app import db, limiter
 from app.models import (
     Activity,
     ApiToken,
-    AuditLog,
     BudgetAlert,
     CalendarEvent,
     Client,
@@ -40,7 +39,10 @@ from app.models import (
     PurchaseOrder,
     RecurringBlock,
     RecurringInvoice,
+    RecurringProjectCost,
     SavedFilter,
+    SavedReportView,
+    SharedReportLink,
     StockItem,
     StockMovement,
     StockReservation,
@@ -59,6 +61,7 @@ from app.models import (
 from app.models.time_entry import local_now
 from app.models.time_entry_approval import ApprovalStatus, TimeEntryApproval
 from app.services.global_search_service import run_global_search
+from app.services.shared_report_service import SharedReportService
 from app.utils.api_auth import require_api_token
 from app.utils.api_responses import (
     error_response,
@@ -193,6 +196,12 @@ def api_info():
                     "audit_events": "/api/v1/reports/compliance/audit-events",
                 },
                 "mileage_gps": "/api/v1/mileage/gps",
+                "focus_sessions": "/api/v1/focus-sessions",
+                "gamification": {
+                    "me": "/api/v1/gamification/me",
+                    "badges": "/api/v1/gamification/badges",
+                    "leaderboard": "/api/v1/gamification/leaderboard",
+                },
                 "search": "/api/v1/search",
                 "inventory": {
                     "items": "/api/v1/inventory/items",
@@ -216,6 +225,7 @@ def api_info():
 
 
 @api_v1_bp.route("/health", methods=["GET"])
+@limiter.exempt
 def health_check():
     """API health check endpoint
     ---
@@ -231,6 +241,22 @@ def health_check():
 # ==================== Auth (unauthenticated) ====================
 
 
+def _issue_app_login_api_token(user: User) -> str:
+    """Mint a broad-scope API token for desktop/mobile/extension login."""
+    scopes = "admin:all" if user.is_admin else "read:*,write:*"
+    expiry_days = current_app.config.get("API_TOKEN_DEFAULT_EXPIRY_DAYS", 90)
+    api_token, plain_token = ApiToken.create_token(
+        user_id=user.id,
+        name=f"App login - {user.username}",
+        description="Token issued via desktop/mobile app login",
+        scopes=scopes,
+        expires_days=expiry_days if expiry_days else None,
+    )
+    db.session.add(api_token)
+    db.session.commit()
+    return plain_token
+
+
 @api_v1_bp.route("/auth/login", methods=["POST"])
 @limiter.limit("5 per minute", methods=["POST"])
 def auth_login():
@@ -238,6 +264,8 @@ def auth_login():
 
     Accepts JSON: { "username": "...", "password": "..." }.
     Returns 200 with { "token": "tt_..." } or 401 with { "error": "..." }.
+    When the user has TOTP 2FA enabled, returns 403 with
+    { "requires_2fa": true, "temp_token": "..." } instead of a full API token.
     Admin users receive admin scope; regular users receive broad read/write API scopes.
     """
     current_app.logger.info(
@@ -255,18 +283,64 @@ def auth_login():
     if not user or not user.check_password(password):
         return jsonify({"error": "Invalid username or password"}), 401
 
-    scopes = "admin:all" if user.is_admin else "read:*,write:*"
-    expiry_days = current_app.config.get("API_TOKEN_DEFAULT_EXPIRY_DAYS", 90)
-    api_token, plain_token = ApiToken.create_token(
-        user_id=user.id,
-        name=f"App login - {user.username}",
-        description="Token issued via desktop/mobile app login",
-        scopes=scopes,
-        expires_days=expiry_days if expiry_days else None,
-    )
-    db.session.add(api_token)
-    db.session.commit()
+    if not user.is_active:
+        return jsonify({"error": "Invalid username or password"}), 401
 
+    if getattr(user, "two_factor_enabled", False):
+        from app.utils.api_auth_2fa import make_api_2fa_temp_token
+
+        return (
+            jsonify(
+                {
+                    "requires_2fa": True,
+                    "temp_token": make_api_2fa_temp_token(user.id),
+                    "error": "Two-factor authentication required",
+                }
+            ),
+            403,
+        )
+
+    plain_token = _issue_app_login_api_token(user)
+    return jsonify({"token": plain_token})
+
+
+@api_v1_bp.route("/auth/2fa/verify", methods=["POST"])
+@limiter.limit("10 per minute", methods=["POST"])
+def auth_2fa_verify():
+    """Complete app login after TOTP verification.
+
+    Accepts JSON: { "temp_token": "...", "code": "123456" }.
+    Returns 200 with { "token": "tt_..." } on success.
+    """
+    from app.utils.api_auth_2fa import load_api_2fa_user_id
+
+    data = request.get_json(silent=True) or {}
+    temp_token = (data.get("temp_token") or "").strip()
+    code = (data.get("code") or "").strip().replace(" ", "")
+
+    if not temp_token or not code:
+        return jsonify({"error": "temp_token and code are required"}), 400
+
+    user_id = load_api_2fa_user_id(temp_token)
+    if not user_id:
+        return jsonify({"error": "Invalid or expired login challenge. Sign in again."}), 401
+
+    user = User.query.get(user_id)
+    if not user or not user.is_active or not getattr(user, "two_factor_enabled", False):
+        return jsonify({"error": "Invalid or expired login challenge. Sign in again."}), 401
+
+    try:
+        import pyotp
+
+        totp = pyotp.TOTP(user.get_two_factor_secret())
+        ok = totp.verify(code, valid_window=1)
+    except Exception:
+        ok = False
+
+    if not ok:
+        return jsonify({"error": "Invalid authentication code"}), 401
+
+    plain_token = _issue_app_login_api_token(user)
     return jsonify({"token": plain_token})
 
 
@@ -2021,6 +2095,202 @@ def delete_project_cost(cost_id):
     return jsonify({"message": "Project cost deleted successfully"})
 
 
+# ==================== Recurring Project Costs ====================
+
+
+@api_v1_bp.route("/projects/<int:project_id>/recurring-costs", methods=["GET"])
+@require_api_token("read:projects")
+def list_recurring_project_costs(project_id):
+    """List recurring project cost templates."""
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 50, type=int)
+
+    query = RecurringProjectCost.query.filter(RecurringProjectCost.project_id == project_id)
+    is_active = request.args.get("is_active")
+    if is_active is not None:
+        query = query.filter(RecurringProjectCost.is_active == (is_active.lower() == "true"))
+
+    query = query.order_by(RecurringProjectCost.next_run_date.asc())
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    pagination_dict = {
+        "page": pagination.page,
+        "per_page": pagination.per_page,
+        "total": pagination.total,
+        "pages": pagination.pages,
+        "has_next": pagination.has_next,
+        "has_prev": pagination.has_prev,
+        "next_page": pagination.page + 1 if pagination.has_next else None,
+        "prev_page": pagination.page - 1 if pagination.has_prev else None,
+    }
+    return jsonify(
+        {
+            "recurring_costs": [item.to_dict() for item in pagination.items],
+            "pagination": pagination_dict,
+        }
+    )
+
+
+@api_v1_bp.route("/projects/<int:project_id>/recurring-costs", methods=["POST"])
+@require_api_token("write:projects")
+def create_recurring_project_cost(project_id):
+    """Create a recurring project cost template."""
+    data = request.get_json() or {}
+    required = ["description", "category", "amount", "frequency", "next_run_date"]
+    missing = [field for field in required if not data.get(field)]
+    if missing:
+        return jsonify({"error": f"Missing required fields: {', '.join(missing)}"}), 400
+
+    freq = (data.get("frequency") or "").lower()
+    if freq not in ("daily", "weekly", "monthly", "yearly"):
+        return jsonify({"error": "Invalid frequency"}), 400
+
+    next_date = _parse_date(data.get("next_run_date"))
+    if not next_date:
+        return jsonify({"error": "Invalid next_run_date (YYYY-MM-DD)"}), 400
+
+    try:
+        amount = Decimal(str(data["amount"]))
+    except (ValueError, TypeError, InvalidOperation):
+        return jsonify({"error": "Invalid amount"}), 400
+
+    recurring = RecurringProjectCost(
+        project_id=project_id,
+        user_id=g.api_user.id,
+        description=data["description"],
+        category=data["category"],
+        amount=amount,
+        frequency=freq,
+        next_run_date=next_date,
+        interval=data.get("interval", 1),
+        end_date=_parse_date(data.get("end_date")),
+        billable=bool(data.get("billable", True)),
+        currency_code=data.get("currency_code", "EUR"),
+        is_active=bool(data.get("is_active", True)),
+    )
+    db.session.add(recurring)
+    db.session.commit()
+    return jsonify({"message": "Recurring project cost created successfully", "recurring_cost": recurring.to_dict()}), 201
+
+
+@api_v1_bp.route("/projects/<int:project_id>/recurring-costs/<int:rid>", methods=["GET"])
+@require_api_token("read:projects")
+def get_recurring_project_cost(project_id, rid):
+    recurring = RecurringProjectCost.query.filter_by(id=rid, project_id=project_id).first_or_404()
+    return jsonify({"recurring_cost": recurring.to_dict()})
+
+
+@api_v1_bp.route("/projects/<int:project_id>/recurring-costs/<int:rid>", methods=["PUT", "PATCH"])
+@require_api_token("write:projects")
+def update_recurring_project_cost(project_id, rid):
+    recurring = RecurringProjectCost.query.filter_by(id=rid, project_id=project_id).first_or_404()
+    data = request.get_json() or {}
+
+    for field in ("description", "category", "currency_code"):
+        if field in data:
+            setattr(recurring, field, data[field])
+    if "frequency" in data and data["frequency"] in ("daily", "weekly", "monthly", "yearly"):
+        recurring.frequency = data["frequency"]
+    if "interval" in data:
+        try:
+            recurring.interval = int(data["interval"])
+        except (ValueError, TypeError):
+            return validation_error_response({"interval": ["Invalid value."]}, message="Invalid interval")
+    if "next_run_date" in data:
+        parsed = _parse_date(data["next_run_date"])
+        if parsed:
+            recurring.next_run_date = parsed
+    if "end_date" in data:
+        recurring.end_date = _parse_date(data["end_date"])
+    for bfield in ("billable", "is_active"):
+        if bfield in data:
+            setattr(recurring, bfield, bool(data[bfield]))
+    if "amount" in data:
+        try:
+            recurring.amount = Decimal(str(data["amount"]))
+        except (ValueError, TypeError, InvalidOperation):
+            return validation_error_response({"amount": ["Invalid value."]}, message="Invalid amount")
+
+    db.session.commit()
+    return jsonify({"message": "Recurring project cost updated successfully", "recurring_cost": recurring.to_dict()})
+
+
+@api_v1_bp.route("/projects/<int:project_id>/recurring-costs/<int:rid>", methods=["DELETE"])
+@require_api_token("write:projects")
+def delete_recurring_project_cost(project_id, rid):
+    recurring = RecurringProjectCost.query.filter_by(id=rid, project_id=project_id).first_or_404()
+    db.session.delete(recurring)
+    db.session.commit()
+    return jsonify({"message": "Recurring project cost deleted successfully"})
+
+
+@api_v1_bp.route("/projects/<int:project_id>/recurring-costs/<int:rid>/generate", methods=["POST"])
+@require_api_token("write:projects")
+def generate_recurring_project_cost(project_id, rid):
+    recurring = RecurringProjectCost.query.filter_by(id=rid, project_id=project_id).first_or_404()
+    original_next_run_date = recurring.next_run_date
+    recurring.next_run_date = datetime.utcnow().date()
+    cost = recurring.generate_cost()
+    if not cost:
+        recurring.next_run_date = original_next_run_date
+        return jsonify({"message": "No cost generated (not due yet or inactive)"}), 200
+    db.session.commit()
+    return jsonify({"message": "Project cost generated successfully", "cost": cost.to_dict()}), 201
+
+
+# ==================== Shared Report Links ====================
+
+
+@api_v1_bp.route("/reports/saved/<int:view_id>/share", methods=["POST"])
+@require_api_token("write:reports")
+def create_shared_report_link(view_id):
+    """Create a public share link for a saved report view."""
+    saved_view = SavedReportView.query.get_or_404(view_id)
+    if saved_view.owner_id != g.api_user.id and not g.api_user.is_admin:
+        return jsonify({"error": "Access denied"}), 403
+
+    data = request.get_json(silent=True) or {}
+    expiry = (data.get("expiry") or "never").lower()
+    expires_in_days = None
+    if expiry == "7d":
+        expires_in_days = 7
+    elif expiry == "30d":
+        expires_in_days = 30
+    elif expiry not in ("never", ""):
+        return jsonify({"error": "Invalid expiry option"}), 400
+
+    password = (data.get("password") or "").strip() or None
+    service = SharedReportService()
+    link = service.create_link(
+        saved_view=saved_view,
+        created_by_id=g.api_user.id,
+        expires_in_days=expires_in_days,
+        password=password,
+    )
+    db.session.commit()
+    url = service.get_public_url(link)
+    return jsonify(
+        {
+            "message": "Share link created successfully",
+            "link": link.to_dict(include_url=True),
+            "url": url,
+        }
+    ), 201
+
+
+@api_v1_bp.route("/reports/saved/<int:view_id>/share/<token>", methods=["DELETE"])
+@require_api_token("write:reports")
+def revoke_shared_report_link(view_id, token):
+    """Revoke a shared report link."""
+    saved_view = SavedReportView.query.get_or_404(view_id)
+    if saved_view.owner_id != g.api_user.id and not g.api_user.is_admin:
+        return jsonify({"error": "Access denied"}), 403
+
+    service = SharedReportService()
+    if not service.revoke_link(view_id, token):
+        return jsonify({"error": "Share link not found"}), 404
+    return jsonify({"message": "Share link revoked successfully"})
+
+
 # ==================== Tax Rules (Admin) ====================
 
 
@@ -2324,28 +2594,6 @@ def remove_favorite_project(project_id):
     db.session.delete(fav)
     db.session.commit()
     return jsonify({"message": "Favorite removed successfully"})
-
-
-# ==================== Audit Logs (Admin) ====================
-
-
-@api_v1_bp.route("/audit-logs", methods=["GET"])
-@require_api_token("admin:all")
-def list_audit_logs():
-    """List audit logs (admin)"""
-    entity_type = request.args.get("entity_type")
-    user_id = request.args.get("user_id", type=int)
-    action = request.args.get("action")
-    limit = request.args.get("limit", type=int) or 100
-    q = AuditLog.query
-    if entity_type:
-        q = q.filter(AuditLog.entity_type == entity_type)
-    if user_id:
-        q = q.filter(AuditLog.user_id == user_id)
-    if action:
-        q = q.filter(AuditLog.action == action)
-    logs = q.order_by(AuditLog.created_at.desc()).limit(limit).all()
-    return jsonify({"audit_logs": [l.to_dict() for l in logs]})
 
 
 # ==================== Activities ====================
@@ -2970,6 +3218,44 @@ def report_summary():
 
 
 # ==================== Users ====================
+
+
+@api_v1_bp.route("/reports/estimates-vs-actuals", methods=["GET"])
+@require_api_token("read:reports")
+def api_estimates_vs_actuals():
+    """JSON estimates vs actuals report."""
+    from app.services.estimate_actuals_service import EstimateActualsService
+
+    project_id = request.args.get("project_id", type=int)
+    data = EstimateActualsService().get_report(
+        project_id=project_id,
+        user_id=g.api_user.id,
+        is_admin=g.api_user.is_admin,
+    )
+    return jsonify(data)
+
+
+@api_v1_bp.route("/users/me/erase", methods=["POST"])
+@require_api_token("read:users")
+def erase_current_user_api():
+    """GDPR erasure for the authenticated API user."""
+    from app.services.user_gdpr_service import UserGdprService
+
+    data = request.get_json(silent=True) or {}
+    if not data.get("confirm"):
+        return jsonify({"error": 'Confirmation required. Send JSON {"confirm": true}.'}), 400
+
+    result = UserGdprService().anonymize_user(
+        user_id=g.api_user.id,
+        actor_id=g.api_user.id,
+        reason=data.get("reason"),
+    )
+    if not result.get("success"):
+        code = 400
+        if result.get("error") == "not_found":
+            code = 404
+        return jsonify(result), code
+    return jsonify(result), 200
 
 
 @api_v1_bp.route("/users/me", methods=["GET"])
@@ -3627,6 +3913,39 @@ def get_stock_levels_api():
         )
 
     return jsonify({"stock_levels": levels})
+
+
+@api_v1_bp.route("/inventory/movements", methods=["GET"])
+@require_api_token(("read:inventory", "read:projects"))
+def list_stock_movements_api():
+    """List stock movements with optional filters and pagination."""
+    blocked = _require_module_enabled_for_api("inventory")
+    if blocked:
+        return blocked
+
+    item_id = request.args.get("item_id", type=int) or request.args.get("stock_item_id", type=int)
+    warehouse_id = request.args.get("warehouse_id", type=int)
+    movement_type = (request.args.get("movement_type") or "").strip()
+    date_from_str = request.args.get("date_from")
+    date_to_str = request.args.get("date_to")
+    date_from, date_to = _parse_date_range(date_from_str, date_to_str)
+
+    query = StockMovement.query
+
+    if item_id:
+        query = query.filter(StockMovement.stock_item_id == item_id)
+    if warehouse_id:
+        query = query.filter(StockMovement.warehouse_id == warehouse_id)
+    if movement_type:
+        query = query.filter(StockMovement.movement_type == movement_type)
+    if date_from:
+        query = query.filter(StockMovement.moved_at >= date_from)
+    if date_to:
+        query = query.filter(StockMovement.moved_at <= date_to)
+
+    result = paginate_query(query.order_by(StockMovement.moved_at.desc()))
+    result["items"] = [m.to_dict() for m in result["items"]]
+    return jsonify(result)
 
 
 @api_v1_bp.route("/inventory/movements", methods=["POST"])
@@ -5478,6 +5797,159 @@ def mileage_gps_list_api():
 
     tracks = GPSTrackingService().get_user_tracks(user_id=user_id, start_date=start, end_date=end)
     return jsonify({"tracks": tracks})
+
+
+# ==================== Focus / Pomodoro Sessions ====================
+
+
+@api_v1_bp.route("/focus-sessions/active", methods=["GET"])
+@require_api_token("read:time_entries")
+def api_v1_focus_active():
+    from app.services.pomodoro_service import PomodoroService
+
+    session = PomodoroService().get_active_session(g.api_user.id)
+    return jsonify({"session": session.to_dict() if session else None})
+
+
+@api_v1_bp.route("/focus-sessions/start", methods=["POST"])
+@require_api_token("write:time_entries")
+def api_v1_focus_start():
+    from app.services.pomodoro_service import PomodoroService
+
+    data = request.get_json() or {}
+    user = g.api_user
+    result = PomodoroService().start_session(
+        user_id=user.id,
+        project_id=data.get("project_id"),
+        task_id=data.get("task_id"),
+        pomodoro_length=int(data.get("pomodoro_length") or getattr(user, "pomodoro_length", None) or 25),
+        short_break_length=int(data.get("short_break_length") or getattr(user, "pomodoro_short_break", None) or 5),
+        long_break_length=int(data.get("long_break_length") or getattr(user, "pomodoro_long_break", None) or 15),
+        long_break_interval=int(
+            data.get("long_break_interval") or getattr(user, "pomodoro_long_break_interval", None) or 4
+        ),
+    )
+    if not result.get("success"):
+        return jsonify(result), 409
+    return jsonify(result), 201
+
+
+@api_v1_bp.route("/focus-sessions/<int:session_id>/cycle", methods=["POST"])
+@require_api_token("write:time_entries")
+def api_v1_focus_cycle(session_id):
+    from app.services.pomodoro_service import PomodoroService
+
+    fs = FocusSession.query.get_or_404(session_id)
+    if fs.user_id != g.api_user.id and not g.api_user.is_admin:
+        return jsonify({"error": "Access denied"}), 403
+    if fs.ended_at:
+        return jsonify({"error": "Session already ended"}), 400
+    return jsonify(PomodoroService().complete_cycle(session_id))
+
+
+@api_v1_bp.route("/focus-sessions/<int:session_id>/interrupt", methods=["POST"])
+@require_api_token("write:time_entries")
+def api_v1_focus_interrupt(session_id):
+    from app.services.pomodoro_service import PomodoroService
+
+    data = request.get_json() or {}
+    fs = FocusSession.query.get_or_404(session_id)
+    if fs.user_id != g.api_user.id and not g.api_user.is_admin:
+        return jsonify({"error": "Access denied"}), 403
+    if fs.ended_at:
+        return jsonify({"error": "Session already ended"}), 400
+    return jsonify(PomodoroService().log_interruption(session_id, reason=data.get("reason")))
+
+
+@api_v1_bp.route("/focus-sessions/finish", methods=["POST"])
+@require_api_token("write:time_entries")
+def api_v1_focus_finish():
+    from app.services.pomodoro_service import PomodoroService
+
+    data = request.get_json() or {}
+    session_id = data.get("session_id")
+    if not session_id:
+        return jsonify({"error": "session_id is required"}), 400
+    fs = FocusSession.query.get_or_404(session_id)
+    if fs.user_id != g.api_user.id and not g.api_user.is_admin:
+        return jsonify({"error": "Access denied"}), 403
+    return jsonify(PomodoroService().end_session(session_id, notes=(data.get("notes") or "").strip() or None))
+
+
+@api_v1_bp.route("/focus-sessions/summary", methods=["GET"])
+@require_api_token("read:time_entries")
+def api_v1_focus_summary():
+    from app.services.pomodoro_service import PomodoroService
+
+    days = int(request.args.get("days", 7))
+    return jsonify(PomodoroService().get_session_stats(g.api_user.id, days=days))
+
+
+# ==================== Gamification ====================
+
+
+@api_v1_bp.route("/gamification/me", methods=["GET"])
+@require_api_token("read:users")
+def api_v1_gamification_me():
+    """Return badges and points for the authenticated API user."""
+    blocked = _require_module_enabled_for_api("gamification")
+    if blocked:
+        return blocked
+
+    from app.routes.gamification import ensure_default_gamification_data
+    from app.services.gamification_service import GamificationService
+
+    ensure_default_gamification_data()
+    svc = GamificationService()
+    return jsonify(
+        {
+            "badges": svc.get_user_badges(g.api_user.id),
+            "points": svc.get_user_points(g.api_user.id),
+        }
+    )
+
+
+@api_v1_bp.route("/gamification/badges", methods=["GET"])
+@require_api_token("read:users")
+def api_v1_gamification_badges():
+    """List active badge definitions."""
+    blocked = _require_module_enabled_for_api("gamification")
+    if blocked:
+        return blocked
+
+    from app.models.gamification import Badge
+    from app.routes.gamification import ensure_default_gamification_data
+
+    ensure_default_gamification_data()
+    badges = Badge.query.filter_by(is_active=True).order_by(Badge.points.asc()).all()
+    return jsonify({"badges": [b.to_dict() for b in badges]})
+
+
+@api_v1_bp.route("/gamification/leaderboard", methods=["GET"])
+@require_api_token("read:users")
+def api_v1_gamification_leaderboard():
+    """Return leaderboard entries for an active board."""
+    blocked = _require_module_enabled_for_api("gamification")
+    if blocked:
+        return blocked
+
+    from app.models.gamification import Leaderboard
+    from app.routes.gamification import ensure_default_gamification_data
+    from app.services.gamification_service import GamificationService
+
+    ensure_default_gamification_data()
+    board_id = request.args.get("board_id", type=int)
+    board = Leaderboard.query.get(board_id) if board_id else Leaderboard.query.filter_by(is_active=True).first()
+    if not board:
+        return jsonify({"leaderboard": None, "entries": []})
+
+    svc = GamificationService()
+    try:
+        svc.calculate_leaderboard(board.id)
+    except Exception:
+        pass
+    limit = min(request.args.get("limit", 50, type=int) or 50, 100)
+    return jsonify({"leaderboard": board.to_dict(), "entries": svc.get_leaderboard(board.id, limit=limit)})
 
 
 # ==================== Error Handlers ====================

@@ -121,12 +121,20 @@
                     <div>
                         <label for="idle_timeout_minutes" class="form-label">Idle Timeout (Minutes)</label>
                         <input type="number" name="idle_timeout_minutes" id="idle_timeout_minutes" value="{{ settings.idle_timeout_minutes }}" required class="form-input">
-                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ _('After this much inactivity, clients are asked "Still working?" and unanswered timers are flagged for review (they keep running).') }}</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ _('After this much inactivity, clients ask "Still working?" with a 5-minute window to answer.') }}</p>
+                    </div>
+                    <div>
+                        <label for="idle_unanswered_action" class="form-label">{{ _('When "Still working?" is not answered') }}</label>
+                        <select name="idle_unanswered_action" id="idle_unanswered_action" class="form-input">
+                            <option value="review" {% if (settings.idle_unanswered_action or 'review') == 'review' %}selected{% endif %}>{{ _('Flag for review (timer keeps running)') }}</option>
+                            <option value="auto_stop" {% if settings.idle_unanswered_action == 'auto_stop' %}selected{% endif %}>{{ _('Stop timer and keep the idle window') }}</option>
+                        </select>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ _('Review mode never silently truncates time. Auto-stop credits last activity plus the idle timeout (Issue #722).') }}</p>
                     </div>
                     <div>
                         <label for="idle_auto_stop_hours" class="form-label">{{ _('Idle Safety Cap (Hours)') }}</label>
                         <input type="number" name="idle_auto_stop_hours" id="idle_auto_stop_hours" value="{{ settings.idle_auto_stop_hours or 0 }}" min="0" max="168" class="form-input">
-                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ _('Auto-stop a flagged timer after this many hours unanswered (credited to last activity, entry stays flagged for review). 0 disables the cap.') }}</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ _('Only applies in review mode: auto-stop a flagged timer after this many hours unanswered (credited to last activity, entry stays flagged). 0 disables the cap.') }}</p>
                     </div>
                     <div>
                         <label for="rounding_method" class="form-label">{{ _('Rounding Method') }}</label>
@@ -363,15 +371,40 @@
                         <input type="text" name="company_website" id="company_website" value="{{ settings.company_website }}" class="form-input">
                     </div>
                     <div class="md:col-span-2">
-                        <label for="company_address" class="form-label">Company Address</label>
+                        <label for="company_address" class="form-label">Company Address (free text / fallback)</label>
                         <textarea name="company_address" id="company_address" rows="3" class="form-input">{{ settings.company_address }}</textarea>
+                    </div>
+                    <div>
+                        <label for="company_street" class="form-label">{{ _('Street') }}</label>
+                        <input type="text" name="company_street" id="company_street" value="{{ getattr(settings, 'company_street', '') or '' }}" class="form-input" placeholder="{{ _('Street and number') }}">
+                    </div>
+                    <div>
+                        <label for="company_postcode" class="form-label">{{ _('Postcode') }}</label>
+                        <input type="text" name="company_postcode" id="company_postcode" value="{{ getattr(settings, 'company_postcode', '') or '' }}" class="form-input">
+                    </div>
+                    <div>
+                        <label for="company_city" class="form-label">{{ _('City') }}</label>
+                        <input type="text" name="company_city" id="company_city" value="{{ getattr(settings, 'company_city', '') or '' }}" class="form-input">
+                    </div>
+                    <div>
+                        <label for="company_country" class="form-label">{{ _('Country (ISO 3166-1 alpha-2)') }}</label>
+                        <input type="text" name="company_country" id="company_country" value="{{ getattr(settings, 'company_country', '') or '' }}" class="form-input" maxlength="2" placeholder="AT">
+                        <p class="mt-1 text-xs text-text-muted-light dark:text-text-muted-dark">{{ _('Required for Factur-X / ZUGFeRD (seller country BT-40).') }}</p>
                     </div>
                     <div>
                         <label for="company_tax_id" class="form-label">Tax ID (optional)</label>
                         <input type="text" name="company_tax_id" id="company_tax_id" value="{{ settings.company_tax_id }}" class="form-input">
                     </div>
                     <div>
-                        <label for="company_bank_info" class="form-label">Bank Information (optional)</label>
+                        <label for="company_iban" class="form-label">{{ _('IBAN') }}</label>
+                        <input type="text" name="company_iban" id="company_iban" value="{{ getattr(settings, 'company_iban', '') or '' }}" class="form-input" placeholder="AT00 0000 0000 0000 0000">
+                    </div>
+                    <div>
+                        <label for="company_bic" class="form-label">{{ _('BIC') }}</label>
+                        <input type="text" name="company_bic" id="company_bic" value="{{ getattr(settings, 'company_bic', '') or '' }}" class="form-input" placeholder="BKAUATWW">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label for="company_bank_info" class="form-label">Bank Information (optional, free text)</label>
                         <textarea name="company_bank_info" id="company_bank_info" rows="3" class="form-input">{{ settings.company_bank_info }}</textarea>
                     </div>
                 </div>
@@ -501,6 +534,37 @@
                     <div class="md:col-span-2">
                         <label for="invoices_verapdf_path" class="form-label">veraPDF executable path</label>
                         <input type="text" name="invoices_verapdf_path" id="invoices_verapdf_path" value="{{ getattr(settings, 'invoices_verapdf_path', '') or '' }}" class="form-input" placeholder="e.g. /usr/bin/verapdf or C:\verapdf\verapdf.exe">
+                    </div>
+
+                    <div>
+                        <label for="invoices_default_vat_category" class="form-label">{{ _('Default VAT category (Factur-X)') }}</label>
+                        <select name="invoices_default_vat_category" id="invoices_default_vat_category" class="form-input">
+                            {% set vat_cat = getattr(settings, 'invoices_default_vat_category', 'S') or 'S' %}
+                            <option value="S" {% if vat_cat == 'S' %}selected{% endif %}>S — Standard rate</option>
+                            <option value="Z" {% if vat_cat == 'Z' %}selected{% endif %}>Z — Zero rated</option>
+                            <option value="E" {% if vat_cat == 'E' %}selected{% endif %}>E — Exempt</option>
+                            <option value="AE" {% if vat_cat == 'AE' %}selected{% endif %}>AE — Reverse charge</option>
+                            <option value="K" {% if vat_cat == 'K' %}selected{% endif %}>K — Intra-Community</option>
+                            <option value="G" {% if vat_cat == 'G' %}selected{% endif %}>G — Export outside EU</option>
+                            <option value="O" {% if vat_cat == 'O' %}selected{% endif %}>O — Not subject to VAT</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="vat_exemption_preset" class="form-label">{{ _('Exemption preset') }}</label>
+                        <select id="vat_exemption_preset" class="form-input" onchange="applyVatExemptionPreset(this.value)">
+                            <option value="">{{ _('— Select preset —') }}</option>
+                            <option value="at_kleinunternehmer">AT Kleinunternehmer §6 Abs. 1 Z 27 UStG</option>
+                            <option value="de_kleinunternehmer">DE Kleinunternehmer §19 UStG</option>
+                            <option value="reverse_charge">Reverse charge (VATEX-EU-AE)</option>
+                        </select>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label for="invoices_default_vat_exemption_reason" class="form-label">{{ _('Default VAT exemption reason') }}</label>
+                        <input type="text" name="invoices_default_vat_exemption_reason" id="invoices_default_vat_exemption_reason" value="{{ getattr(settings, 'invoices_default_vat_exemption_reason', '') or '' }}" class="form-input">
+                    </div>
+                    <div>
+                        <label for="invoices_default_vat_exemption_code" class="form-label">{{ _('Default VAT exemption code') }}</label>
+                        <input type="text" name="invoices_default_vat_exemption_code" id="invoices_default_vat_exemption_code" value="{{ getattr(settings, 'invoices_default_vat_exemption_code', '') or '' }}" class="form-input" placeholder="VATEX-EU-O">
                     </div>
 
                     <div>
@@ -707,18 +771,41 @@
                     <div>
                         <label for="ai_provider" class="form-label">{{ _('Provider') }}</label>
                         <select name="ai_provider" id="ai_provider" class="form-input">
-                            <option value="ollama" {% if ai_config.provider == 'ollama' %}selected{% endif %}>Ollama / local OpenAI-compatible</option>
-                            <option value="openai_compatible" {% if ai_config.provider == 'openai_compatible' %}selected{% endif %}>Hosted OpenAI-compatible</option>
+                            <option value="ollama" {% if ai_config.provider == 'ollama' %}selected{% endif %}>Ollama (local)</option>
+                            <option value="openai" {% if ai_config.provider == 'openai' %}selected{% endif %}>OpenAI</option>
+                            <option value="anthropic" {% if ai_config.provider == 'anthropic' %}selected{% endif %}>Anthropic</option>
+                            <option value="gemini" {% if ai_config.provider == 'gemini' %}selected{% endif %}>Google Gemini</option>
+                            <option value="orcarouter" {% if ai_config.provider == 'orcarouter' %}selected{% endif %}>OrcaRouter</option>
+                            <option value="openai_compatible" {% if ai_config.provider == 'openai_compatible' %}selected{% endif %}>{{ _('Custom OpenAI-compatible') }}</option>
                         </select>
                     </div>
                     <div>
                         <label for="ai_base_url" class="form-label">{{ _('Base URL') }}</label>
                         <input type="url" name="ai_base_url" id="ai_base_url" value="{{ settings.ai_base_url or ai_config.base_url }}" placeholder="http://127.0.0.1:11434" class="form-input">
-                        <p class="mt-1 text-xs text-text-muted-light dark:text-text-muted-dark">{{ _('For Ollama, this is the URL from the Flask server to Ollama.') }}</p>
+                        <p class="mt-1 text-xs text-text-muted-light dark:text-text-muted-dark">{{ _('Auto-filled for named providers. Override for self-hosted OrcaRouter or custom gateways.') }}</p>
+                        <details class="mt-2">
+                            <summary class="text-xs text-primary cursor-pointer">{{ _('Advanced: manual base URL') }}</summary>
+                            <p class="mt-1 text-xs text-text-muted-light dark:text-text-muted-dark">{{ _('Leave blank to use the provider preset. For Ollama use http://127.0.0.1:11434; for OrcaRouter use https://api.orcarouter.ai.') }}</p>
+                        </details>
                     </div>
                     <div>
                         <label for="ai_model" class="form-label">{{ _('Model') }}</label>
-                        <input type="text" name="ai_model" id="ai_model" value="{{ settings.ai_model or ai_config.model }}" placeholder="llama3.1" class="form-input">
+                        <input type="text" name="ai_model" id="ai_model" list="ai_model_suggestions" value="{{ settings.ai_model or ai_config.model }}" placeholder="llama3.1" class="form-input">
+                        <datalist id="ai_model_suggestions">
+                            {% for m in ai_config.suggested_models or [] %}
+                            <option value="{{ m }}"></option>
+                            {% endfor %}
+                        </datalist>
+                    </div>
+                    <div id="ai_routing_strategy_wrap" class="{% if ai_config.provider != 'orcarouter' %}hidden{% endif %}">
+                        <label for="ai_routing_strategy" class="form-label">{{ _('OrcaRouter routing strategy') }}</label>
+                        <select name="ai_routing_strategy" id="ai_routing_strategy" class="form-input">
+                            <option value="" {% if not ai_config.routing_strategy %}selected{% endif %}>{{ _('Default') }}</option>
+                            <option value="cost" {% if ai_config.routing_strategy == 'cost' %}selected{% endif %}>{{ _('Cost') }}</option>
+                            <option value="quality" {% if ai_config.routing_strategy == 'quality' %}selected{% endif %}>{{ _('Quality') }}</option>
+                            <option value="balanced" {% if ai_config.routing_strategy == 'balanced' %}selected{% endif %}>{{ _('Balanced') }}</option>
+                        </select>
+                        <p class="mt-1 text-xs text-text-muted-light dark:text-text-muted-dark">{{ _('Sent as x-routing-strategy when using OrcaRouter.') }}</p>
                     </div>
                     <div>
                         <label for="ai_api_key" class="form-label">{{ _('Hosted API key') }}</label>
@@ -812,6 +899,13 @@
             <div id="section-analytics">
                 <h2 class="text-lg font-semibold mb-4">{{ _('Privacy & Analytics') }}</h2>
                 <div class="space-y-4">
+                    <div class="flex items-center">
+                        <input type="checkbox" name="portal_allowed_custom_domains" id="portal_allowed_custom_domains" {% if settings.portal_allowed_custom_domains %}checked{% endif %} class="h-4 w-4 rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <label for="portal_allowed_custom_domains" class="ml-2 block text-sm text-gray-900 dark:text-gray-300">{{ _('Allow portal custom domains') }}</label>
+                    </div>
+                    <p class="text-xs text-text-muted-light dark:text-text-muted-dark ml-6">
+                        {{ _('When enabled, clients with a custom domain set will be resolved by Host header. See nginx/CUSTOM_DOMAINS.md for TLS setup.') }}
+                    </p>
                     <p class="text-sm text-text-muted-light dark:text-text-muted-dark">
                         <strong>Minimal install telemetry (always on):</strong> Version, platform, and last-seen heartbeat so we can understand install footprint and distribution. No personal data.
                     </p>
@@ -1040,6 +1134,34 @@ document.addEventListener('DOMContentLoaded', function() {
         togglePeppolTransport();
     }
 
+    window.applyVatExemptionPreset = function(preset) {
+        const presets = {
+            at_kleinunternehmer: {
+                category: 'E',
+                code: 'VATEX-EU-O',
+                reason: 'Kleinunternehmerregelung §6 Abs. 1 Z 27 UStG'
+            },
+            de_kleinunternehmer: {
+                category: 'E',
+                code: 'VATEX-EU-O',
+                reason: 'Steuerfreie Kleinunternehmerleistung gemäß §19 UStG'
+            },
+            reverse_charge: {
+                category: 'AE',
+                code: 'VATEX-EU-AE',
+                reason: 'Reverse charge'
+            }
+        };
+        const p = presets[preset];
+        if (!p) return;
+        const cat = document.getElementById('invoices_default_vat_category');
+        const code = document.getElementById('invoices_default_vat_exemption_code');
+        const reason = document.getElementById('invoices_default_vat_exemption_reason');
+        if (cat) cat.value = p.category;
+        if (code) code.value = p.code;
+        if (reason) reason.value = p.reason;
+    };
+
     const ldapTestBtn = document.getElementById('ldapTestConnectionBtn');
     const ldapTestResult = document.getElementById('ldapTestConnectionResult');
     if (ldapTestBtn && ldapTestResult) {
@@ -1157,6 +1279,46 @@ document.addEventListener('DOMContentLoaded', function() {
                 claudeTestBtn.disabled = false;
             }
         });
+    }
+
+    const aiProviderSelect = document.getElementById('ai_provider');
+    const aiBaseUrlInput = document.getElementById('ai_base_url');
+    const aiModelInput = document.getElementById('ai_model');
+    const aiModelList = document.getElementById('ai_model_suggestions');
+    const aiRoutingWrap = document.getElementById('ai_routing_strategy_wrap');
+    const aiPresets = {
+        ollama: { base_url: 'http://127.0.0.1:11434', models: ['llama3.1', 'llama3.2', 'mistral', 'qwen2.5'], default_model: 'llama3.1' },
+        openai: { base_url: 'https://api.openai.com', models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'], default_model: 'gpt-4o-mini' },
+        anthropic: { base_url: 'https://api.anthropic.com', models: ['claude-opus-4-5', 'claude-sonnet-4-5'], default_model: 'claude-sonnet-4-5' },
+        gemini: { base_url: 'https://generativelanguage.googleapis.com/v1beta/openai', models: ['gemini-2.0-flash', 'gemini-1.5-pro'], default_model: 'gemini-2.0-flash' },
+        orcarouter: { base_url: 'https://api.orcarouter.ai', models: ['auto'], default_model: 'auto' },
+        openai_compatible: { base_url: '', models: [], default_model: '' }
+    };
+    function applyAiProviderPreset(fillDefaults) {
+        if (!aiProviderSelect) return;
+        const preset = aiPresets[aiProviderSelect.value] || aiPresets.openai_compatible;
+        if (aiRoutingWrap) {
+            aiRoutingWrap.classList.toggle('hidden', aiProviderSelect.value !== 'orcarouter');
+        }
+        if (aiModelList) {
+            aiModelList.innerHTML = '';
+            (preset.models || []).forEach(function(m) {
+                const opt = document.createElement('option');
+                opt.value = m;
+                aiModelList.appendChild(opt);
+            });
+        }
+        if (!fillDefaults) return;
+        if (aiBaseUrlInput && preset.base_url) {
+            aiBaseUrlInput.value = preset.base_url;
+        }
+        if (aiModelInput && preset.default_model && (!aiModelInput.value || Object.values(aiPresets).some(function(p){ return (p.models||[]).includes(aiModelInput.value) || p.default_model === aiModelInput.value; }))) {
+            aiModelInput.value = preset.default_model;
+        }
+    }
+    if (aiProviderSelect) {
+        applyAiProviderPreset(false);
+        aiProviderSelect.addEventListener('change', function() { applyAiProviderPreset(true); });
     }
 });
 </script>

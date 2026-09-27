@@ -7,6 +7,135 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.17.2] - 2026-09-25
+
+### Fixed
+
+- **Idle dashboard 429 Too Many Requests (#767)** — Global `RATELIMIT_DEFAULT` was too strict (`50 per hour` per IP) for background timer polling. Default is now `5000 per day;1000 per hour`, keyed per logged-in user (IP for anonymous). Polling endpoints (`/timer/status`, `/api/timer/status`, `/api/timer/heartbeat`, `/api/notifications`, `/service-worker.js`, `/offline`) are exempt. JSON `Accept` / API requests get a JSON 429 body; floating timer bar and idle pollers back off on 429 and skip while the tab is hidden.
+- **OpenTelemetry export respects telemetry opt-in** — OTLP export to the baked-in shared Grafana Cloud tenant now requires the telemetry opt-in (`ENABLE_TELEMETRY` / admin toggle). Operator-owned backends configured via explicit `OTEL_EXPORTER_OTLP_ENDPOINT` + `OTEL_EXPORTER_OTLP_TOKEN` still export without the opt-in. Metric attributes are normalized (status class, environment) and `http.server.duration` histogram buckets are tightened.
+
+### Documentation
+
+- **Version** — Bumped `setup.py` to **5.17.2**; `VERSION` and desktop/browser-extension/mobile client versions aligned.
+
+## [5.17.1] - 2026-09-23
+
+### Fixed
+
+- **Health probes rate-limited** — `/_health`, `/_ready`, `/api/health`, and `/api/v1/health` are now exempt from the default rate limit. Render probes `/_health` every 5s from a single IP, which exceeded the default limit, returned 429, and caused the instance to be marked unhealthy and restarted (surfacing as 502s).
+
+### Documentation
+
+- **Version** — Bumped `setup.py` to **5.17.1**; `VERSION` and desktop/browser-extension/mobile client versions aligned.
+
+## [5.17.0] - 2026-09-23
+
+### Added
+
+- **Factur-X / ZUGFeRD compliance (Discussion #433)** — Structured company and client addresses (street, postcode, city, country), IBAN/BIC, default and per-invoice VAT category (S/Z/E/AE/K/G/O) with AT/DE Kleinunternehmer and reverse-charge presets (migration **196**). Invoice PDFs embed Liberation TrueType fonts for PDF/A font compliance. Single-pass Factur-X embed + PDF/A-3b (catalog `/AF`, pdfaExtension XMP, OutputIntent). CII XML fixes for EN 16931 (element order, currencyID only on TaxTotalAmount, correct VAT exemptions, Peppol endpoint as URIID, payment means, prepaid amounts). Pre-export validation blocks missing seller/buyer country or AE without buyer VAT ID.
+- **Idle unanswered action (#722)** — Admin setting `idle_unanswered_action` (`review` default, or `auto_stop`) controls what happens when the "Still working?" grace window expires unanswered. Auto-stop credits last activity plus the idle timeout across the server sweep, web, browser extension, desktop, and mobile clients.
+- **Phase 4 (gap roadmap)** — GDPR user erasure (`UserGdprService`, `POST /api/v1/users/me/erase`, admin `POST /admin/users/<id>/erase`, `POST /api/erase-account`); API v1 list/get for weekly goals, recurring tasks, and project templates; estimates vs actuals report (HTML + JSON); two-step timesheet period approval when multi-level policy is enabled; experimental XRechnung XML helper; Mollie payment provider skeleton; admin module quick presets (Solo focus); custom field definitions `entity_type` for client/project/task/time entry (migration **197**).
+- **Phase 5 enterprise foundations** — Design docs under `docs/design/` (OAuth 2.0 API apps, SAML/SCIM, multi-tenant, Zapier/Make webhooks, Teams bot parity). Scaffolding: OAuth application models (migration **198**), optional SCIM `GET /scim/v2/Users` stub (`SCIM_ENABLED`), `POST /api/v1/ai/summarize-entries`, Teams bot command stub.
+
+### Changed
+
+- **Security / hygiene** — Legacy integration webhook CSRF-exempt; default `RATELIMIT_DEFAULT`; rate limits on version check/dismiss; hot-path silent `except`/`pass` replaced with logged handling; Ruff S110 enabled; admin API tokens/backups and API v1 audit-logs extracted from god files.
+- **UI consistency** — Bootstrap leftover class cleanup; shared `ttConfirm`/`ttAlert` dialogs; empty states on major list pages; expanded command palette; client versions aligned to **5.17.0**.
+- **Dead code** — Removed unregistered `timer_refactored.py`, `invoices_refactored.py`, `projects_refactored_example.py`, `offers.py`.
+
+### Documentation
+
+- **Factur-X / ZUGFeRD** — [PEPPOL_EINVOICING.md](docs/admin/configuration/PEPPOL_EINVOICING.md) updated for structured addresses, VAT categories, embedded fonts, single-pass PDF/A-3, and migration **196**.
+- **Gap roadmap** — `docs/GAP_ROADMAP.md` tracks Phases 0–5 remediation status.
+- **Version** — Bumped `setup.py` to **5.17.0** (single source of truth for the application version).
+
+## [5.16.0] - 2026-09-18
+
+### Added
+
+- **Client–team messaging** — New `ClientMessage` model, message service, and UI for bidirectional in-portal messaging between the internal team and client contacts; threads visible from both the client view and the client portal (migration **194**).
+- **Email thread sync (Gmail & Outlook)** — `GmailConnector` and `OutlookEmailConnector` pull email threads from Gmail API and Microsoft Graph and link them to CRM clients, leads, and deals; `EmailSyncService` handles OAuth token refresh and incremental sync; dedicated setup wizards for both providers.
+- **Payroll sync (Gusto & ADP)** — `GustoConnector` and `AdpConnector` aggregate time entries into payroll batches and push them to Gusto's Partner API and ADP Workforce Now; `PayrollSyncService` builds period-scoped batches and `PayrollSyncLog` tracks sync history (migration **194**).
+- **DATEV accounting export** — `DatevConnector` generates EXTF Buchungsstapel CSV for direct import into DATEV; `datev_export.py` utility handles the format spec.
+- **Sage Business Cloud integration** — `SageConnector` syncs invoices, contacts, and payments with Sage Business Cloud Accounting via OAuth2.
+- **Integration setup wizards** — Guided step-by-step wizards for ADP, DATEV, Gmail, Gusto, Outlook Email, and Sage make credential configuration consistent with existing integrations.
+- **Visual workflow builder** — Drag-and-drop canvas (`visual_builder.html`) for constructing automation workflows without editing JSON; accessible alongside the existing form editor.
+- **Portal custom domain resolution** — `portal_domain.py` utility resolves white-label client portal hosts to the correct `Client` record, enabling custom-domain client portals when `portal_allowed_custom_domains` is enabled.
+- **Client Portal REST API** — `api_v1_client_portal.py` blueprint exposes authenticated REST endpoints for portal sessions and client data access.
+
+### Documentation
+
+- **Version** — Bumped `setup.py` to **5.16.0** (single source of truth for the application version).
+
+## [5.15.0] - 2026-09-16
+
+### Added
+
+- **Timer start-time override (#760)** — Start a new timer at a custom time, or adjust the start while already running; the timer page and API both support the override.
+- **Pomodoro / Focus sessions** — Pomodoro sessions are now wired into the timer API and UI so focus blocks are tracked and surfaced alongside regular time entries.
+- **Expense lifecycle on mobile & desktop** — Full expense CRUD (submit, approve, reject, reimburse) now available in the Flutter mobile and Electron desktop clients.
+- **Payroll export templates** — Admins can configure reusable payroll export templates (admin panel + geofence management pages); exports are rendered via the template engine.
+- **QuickBooks & Xero sync depth** — Extended accounting sync covers additional entity types, mapping, and error-route handling for both integrations.
+- **ActivityWatch rules, inbox & sync errors** — Rules engine and merge filters for ActivityWatch events; a dedicated review inbox and sync-error route surface unmatched entries.
+- **Gamification — badges, leaderboards & award hooks** — Badge definitions, leaderboard calculations, and award-hook endpoints exposed via the API for team engagement features.
+- **Calendar drag-and-drop** — Events on the calendar view can be moved and resized by dragging, updating the underlying time entry in real time.
+- **Recurring project cost engine** — Projects can have recurring costs that are calculated and posted automatically on a configured schedule.
+- **Public shareable report links** — Reports can be shared via a public, tokenized URL without requiring the recipient to log in.
+- **Geofencing policies** — Attendance module gains location-based clock-in policies; admin UI added for geofence management.
+- **Gap-feature models & dashboard surface** — New database models and migrations for the product-gap backlog; key features registered and surfaced on the main dashboard.
+- **Mobile API extensions** — Flutter client extended with expense, report, and geofencing API calls.
+- **New API endpoints** — Focus sessions, recurring project costs, and shared report endpoints added to the REST API.
+
+### Fixed
+
+- **Inventory PO lines & edit form (#759)** — Correct stock IDs on PO lines and restore the broken edit form.
+- **Migrations PostgreSQL boolean defaults** — Migration server defaults now use `true`/`false` literals instead of `1`/`0` for PostgreSQL compatibility.
+- **Dashboard Open Timer link** — Use the correct `timer_page` endpoint for the "Open timer" link so it no longer 404s.
+
+### Changed
+
+- **Dependencies** — Bumped `weasyprint` (pip group).
+
+### Documentation
+
+- **Version** — Bumped `setup.py` to **5.15.0** (single source of truth for the application version).
+
+## [5.14.1] - 2026-09-09
+
+### Fixed
+
+- **Docker base images (expired Bullseye security repo)** — Upgrade `node:18-slim` → `node:20-slim` (satisfies sharp’s Node engine) and `python:3.11-slim-bullseye` → `python:3.11-slim-bookworm` so `apt-get update` no longer fails on fresh CI builds after Debian 11’s bullseye-security InRelease expired.
+
+### Documentation
+
+- **Version** — Bumped `setup.py` to **5.14.1** (single source of truth for the application version).
+
+## [5.14.0] - 2026-09-09
+
+### Added
+
+- **OrcaRouter AI provider** — Added `orcarouter` as a named AI provider option (OpenAI-compatible endpoint, standard Bearer-token auth). Admins can select it in System Settings → AI Helper or set `AI_PROVIDER=orcarouter` with `AI_BASE_URL=https://api.orcarouter.ai`.
+
+### Documentation
+
+- **Version** — Bumped `setup.py` to **5.14.0** (single source of truth for the application version).
+
+## [5.13.5] - 2026-09-08
+
+### Fixed
+
+- **Timezone `local_date` crash on plain dates** — Dashboard crashed when `Task.due_date` (a calendar date) was piped through `|local_date`, which assumed a datetime and read `.tzinfo`. Skip timezone conversion for date-only values, matching `format_user_datetime`.
+- **Idle auto-stop on paused timers (#752)** — Paused timers stop heartbeating, so the idle sweep treated them as idle: “Still working?” push, needs-review flag, then optional auto-stop. Guard the idle query on `paused_at IS NULL` so intentionally paused timers are skipped.
+- **Manual entry single-client lock (#753)** — The manual time-entry form passed `force_selectable=True` to the client select, which bypassed the single-client readonly lock. Dropping the flag restores the pre-filled lock when the org has exactly one client.
+
+### Changed
+
+- **Client versions** — Synced Electron (`desktop/package.json`), Flutter (`mobile/pubspec.yaml`), and Chromium extension (`browser-extension/manifest.json` / `package.json`) to **5.13.5** with the webapp (`setup.py`).
+
+### Documentation
+
+- **Version** — Bumped `setup.py` to **5.13.5** (single source of truth for the application version).
+
 ## [5.13.4] - 2026-09-04
 
 ### Fixed

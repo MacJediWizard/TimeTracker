@@ -184,7 +184,7 @@
                     {% if active_timer.project %}
                         <i class="fas fa-folder text-blue-600 dark:text-blue-400 mr-2"></i>{{ active_timer.project.name }}
                     {% elif active_timer.client %}
-                        <i class="fas fa-building text-blue-600 dark:text-blue-400 mr-2"></i>{{ active_timer.client.name }} <span class="text-xs text-gray-500">({{ _('Direct') }})</span>
+                        <i class="fas fa-building text-blue-600 dark:text-blue-400 mr-2"></i>{{ active_timer.client.name }} <span class="text-xs text-gray-500 dark:text-gray-400">({{ _('Direct') }})</span>
                     {% else %}
                         {{ _('No project') }}
                     {% endif %}
@@ -417,6 +417,40 @@
         <a href="{{ url_for('reports.utilization_report') }}" class="text-xs text-teal-700 dark:text-teal-300 hover:underline">{{ _('Open report') }}</a>
     </div>
     {% endif %}
+    <div class="bg-gradient-to-br from-indigo-50 to-indigo-100 dark:from-indigo-900/20 dark:to-indigo-800/20 border border-indigo-200 dark:border-indigo-800 p-6 rounded-xl shadow-sm dashboard-widget" id="focusTodayCard">
+        <div class="flex items-center justify-between mb-2">
+            <div>
+                <p class="text-sm font-medium text-indigo-600 dark:text-indigo-400 mb-1">{{ _('Focus today') }}</p>
+                <div class="flex items-baseline gap-2">
+                    <span class="text-2xl lg:text-3xl font-bold text-indigo-900 dark:text-indigo-100" id="focusTodayCycles">{{ focus_today_cycles|default(0) }}</span>
+                    <span class="text-sm text-indigo-600/70 dark:text-indigo-400/70">{{ _('cycles') }}</span>
+                </div>
+                <p class="mt-1 text-xs text-indigo-700 dark:text-indigo-300">
+                    {{ focus_today_minutes|default(0) }} {{ _('min') }} · {{ focus_today_sessions|default(0) }} {{ _('sessions') }}
+                </p>
+            </div>
+            <div class="bg-indigo-500/10 dark:bg-indigo-400/10 p-4 rounded-full">
+                <i class="fas fa-brain text-indigo-600 dark:text-indigo-400 text-2xl"></i>
+            </div>
+        </div>
+        <a href="{{ url_for('timer.timer_page') }}" class="text-xs text-indigo-700 dark:text-indigo-300 hover:underline">{{ _('Open timer') }}</a>
+    </div>
+    <div class="bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-900/20 dark:to-amber-800/20 border border-amber-200 dark:border-amber-800 p-6 rounded-xl shadow-sm dashboard-widget">
+        <div class="flex items-center justify-between mb-2">
+            <div>
+                <p class="text-sm font-medium text-amber-600 dark:text-amber-400 mb-1">{{ _('Badges') }}</p>
+                <div class="flex items-baseline gap-2">
+                    <span class="text-2xl lg:text-3xl font-bold text-amber-900 dark:text-amber-100">{{ gamification_points|default(0) }}</span>
+                    <span class="text-sm text-amber-600/70 dark:text-amber-400/70">{{ _('pts') }}</span>
+                </div>
+                <p class="mt-1 text-xs text-amber-700 dark:text-amber-300">{{ gamification_badge_count|default(0) }} {{ _('earned') }}</p>
+            </div>
+            <div class="bg-amber-500/10 dark:bg-amber-400/10 p-4 rounded-full">
+                <i class="fas fa-trophy text-amber-600 dark:text-amber-400 text-2xl"></i>
+            </div>
+        </div>
+        <a href="{{ url_for('gamification.leaderboard_page') }}" class="text-xs text-amber-700 dark:text-amber-300 hover:underline">{{ _('Leaderboard') }}</a>
+    </div>
 </div>
 
 <!-- Value Dashboard: productivity insights (filled via /api/stats/value-dashboard) -->
@@ -646,7 +680,7 @@
                             <td colspan="4" class="p-12 text-center">
                                 <div class="flex flex-col items-center justify-center">
                                     <div class="bg-gray-100 dark:bg-gray-800 rounded-full p-6 w-20 h-20 mx-auto mb-4 flex items-center justify-center">
-                                        <i class="fas fa-inbox text-3xl text-gray-400"></i>
+                                        <i class="fas fa-inbox text-3xl text-gray-400 dark:text-gray-500" aria-hidden="true"></i>
                                     </div>
                                     <p class="text-text-muted-light dark:text-text-muted-dark font-medium mb-1">{{ _('No recent entries found.') }}</p>
                                     <p class="text-sm text-text-muted-light dark:text-text-muted-dark">{{ _('Start tracking time to see entries here.') }}</p>
@@ -673,8 +707,8 @@
                         </div>
                         <h2 class="text-lg font-semibold">{{ _('Weekly Goal') }}</h2>
                     </div>
-                    <a href="{{ url_for('weekly_goals.index') }}" class="text-white/80 hover:text-white transition-colors">
-                        <i class="fas fa-external-link-alt"></i>
+                    <a href="{{ url_for('weekly_goals.index') }}" class="text-white/80 hover:text-white transition-colors" aria-label="{{ _('View weekly goals') }}">
+                        <i class="fas fa-external-link-alt" aria-hidden="true"></i>
                     </a>
                 </div>
                 <div class="mb-4">
@@ -708,7 +742,7 @@
             <div class="bg-card-light dark:bg-card-dark p-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 animated-card border-2 border-dashed border-gray-300 dark:border-gray-600">
                 <div class="text-center py-2">
                     <div class="bg-gray-100 dark:bg-gray-800 rounded-full p-6 w-20 h-20 mx-auto mb-4 flex items-center justify-center">
-                        <i class="fas fa-bullseye text-3xl text-gray-400"></i>
+                        <i class="fas fa-bullseye text-3xl text-gray-400 dark:text-gray-500" aria-hidden="true"></i>
                     </div>
                     <h3 class="text-base font-semibold text-text-light dark:text-text-dark mb-2">
                         {{ _('No Weekly Goal') }}
@@ -849,7 +883,7 @@
             {% else %}
             <div class="flex flex-col items-center justify-center py-8 text-center">
                 <div class="bg-gray-100 dark:bg-gray-800 rounded-full p-4 w-16 h-16 flex items-center justify-center mb-3">
-                    <i class="fas fa-chart-bar text-2xl text-gray-400"></i>
+                    <i class="fas fa-chart-bar text-2xl text-gray-400 dark:text-gray-500" aria-hidden="true"></i>
                 </div>
                 <p class="text-sm text-text-muted-light dark:text-text-muted-dark">{{ _('No time logged in the last 7 days.') }}</p>
                 <p class="text-xs text-text-muted-light dark:text-text-muted-dark mt-1">{{ _('Start tracking to see distribution here.') }}</p>
@@ -899,7 +933,7 @@
             {% else %}
                 <div class="text-center py-8">
                     <div class="bg-gray-100 dark:bg-gray-800 rounded-full p-6 w-20 h-20 mx-auto mb-4 flex items-center justify-center">
-                        <i class="fas fa-folder-open text-3xl text-gray-400"></i>
+                        <i class="fas fa-folder-open text-3xl text-gray-400 dark:text-gray-500" aria-hidden="true"></i>
                     </div>
                     <p class="text-text-muted-light dark:text-text-muted-dark font-medium mb-1">{{ _('No activity in the last 30 days.') }}</p>
                     <p class="text-sm text-text-muted-light dark:text-text-muted-dark">{{ _('Start tracking time on projects to see them here.') }}</p>
@@ -956,6 +990,9 @@
     </div>
 
     {% if current_user.ui_show_donate and not is_license_activated %}
+    {% set _tracked_hours = (usage_support_stats.total_hours or 0)|float %}
+    {% set _hourly_rate = 30 %}
+    {% set _estimated_value = (_tracked_hours * _hourly_rate)|round(0, 'common')|int %}
     <div class="bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark p-5 rounded-xl shadow-sm dashboard-widget">
         <div class="flex items-center gap-2 mb-3">
             <div class="bg-amber-500/10 dark:bg-amber-400/10 p-2 rounded-lg">
@@ -964,7 +1001,7 @@
             <h2 class="text-base font-semibold text-text-light dark:text-text-dark">{{ _('Enjoying TimeTracker?') }}</h2>
         </div>
         <p class="text-sm text-text-muted-light dark:text-text-muted-dark mb-2">
-            {{ _('You have tracked %(hours)s hours', hours=('%.1f'|format((usage_support_stats.total_hours or 0)|float))) }}
+            {{ _('You have tracked %(hours)s hours', hours=('%.1f'|format(_tracked_hours))) }}
             · {{ _('You have created %(count)s entries', count=usage_support_stats.time_entries_count or 0) }}
             {% if (usage_support_stats.reports_generated_count or 0) > 0 %}
             · {{ _('Reports generated: %(n)s', n=usage_support_stats.reports_generated_count) }}
@@ -977,10 +1014,16 @@
             <a href="{{ url_for('user.license') }}" class="btn btn-secondary">{{ _('License') }}</a>
         </div>
         {% else %}
+        {% if _tracked_hours >= 1 %}
+        <p class="text-sm text-text-light dark:text-text-dark mb-4">
+            {{ _("You've tracked %(hours)s hours — that's roughly €%(value)s billed at €%(rate)s/h. TimeTracker helped you capture it all.", hours=('%.1f'|format(_tracked_hours)), value=_estimated_value, rate=_hourly_rate) }}
+        </p>
+        {% else %}
         <p class="text-sm text-text-muted-light dark:text-text-muted-dark mb-4">{{ _('If this saves you time, consider supporting development — everything stays free and open.') }}</p>
+        {% endif %}
         <div class="flex flex-wrap gap-2">
-            <button type="button" class="btn btn-primary js-open-support-modal"><i class="fas fa-heart mr-1.5" aria-hidden="true"></i>{{ _('Donate') }}</button>
-            <a href="{{ support_purchase_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">{{ _('Buy License (€25)') }} <i class="fas fa-external-link-alt text-xs" aria-hidden="true"></i></a>
+            <button type="button" class="btn btn-primary js-open-support-modal"><i class="fas fa-heart mr-1.5" aria-hidden="true"></i>{{ _('Help keep it free') }}</button>
+            <a href="{{ support_purchase_url }}" target="_blank" rel="noopener noreferrer" onclick="typeof trackDonationClick === 'function' && trackDonationClick('dashboard_widget_key')" class="btn btn-secondary">{{ _('Get a key — remove prompts (€25)') }} <i class="fas fa-external-link-alt text-xs" aria-hidden="true"></i></a>
         </div>
         {% endif %}
     </div>
@@ -1115,6 +1158,23 @@
                             {% endfor %}
                         </datalist>
                         <p class="text-xs text-text-muted-light dark:text-text-muted-dark mt-1">{{ _('Comma-separated; recent tags shown as suggestions.') }}</p>
+                    </div>
+                    <div>
+                        <label for="startTimerStartOverride" class="form-label">
+                            {{ _('Start Time') }}
+                            <span class="text-text-muted-light dark:text-text-muted-dark">({{ _('Optional') }})</span>
+                        </label>
+                        <div class="flex items-center gap-2">
+                            <input type="datetime-local" name="start_time_override" id="startTimerStartOverride"
+                                   class="form-input flex-1 user-datetime-input" />
+                            <button type="button" id="startTimerResetStart"
+                                    class="btn btn-secondary btn-sm whitespace-nowrap">
+                                {{ _('Set to now') }}
+                            </button>
+                        </div>
+                        <p class="text-xs text-text-muted-light dark:text-text-muted-dark mt-1">
+                            {{ _('Leave blank to start now, or enter a past time to backdate.') }}
+                        </p>
                     </div>
                 </div>
             </form>
@@ -1320,7 +1380,11 @@
         // Soft refresh dashboard timer hero when timer stops externally (idle detection, floating bar)
         document.addEventListener('tt:timer-status-changed', async function() {
             try {
-                var res = await fetch('/timer/status', { credentials: 'same-origin' });
+                var res = await fetch('/timer/status', {
+                    credentials: 'same-origin',
+                    headers: { 'Accept': 'application/json' },
+                });
+                if (!res.ok) return;
                 var data = await res.json();
                 var hero = document.querySelector('[data-timer-start]');
                 if (!data.active && hero) {
@@ -1437,6 +1501,12 @@
             const selectProjectOrClientText = modal.dataset.selectProjectClient || 'Please select either a project or a client';
             const errorTitleText = modal.dataset.errorTitle || 'Error';
 
+            const resetStartBtn = document.getElementById('startTimerResetStart');
+            if (resetStartBtn) {
+                resetStartBtn.addEventListener('click', function() {
+                    refreshStartTimerOverride();
+                });
+            }
             function buildTasksUrl(projectId) {
                 const pid = String(projectId || '').trim();
                 if (!pid) return tasksApiUrlTemplate;
@@ -1581,7 +1651,7 @@
                         if (window.toastManager && typeof window.toastManager.error === 'function') {
                             window.toastManager.error(errorMsg, errorTitleText, 5000);
                         } else {
-                            alert(errorMsg);
+                            ttAlert(errorMsg);
                         }
                         return false;
                     }
@@ -1596,7 +1666,7 @@
                         if (window.toastManager && typeof window.toastManager.error === 'function') {
                             window.toastManager.error(msg, errorTitleText, 5000);
                         } else {
-                            alert(msg);
+                            ttAlert(msg);
                         }
                         return false;
                     }
@@ -1611,7 +1681,7 @@
                             if (window.toastManager && typeof window.toastManager.error === 'function') {
                                 window.toastManager.error(msg, errorTitleText, 5000);
                             } else {
-                                alert(msg);
+                                ttAlert(msg);
                             }
                             return false;
                         }
@@ -1620,7 +1690,7 @@
                             if (window.toastManager && typeof window.toastManager.error === 'function') {
                                 window.toastManager.error(msg, errorTitleText, 5000);
                             } else {
-                                alert(msg);
+                                ttAlert(msg);
                             }
                             return false;
                         }
@@ -1651,10 +1721,27 @@
             });
         }
 
+        function toDatetimeLocalValue(date) {
+            const pad = (n) => String(n).padStart(2, '0');
+            return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate())
+                + 'T' + pad(date.getHours()) + ':' + pad(date.getMinutes());
+        }
+
+        function refreshStartTimerOverride() {
+            const startOverrideInput = document.getElementById('startTimerStartOverride');
+            if (!startOverrideInput) return;
+            const now = new Date();
+            const minDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+            startOverrideInput.value = toDatetimeLocalValue(now);
+            startOverrideInput.max = toDatetimeLocalValue(now);
+            startOverrideInput.min = toDatetimeLocalValue(minDate);
+        }
+
         function openStartTimerModal(e) {
             if (e) e.preventDefault();
             if (!modal) return;
             _initStartTimerModal();
+            refreshStartTimerOverride();
             modal.classList.remove('hidden');
             modal.setAttribute('aria-hidden', 'false');
             // Load the notes rich-text editor on demand now that the modal is open.
@@ -1734,7 +1821,7 @@
                 
             } catch (error) {
                 console.error('Error applying template:', error);
-                alert('Failed to apply template. Please try again.');
+                ttAlert('Failed to apply template. Please try again.');
             }
         };
 
@@ -1960,7 +2047,7 @@
             });
             
             if (validFiles.length === 0) {
-                alert('{{ _("No valid image files selected. Please select PNG, JPG, GIF, or WebP images.") }}');
+                ttAlert('{{ _("No valid image files selected. Please select PNG, JPG, GIF, or WebP images.") }}');
                 dashboardFileInput.value = '';
                 return;
             }
@@ -2035,7 +2122,7 @@
                             const showToast = window.showToast || window.showNotification;
                             showToast(warningMsg, 'warning');
                         } else {
-                            alert(warningMsg);
+                            ttAlert(warningMsg);
                         }
                     }
                 } else {
@@ -2044,14 +2131,14 @@
                     if (loadingIndicator && typeof loadingIndicator.remove === 'function') {
                         loadingIndicator.remove();
                     }
-                    alert(errorMsg);
+                    ttAlert(errorMsg);
                 }
             } catch (error) {
                 console.error('Multiple image upload error', error);
                 if (loadingIndicator && typeof loadingIndicator.remove === 'function') {
                     loadingIndicator.remove();
                 }
-                alert('{{ _("Failed to upload images. Please check your connection and try again.") }}');
+                ttAlert('{{ _("Failed to upload images. Please check your connection and try again.") }}');
             }
             
             // Reset file input

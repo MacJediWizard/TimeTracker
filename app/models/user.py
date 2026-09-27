@@ -22,6 +22,7 @@ class User(UserMixin, db.Model):
     role = db.Column(db.String(20), default="user", nullable=False)  # 'user' or 'admin'
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     last_login = db.Column(db.DateTime, nullable=True)
+    anonymized_at = db.Column(db.DateTime, nullable=True)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     theme_preference = db.Column(db.String(10), default=None, nullable=True)  # 'light' | 'dark' | None=system
     preferred_language = db.Column(db.String(8), default=None, nullable=True)  # e.g., 'en', 'de'
@@ -77,6 +78,12 @@ class User(UserMixin, db.Model):
     # Time rounding preferences
     time_rounding_enabled = db.Column(db.Boolean, default=True, nullable=False)  # Enable/disable time rounding
     time_rounding_minutes = db.Column(db.Integer, default=1, nullable=False)  # Rounding interval: 1, 5, 10, 15, 30, 60
+
+    # Pomodoro / focus session defaults
+    pomodoro_length = db.Column(db.Integer, default=25, nullable=False)
+    pomodoro_short_break = db.Column(db.Integer, default=5, nullable=False)
+    pomodoro_long_break = db.Column(db.Integer, default=15, nullable=False)
+    pomodoro_long_break_interval = db.Column(db.Integer, default=4, nullable=False)
     time_rounding_method = db.Column(
         db.String(10), default="nearest", nullable=False
     )  # 'nearest', 'up', 'down', or 'boundary'

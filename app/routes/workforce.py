@@ -94,6 +94,26 @@ def dashboard():
         overtime_ytd = get_overtime_ytd(selected_user)
         overtime_ytd_hours = float(overtime_ytd.get("overtime_hours", 0) or 0)
 
+    from app.models.payroll_export_template import PayrollExportTemplate
+
+    try:
+        PayrollExportTemplate.ensure_builtin_defaults()
+    except Exception:
+        pass
+    payroll_templates = PayrollExportTemplate.query.order_by(PayrollExportTemplate.name.asc()).all()
+    default_payroll_template = next(
+        (t for t in payroll_templates if t.is_default), payroll_templates[0] if payroll_templates else None
+    )
+
+    payroll_sync_logs = []
+    if current_user.is_admin:
+        try:
+            from app.models.payroll_sync_log import PayrollSyncLog
+
+            payroll_sync_logs = PayrollSyncLog.query.order_by(PayrollSyncLog.created_at.desc()).limit(15).all()
+        except Exception:
+            payroll_sync_logs = []
+
     return render_template(
         "workforce/dashboard.html",
         periods=periods,
@@ -111,6 +131,9 @@ def dashboard():
         overtime_ytd_hours=overtime_ytd_hours,
         overtime_leave_type_id=overtime_leave_type_id,
         signoff_state=signoff_state,
+        payroll_templates=payroll_templates,
+        default_payroll_template=default_payroll_template,
+        payroll_sync_logs=payroll_sync_logs,
     )
 
 
@@ -150,6 +173,56 @@ def _build_signoff_state(periods):
         "clients": clients,
         "templates": templates,
     }
+
+
+@workforce_bp.route("/workforce/payroll-sync", methods=["POST"])
+@login_required
+def payroll_sync_push():
+    """Push a payroll period to Gusto or ADP."""
+    if not current_user.is_admin:
+        flash(_("Admin access required"), "error")
+        return redirect(url_for("workforce.dashboard"))
+
+    provider = (request.form.get("provider") or "gusto").strip().lower()
+    if provider not in ("gusto", "adp"):
+        flash(_("Unknown payroll provider"), "error")
+        return redirect(url_for("workforce.dashboard") + "#payroll-sync")
+
+    period_start = _parse_date(request.form.get("start_date"))
+    period_end = _parse_date(request.form.get("end_date"))
+    if not period_start or not period_end:
+        flash(_("Start and end dates are required"), "error")
+        return redirect(url_for("workforce.dashboard") + "#payroll-sync")
+
+    from app.models import Integration
+    from app.services.integration_service import IntegrationService
+    from app.services.payroll_sync_service import PayrollSyncService
+
+    integration = Integration.query.filter_by(provider=provider, is_active=True).first()
+    if not integration:
+        flash(
+            _("No active %(provider)s integration found. Configure it under Integrations.", provider=provider), "error"
+        )
+        return redirect(url_for("integrations.list_integrations"))
+
+    try:
+        connector = IntegrationService().get_connector(integration)
+        result = PayrollSyncService().push_period(
+            provider=provider,
+            integration=integration,
+            connector=connector,
+            period_start=period_start,
+            period_end=period_end,
+            created_by=current_user.id,
+        )
+        if result.get("success"):
+            flash(_("Payroll push succeeded (%(n)s employees)", n=result.get("synced", 0)), "success")
+        else:
+            flash(_("Payroll push failed: %(msg)s", msg=result.get("message") or "error"), "error")
+    except Exception as exc:
+        flash(_("Payroll push failed: %(msg)s", msg=str(exc)), "error")
+
+    return redirect(url_for("workforce.dashboard") + "#payroll-sync")
 
 
 @workforce_bp.route("/workforce/periods/create", methods=["POST"])
@@ -206,6 +279,21 @@ def approve_period(period_id):
         ),
         "error" if not result.get("success") else "success",
     )
+    if result.get("success"):
+        try:
+            from app.services.integration_service import IntegrationService
+
+            for provider in ("quickbooks", "xero"):
+                try:
+                    connector = IntegrationService.get_connector_instance(provider, user_id=None)
+                    if connector and hasattr(connector, "sync_time_entries"):
+                        connector.sync_time_entries()
+                    elif connector:
+                        connector.sync_data(sync_type="time_entries")
+                except Exception:
+                    pass
+        except Exception:
+            pass
     return redirect(url_for("workforce.dashboard"))
 
 
@@ -519,6 +607,8 @@ def delete_holiday(holiday_id):
 @workforce_bp.route("/workforce/reports/payroll.csv", methods=["GET"])
 @login_required
 def payroll_export_csv():
+    from app.models.payroll_export_template import PayrollExportTemplate
+
     service = WorkforceGovernanceService()
 
     start = _parse_date(request.args.get("start_date"))
@@ -534,49 +624,98 @@ def payroll_export_csv():
     approved_only = request.args.get("approved_only", "false").lower() == "true"
     closed_only = request.args.get("closed_only", "false").lower() == "true"
 
+    template_id = request.args.get("template_id", type=int)
+    tmpl = None
+    if template_id:
+        tmpl = PayrollExportTemplate.query.get(template_id)
+    if not tmpl:
+        tmpl = PayrollExportTemplate.query.filter_by(is_default=True).first()
+    if not tmpl:
+        tmpl = PayrollExportTemplate.ensure_builtin_defaults()
+
+    columns = tmpl.columns or PayrollExportTemplate.DEFAULT_COLUMNS
+    delimiter = tmpl.delimiter or ","
+    grouping = tmpl.grouping or "week"
+
     rows = service.payroll_rows(
         start_date=start,
         end_date=end,
         user_id=user_id,
         approved_only=approved_only,
         closed_only=closed_only,
+        grouping=grouping,
     )
 
     output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(
-        [
-            "user_id",
-            "username",
-            "week_year",
-            "week_number",
-            "period_start",
-            "period_end",
-            "hours",
-            "billable_hours",
-            "non_billable_hours",
-        ]
-    )
+    writer = csv.writer(output, delimiter=delimiter)
+    writer.writerow(columns)
     for row in rows:
-        writer.writerow(
-            [
-                row.get("user_id"),
-                row.get("username"),
-                row.get("week_year"),
-                row.get("week_number"),
-                row.get("period_start"),
-                row.get("period_end"),
-                row.get("hours"),
-                row.get("billable_hours"),
-                row.get("non_billable_hours"),
-            ]
-        )
+        writer.writerow([row.get(col, "") for col in columns])
 
     filename = f"payroll_export_{start.isoformat()}_{end.isoformat()}.csv"
     return Response(
         output.getvalue(),
         mimetype="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@workforce_bp.route("/workforce/reports/payroll.xlsx", methods=["GET"])
+@login_required
+def payroll_export_xlsx():
+    from openpyxl import Workbook
+
+    from app.models.payroll_export_template import PayrollExportTemplate
+
+    service = WorkforceGovernanceService()
+
+    start = _parse_date(request.args.get("start_date"))
+    end = _parse_date(request.args.get("end_date"))
+    if not start or not end:
+        flash(_("Start date and end date are required for payroll export"), "error")
+        return redirect(url_for("workforce.dashboard"))
+
+    user_id = request.args.get("user_id", type=int)
+    if not current_user.is_admin or not user_id:
+        user_id = current_user.id
+
+    approved_only = request.args.get("approved_only", "false").lower() == "true"
+    closed_only = request.args.get("closed_only", "false").lower() == "true"
+
+    template_id = request.args.get("template_id", type=int)
+    tmpl = PayrollExportTemplate.query.get(template_id) if template_id else None
+    if not tmpl:
+        tmpl = PayrollExportTemplate.query.filter_by(is_default=True).first()
+    if not tmpl:
+        tmpl = PayrollExportTemplate.ensure_builtin_defaults()
+
+    columns = tmpl.columns or PayrollExportTemplate.DEFAULT_COLUMNS
+    grouping = tmpl.grouping or "week"
+    rows = service.payroll_rows(
+        start_date=start,
+        end_date=end,
+        user_id=user_id,
+        approved_only=approved_only,
+        closed_only=closed_only,
+        grouping=grouping,
+    )
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Payroll"
+    ws.append(columns)
+    for row in rows:
+        ws.append([row.get(col, "") for col in columns])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    filename = f"payroll_export_{start.isoformat()}_{end.isoformat()}.xlsx"
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
 

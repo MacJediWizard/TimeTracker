@@ -1,7 +1,7 @@
 import csv
 import io
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from flask import (
@@ -27,6 +27,7 @@ from app.models import (
     Project,
     ProjectAttachment,
     ProjectCost,
+    RecurringProjectCost,
     Task,
     TimeEntry,
     UserFavoriteProject,
@@ -1510,6 +1511,12 @@ def bulk_status_change():
                 project.archived_by = current_user.id
                 project.archived_reason = archive_reason if archive_reason else None
                 project.updated_at = datetime.utcnow()
+                try:
+                    from app.services.client_survey_service import ClientSurveyService
+
+                    ClientSurveyService().on_project_closed(project)
+                except Exception as survey_exc:
+                    current_app.logger.debug("Client survey on project archive skipped: %s", survey_exc)
             elif new_status == "active":
                 # Clear archiving metadata when activating
                 project.status = "active"
@@ -1521,7 +1528,13 @@ def bulk_status_change():
                 # Just update status for inactive
                 project.status = new_status
                 project.updated_at = datetime.utcnow()
+                if new_status == "inactive":
+                    try:
+                        from app.services.client_survey_service import ClientSurveyService
 
+                        ClientSurveyService().on_project_closed(project)
+                    except Exception as survey_exc:
+                        current_app.logger.debug("Client survey on project inactive skipped: %s", survey_exc)
             updated_count += 1
 
             # Log the status change
@@ -1949,6 +1962,204 @@ def api_project_costs(project_id):
     )
 
 
+# ===== RECURRING PROJECT COSTS ROUTES =====
+
+
+def _parse_recurring_cost_form(project_id):
+    """Parse and validate recurring cost form fields."""
+    description = request.form.get("description", "").strip()
+    category = request.form.get("category", "").strip()
+    amount = request.form.get("amount", "").strip()
+    frequency = request.form.get("frequency", "").strip()
+    interval = request.form.get("interval", type=int, default=1)
+    next_run_date_str = request.form.get("next_run_date", "").strip()
+    end_date_str = request.form.get("end_date", "").strip()
+    billable = request.form.get("billable") == "on"
+    currency_code = request.form.get("currency_code", "EUR").strip()
+    is_active = request.form.get("is_active") == "on" if "is_active" in request.form else True
+
+    if not description or not category or not amount or not frequency or not next_run_date_str:
+        return None, _("Description, category, amount, frequency, and next run date are required")
+
+    if frequency not in ("daily", "weekly", "monthly", "yearly"):
+        return None, _("Invalid frequency")
+
+    try:
+        amount = Decimal(amount)
+        if amount <= 0:
+            raise ValueError("Amount must be positive")
+    except (ValueError, Exception):
+        return None, _("Invalid amount format")
+
+    try:
+        next_run_date = datetime.strptime(next_run_date_str, "%Y-%m-%d").date()
+    except ValueError:
+        return None, _("Invalid next run date format")
+
+    end_date = None
+    if end_date_str:
+        try:
+            end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+        except ValueError:
+            return None, _("Invalid end date format")
+
+    return {
+        "description": description,
+        "category": category,
+        "amount": amount,
+        "frequency": frequency,
+        "interval": interval or 1,
+        "next_run_date": next_run_date,
+        "end_date": end_date,
+        "billable": billable,
+        "currency_code": currency_code,
+        "is_active": is_active,
+        "project_id": project_id,
+        "user_id": current_user.id,
+    }, None
+
+
+@projects_bp.route("/projects/<int:project_id>/costs/recurring")
+@login_required
+def list_recurring_costs(project_id):
+    """List recurring costs for a project."""
+    project = Project.query.get_or_404(project_id)
+    from app.services.recurring_project_cost_service import RecurringProjectCostService
+
+    recurring_costs = RecurringProjectCostService().list_for_project(project_id)
+    return render_template(
+        "projects/recurring_costs.html",
+        project=project,
+        recurring_costs=recurring_costs,
+    )
+
+
+@projects_bp.route("/projects/<int:project_id>/costs/recurring/add", methods=["GET", "POST"])
+@login_required
+def add_recurring_cost(project_id):
+    """Add a recurring project cost template."""
+    project = Project.query.get_or_404(project_id)
+
+    if request.method == "POST":
+        data, error = _parse_recurring_cost_form(project_id)
+        if error:
+            flash(error, "error")
+            return render_template("projects/add_recurring_cost.html", project=project)
+
+        recurring = RecurringProjectCost(**data)
+        db.session.add(recurring)
+        if not safe_commit("add_recurring_project_cost", {"project_id": project_id}):
+            flash(_("Could not add recurring cost due to a database error. Please check server logs."), "error")
+            return render_template("projects/add_recurring_cost.html", project=project)
+
+        flash(_("Recurring cost created successfully"), "success")
+        return redirect(url_for("projects.list_recurring_costs", project_id=project.id))
+
+    default_next_run_date = (datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d")
+    return render_template(
+        "projects/add_recurring_cost.html",
+        project=project,
+        default_next_run_date=default_next_run_date,
+    )
+
+
+@projects_bp.route("/projects/<int:project_id>/costs/recurring/<int:rid>/edit", methods=["GET", "POST"])
+@login_required
+def edit_recurring_cost(project_id, rid):
+    """Edit a recurring project cost template."""
+    project = Project.query.get_or_404(project_id)
+    recurring = RecurringProjectCost.query.get_or_404(rid)
+
+    if recurring.project_id != project_id:
+        flash(_("Recurring cost not found"), "error")
+        return redirect(url_for("projects.list_recurring_costs", project_id=project_id))
+
+    if not current_user.is_admin and recurring.user_id != current_user.id:
+        flash(_("You do not have permission to edit this recurring cost"), "error")
+        return redirect(url_for("projects.list_recurring_costs", project_id=project_id))
+
+    if request.method == "POST":
+        data, error = _parse_recurring_cost_form(project_id)
+        if error:
+            flash(error, "error")
+            return render_template("projects/add_recurring_cost.html", project=project, recurring=recurring)
+
+        for field in (
+            "description",
+            "category",
+            "amount",
+            "frequency",
+            "interval",
+            "next_run_date",
+            "end_date",
+            "billable",
+            "currency_code",
+            "is_active",
+        ):
+            setattr(recurring, field, data[field])
+        recurring.updated_at = datetime.utcnow()
+
+        if not safe_commit("edit_recurring_project_cost", {"recurring_id": rid}):
+            flash(_("Could not update recurring cost due to a database error. Please check server logs."), "error")
+            return render_template("projects/add_recurring_cost.html", project=project, recurring=recurring)
+
+        flash(_("Recurring cost updated successfully"), "success")
+        return redirect(url_for("projects.list_recurring_costs", project_id=project.id))
+
+    return render_template("projects/add_recurring_cost.html", project=project, recurring=recurring)
+
+
+@projects_bp.route("/projects/<int:project_id>/costs/recurring/<int:rid>/delete", methods=["POST"])
+@login_required
+def delete_recurring_cost(project_id, rid):
+    """Delete a recurring project cost template."""
+    project = Project.query.get_or_404(project_id)
+    recurring = RecurringProjectCost.query.get_or_404(rid)
+
+    if recurring.project_id != project_id:
+        flash(_("Recurring cost not found"), "error")
+        return redirect(url_for("projects.list_recurring_costs", project_id=project_id))
+
+    if not current_user.is_admin and recurring.user_id != current_user.id:
+        flash(_("You do not have permission to delete this recurring cost"), "error")
+        return redirect(url_for("projects.list_recurring_costs", project_id=project_id))
+
+    db.session.delete(recurring)
+    if not safe_commit("delete_recurring_project_cost", {"recurring_id": rid}):
+        flash(_("Could not delete recurring cost due to a database error. Please check server logs."), "error")
+        return redirect(url_for("projects.list_recurring_costs", project_id=project_id))
+
+    flash(_("Recurring cost deleted successfully"), "success")
+    return redirect(url_for("projects.list_recurring_costs", project_id=project.id))
+
+
+@projects_bp.route("/projects/<int:project_id>/costs/recurring/<int:rid>/generate-now", methods=["POST"])
+@login_required
+def generate_recurring_cost_now(project_id, rid):
+    """Manually generate a project cost from a recurring template."""
+    project = Project.query.get_or_404(project_id)
+    recurring = RecurringProjectCost.query.get_or_404(rid)
+
+    if recurring.project_id != project_id:
+        return jsonify({"error": "Recurring cost not found"}), 404
+
+    if not current_user.is_admin and recurring.user_id != current_user.id:
+        return jsonify({"error": "Permission denied"}), 403
+
+    try:
+        original_next_run_date = recurring.next_run_date
+        recurring.next_run_date = datetime.utcnow().date()
+        cost = recurring.generate_cost()
+        if cost:
+            db.session.commit()
+            return jsonify({"success": True, "cost_id": cost.id})
+        recurring.next_run_date = original_next_run_date
+        return jsonify({"error": "Failed to generate cost"}), 400
+    except Exception as e:
+        current_app.logger.error(f"Error generating cost from recurring template: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 # ===== PROJECT EXTRA GOODS ROUTES =====
 
 
@@ -1983,6 +2194,12 @@ def list_goods(project_id):
 def add_good(project_id):
     """Add a new extra good to a project"""
     project = Project.query.get_or_404(project_id)
+    from app.models import StockItem
+
+    try:
+        stock_items = StockItem.query.filter_by(is_active=True).order_by(StockItem.name).limit(500).all()
+    except Exception:
+        stock_items = []
 
     if request.method == "POST":
         name = request.form.get("name", "").strip()
@@ -1993,11 +2210,12 @@ def add_good(project_id):
         sku = request.form.get("sku", "").strip()
         billable = request.form.get("billable") == "on"
         currency_code = request.form.get("currency_code", "EUR").strip()
+        stock_item_id = request.form.get("stock_item_id", type=int) or None
 
         # Validate required fields
         if not name or not unit_price:
             flash(_("Name and unit price are required"), "error")
-            return render_template("projects/add_good.html", project=project)
+            return render_template("projects/add_good.html", project=project, stock_items=stock_items)
 
         # Validate quantity
         try:
@@ -2006,7 +2224,7 @@ def add_good(project_id):
                 raise ValueError("Quantity must be positive")
         except (ValueError, Exception):
             flash(_("Invalid quantity format"), "error")
-            return render_template("projects/add_good.html", project=project)
+            return render_template("projects/add_good.html", project=project, stock_items=stock_items)
 
         # Validate unit price
         try:
@@ -2015,7 +2233,7 @@ def add_good(project_id):
                 raise ValueError("Unit price cannot be negative")
         except (ValueError, Exception):
             flash(_("Invalid unit price format"), "error")
-            return render_template("projects/add_good.html", project=project)
+            return render_template("projects/add_good.html", project=project, stock_items=stock_items)
 
         # Create extra good
         good = ExtraGood(
@@ -2029,20 +2247,18 @@ def add_good(project_id):
             currency_code=currency_code,
             project_id=project_id,
             created_by=current_user.id,
+            stock_item_id=stock_item_id,
         )
 
         db.session.add(good)
         if not safe_commit("add_project_good", {"project_id": project_id}):
-            flash(
-                _("Could not add extra good due to a database error. Please check server logs."),
-                "error",
-            )
-            return render_template("projects/add_good.html", project=project)
+            flash(_("Could not add extra good due to a database error. Please check server logs."), "error")
+            return render_template("projects/add_good.html", project=project, stock_items=stock_items)
 
         flash(_("Extra good added successfully"), "success")
         return redirect(url_for("projects.view_project", project_id=project.id))
 
-    return render_template("projects/add_good.html", project=project)
+    return render_template("projects/add_good.html", project=project, stock_items=stock_items)
 
 
 @projects_bp.route("/projects/<int:project_id>/goods/<int:good_id>/edit", methods=["GET", "POST"])
@@ -2051,6 +2267,12 @@ def edit_good(project_id, good_id):
     """Edit a project extra good"""
     project = Project.query.get_or_404(project_id)
     good = ExtraGood.query.get_or_404(good_id)
+    from app.models import StockItem
+
+    try:
+        stock_items = StockItem.query.filter_by(is_active=True).order_by(StockItem.name).limit(500).all()
+    except Exception:
+        stock_items = []
 
     # Verify good belongs to project
     if good.project_id != project_id:
@@ -2075,7 +2297,7 @@ def edit_good(project_id, good_id):
         # Validate required fields
         if not name or not unit_price:
             flash(_("Name and unit price are required"), "error")
-            return render_template("projects/edit_good.html", project=project, good=good)
+            return render_template("projects/edit_good.html", project=project, good=good, stock_items=stock_items)
 
         # Validate quantity
         try:
@@ -2084,7 +2306,7 @@ def edit_good(project_id, good_id):
                 raise ValueError("Quantity must be positive")
         except (ValueError, Exception):
             flash(_("Invalid quantity format"), "error")
-            return render_template("projects/edit_good.html", project=project, good=good)
+            return render_template("projects/edit_good.html", project=project, good=good, stock_items=stock_items)
 
         # Validate unit price
         try:
@@ -2093,7 +2315,7 @@ def edit_good(project_id, good_id):
                 raise ValueError("Unit price cannot be negative")
         except (ValueError, Exception):
             flash(_("Invalid unit price format"), "error")
-            return render_template("projects/edit_good.html", project=project, good=good)
+            return render_template("projects/edit_good.html", project=project, good=good, stock_items=stock_items)
 
         # Update good
         good.name = name
@@ -2104,19 +2326,17 @@ def edit_good(project_id, good_id):
         good.sku = sku if sku else None
         good.billable = billable
         good.currency_code = currency_code
+        good.stock_item_id = request.form.get("stock_item_id", type=int) or None
         good.update_total()
 
         if not safe_commit("edit_project_good", {"good_id": good_id}):
-            flash(
-                _("Could not update extra good due to a database error. Please check server logs."),
-                "error",
-            )
-            return render_template("projects/edit_good.html", project=project, good=good)
+            flash(_("Could not update extra good due to a database error. Please check server logs."), "error")
+            return render_template("projects/edit_good.html", project=project, good=good, stock_items=stock_items)
 
         flash(_("Extra good updated successfully"), "success")
         return redirect(url_for("projects.view_project", project_id=project.id))
 
-    return render_template("projects/edit_good.html", project=project, good=good)
+    return render_template("projects/edit_good.html", project=project, good=good, stock_items=stock_items)
 
 
 @projects_bp.route("/projects/<int:project_id>/goods/<int:good_id>/delete", methods=["POST"])
